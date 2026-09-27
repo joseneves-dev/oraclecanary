@@ -1,19 +1,21 @@
 <?php
 
-namespace App\Tests\Controller;
+namespace App\Tests\Api;
 
+use ApiPlatform\Test\ApiTestCase;
+use ApiPlatform\Test\Client;
 use Doctrine\DBAL\Connection;
-use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 
-final class HealthControllerTest extends WebTestCase
+final class HealthApiTest extends ApiTestCase
 {
     use ClockSensitiveTrait;
 
+    protected static ?bool $alwaysBootKernel = true;
+
     private const NOW = '2026-09-27 18:00:00';
 
-    private KernelBrowser $client;
+    private Client $client;
 
     protected function setUp(): void
     {
@@ -32,11 +34,13 @@ final class HealthControllerTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(200);
         self::assertSame('ok', $data['status']);
-        self::assertSame(['status' => 'ok', 'lastCheckedAt' => '2026-09-27T17:59:00+00:00', 'ageSeconds' => 60], $data['protocols']['kamino']);
-        self::assertResponseHeaderSame('cache-control', 'no-store, private');
+        self::assertSame(
+            ['protocol' => 'kamino', 'status' => 'ok', 'lastCheckedAt' => '2026-09-27T17:59:00+00:00', 'ageSeconds' => 60],
+            $data['protocols'][0],
+        );
     }
 
-    public function testIsDegradedWhenAProtocolIsStale(): void
+    public function testAnswers503WhenAProtocolIsStale(): void
     {
         $this->insertCheck('kamino', '-60 seconds');
         $this->insertCheck('jupiter-lend', '-10 minutes');
@@ -46,18 +50,33 @@ final class HealthControllerTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(503);
         self::assertSame('degraded', $data['status']);
-        self::assertSame('stale', $data['protocols']['jupiter-lend']['status']);
-        self::assertSame(600, $data['protocols']['jupiter-lend']['ageSeconds']);
+        self::assertSame(['protocol' => 'jupiter-lend', 'status' => 'stale', 'lastCheckedAt' => '2026-09-27T17:50:00+00:00', 'ageSeconds' => 600], $data['protocols'][1]);
     }
 
-    public function testIsDegradedWhenAProtocolWasNeverChecked(): void
+    public function testAnswers503WhenAProtocolWasNeverChecked(): void
     {
         $this->insertCheck('kamino', '-60 seconds');
 
         $data = $this->health();
 
         self::assertResponseStatusCodeSame(503);
-        self::assertSame(['status' => 'stale', 'lastCheckedAt' => null, 'ageSeconds' => null], $data['protocols']['marginfi']);
+        self::assertSame(['protocol' => 'marginfi', 'status' => 'stale', 'lastCheckedAt' => null, 'ageSeconds' => null], $data['protocols'][2]);
+    }
+
+    public function testIsNotCached(): void
+    {
+        $this->health();
+
+        self::assertStringContainsString('private', (string) $this->client->getResponse()->getHeaders(false)['cache-control'][0]);
+    }
+
+    public function testIsDocumentedWithBothStatusCodes(): void
+    {
+        $docs = $this->client->request('GET', '/api/docs', ['headers' => ['Accept' => 'application/vnd.openapi+json']])->toArray();
+
+        $responses = $docs['paths']['/api/health']['get']['responses'];
+        self::assertSame([200, 503], array_keys($responses));
+        self::assertStringContainsString('Health', json_encode($responses[200]['content'] ?? []), 'the 200 response documents the Health schema');
     }
 
     /**
@@ -65,9 +84,7 @@ final class HealthControllerTest extends WebTestCase
      */
     private function health(): array
     {
-        $this->client->request('GET', '/health');
-
-        return json_decode((string) $this->client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        return $this->client->request('GET', '/api/health', ['headers' => ['Accept' => 'application/json']])->toArray(false);
     }
 
     private function insertCheck(string $protocol, string $ago): void

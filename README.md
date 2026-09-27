@@ -66,7 +66,7 @@ Tests: `cd web && php bin/phpunit` and `cd indexer && npm test`.
 ## Production
 
 [deploy/](deploy/README.md) runs everything on one server with Docker Compose: PostgreSQL, the API
-and web app behind Caddy with automatic HTTPS, the indexer, and daily backups. `GET /health`
+and web app behind Caddy with automatic HTTPS, the indexer, and daily backups. `GET /api/health`
 returns 503 when the data stops refreshing, for uptime monitors.
 
 The public Solana RPC rate-limits `getProgramAccounts`, so production needs a dedicated RPC

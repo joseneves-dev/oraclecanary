@@ -1,4 +1,4 @@
-# Production web server: the Symfony API under /api and /health, and the built web app for
+# Production web server: the Symfony API under /api, and the built web app for
 # every other path. SERVER_NAME is the public domain (Caddy then gets a TLS certificate) or a
 # plain port such as ":80" for local testing.
 {
@@ -9,7 +9,7 @@
 {$SERVER_NAME::80} {
 	encode zstd br gzip
 
-	@symfony path /api /api/* /health /bundles/*
+	@symfony path /api /api/* /bundles/*
 	handle @symfony {
 		root * /app/public
 		php_server
