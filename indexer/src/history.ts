@@ -93,6 +93,55 @@ export function trackChanges(
   return { transitions, states: next };
 }
 
+export interface IncidentStart {
+  row: ReserveHealthRow;
+  startedAt: Date;
+  /** The reserve was already critical when first tracked: the start is estimated from the price age. */
+  estimated: boolean;
+  /** Critical checks, as "CODE:severity". */
+  checks: string[];
+}
+
+const criticalKeys = (keys: string[]) => keys.filter((k) => k.endsWith(':critical'));
+
+/**
+ * Incidents to open and close so that a reserve has an open incident exactly while its reported
+ * state is critical. Being a comparison rather than a reaction to transitions, it also opens incidents
+ * for reserves that were already critical before incidents were recorded.
+ */
+export function planIncidents(
+  openIncidents: Set<string>,
+  rows: ReserveHealthRow[],
+  states: Map<string, AlertState>,
+  transitions: HealthTransition[],
+  now: Date,
+): { open: IncidentStart[]; close: { address: string; endedAt: Date }[] } {
+  const changed = new Map(transitions.map((t) => [t.row.reserve.reserve, t]));
+  const open: IncidentStart[] = [];
+  const close: { address: string; endedAt: Date }[] = [];
+
+  for (const row of rows) {
+    const address = row.reserve.reserve;
+    const state = states.get(address);
+    if (!state) continue;
+    const critical = criticalKeys(state.reported.checks);
+    const transition = changed.get(address);
+
+    if (critical.length && !openIncidents.has(address)) {
+      const staleFor = row.health.checks.some((c) => c.code === 'STALE') ? row.health.priceAgeSeconds : null;
+      open.push({
+        row,
+        startedAt: transition?.since ?? new Date(now.getTime() - (staleFor ?? 0) * 1000),
+        estimated: !transition,
+        checks: critical,
+      });
+    } else if (!critical.length && openIncidents.has(address)) {
+      close.push({ address, endedAt: transition?.since ?? now });
+    }
+  }
+  return { open, close };
+}
+
 /** Start of the UTC hour a timestamp falls in. */
 export function hourOf(date: Date): Date {
   const hour = new Date(date);

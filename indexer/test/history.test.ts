@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { ReserveHealthRow } from '../src/db.js';
-import { checkKeys, hourOf, lastingCheckKeys, trackChanges, type AlertState } from '../src/history.js';
+import { checkKeys, hourOf, lastingCheckKeys, planIncidents, trackChanges, type AlertState } from '../src/history.js';
 
 type Severity = 'critical' | 'warning' | 'info';
 
@@ -65,6 +65,35 @@ describe('trackChanges', () => {
     const { changes } = runEveryMinute([[stale], [stale], [healthy], [nearStale], [nearStale], [nearStale], [nearStale]]);
 
     assert.deepEqual(changes.map((c) => [c.minute, c.current.checks]), [[5, ['NO_FALLBACK:warning']]]);
+  });
+});
+
+describe('planIncidents', () => {
+  const state = (checks: string[]): AlertState => ({ reported: { score: 50, checks }, pending: null, pendingSince: null });
+  const now = at(30);
+
+  it('opens an incident when a change makes a reserve critical, dated when it started', () => {
+    const transition = { row: stale, previous: state([]).reported, current: state(['STALE:critical']).reported, since: at(20) };
+    const plan = planIncidents(new Set(), [stale], new Map([['fwdi', state(['NO_FALLBACK:warning', 'STALE:critical'])]]), [transition], now);
+
+    assert.deepEqual(plan.open.map((o) => [o.startedAt, o.estimated, o.checks]), [[at(20), false, ['STALE:critical']]]);
+    assert.deepEqual(plan.close, []);
+  });
+
+  it('estimates the start of a reserve already stale when first tracked from its price age', () => {
+    const alreadyStale = { ...stale, health: { ...stale.health, priceAgeSeconds: 600 } };
+    const plan = planIncidents(new Set(), [alreadyStale], new Map([['fwdi', state(['STALE:critical'])]]), [], now);
+
+    assert.deepEqual(plan.open.map((o) => [o.startedAt, o.estimated]), [[at(20), true]]);
+  });
+
+  it('closes the open incident when the reserve is no longer critical, and leaves ongoing ones open', () => {
+    const recovered = { row: healthy, previous: state(['STALE:critical']).reported, current: state(['NO_FALLBACK:warning']).reported, since: at(25) };
+    const closing = planIncidents(new Set(['fwdi']), [healthy], new Map([['fwdi', state(['NO_FALLBACK:warning'])]]), [recovered], now);
+    const ongoing = planIncidents(new Set(['fwdi']), [stale], new Map([['fwdi', state(['STALE:critical'])]]), [], now);
+
+    assert.deepEqual(closing.close, [{ address: 'fwdi', endedAt: at(25) }]);
+    assert.deepEqual([ongoing.open, ongoing.close], [[], []]);
   });
 });
 

@@ -1,7 +1,7 @@
 import pg from 'pg';
 
 import type { HealthResult } from './health.js';
-import { checkKeys, hourOf, trackChanges, type AlertState, type HealthTransition } from './history.js';
+import { checkKeys, hourOf, planIncidents, trackChanges, type AlertState, type HealthTransition } from './history.js';
 import type { MarketOracleConfig, Protocol } from './types.js';
 
 export interface ReserveHealthRow {
@@ -81,11 +81,53 @@ async function loadAlertStates(client: pg.PoolClient, protocol: Protocol): Promi
   );
 }
 
+const INCIDENT_COLUMNS = ['address', 'protocol', 'asset', 'market_name', 'started_at', 'start_estimated', 'checks', 'total_supply_usd'] as const;
+
+/** Opens and closes incidents (see planIncidents) and records the largest supply exposed by open ones. */
+async function saveIncidents(
+  client: pg.PoolClient,
+  protocol: Protocol,
+  listed: ReserveHealthRow[],
+  states: Map<string, AlertState>,
+  transitions: HealthTransition[],
+  checkedAt: Date,
+): Promise<void> {
+  const { rows: openRows } = await client.query<{ address: string }>(
+    'SELECT address FROM reserve_incident WHERE protocol = $1 AND ended_at IS NULL',
+    [protocol],
+  );
+  const plan = planIncidents(new Set(openRows.map((r) => r.address)), listed, states, transitions, checkedAt);
+
+  if (plan.close.length) {
+    await client.query(
+      `UPDATE reserve_incident i SET ended_at = v.ended_at
+         FROM unnest($1::text[], $2::timestamp[]) AS v(address, ended_at)
+        WHERE i.address = v.address AND i.ended_at IS NULL`,
+      [plan.close.map((c) => c.address), plan.close.map((c) => utc(c.endedAt))],
+    );
+  }
+  await insertRows(
+    client,
+    'reserve_incident',
+    INCIDENT_COLUMNS,
+    plan.open.map(({ row: { reserve: r }, startedAt, estimated, checks }) => [
+      r.reserve, r.protocol, asset(r), marketName(r), utc(startedAt), estimated, JSON.stringify(checks), finite(r.totalSupplyUsd),
+    ]),
+  );
+  await client.query(
+    `UPDATE reserve_incident i SET total_supply_usd = GREATEST(i.total_supply_usd, v.usd)
+       FROM unnest($1::text[], $2::float8[]) AS v(address, usd)
+      WHERE i.address = v.address AND i.ended_at IS NULL`,
+    [listed.map((r) => r.reserve.reserve), listed.map((r) => finite(r.reserve.totalSupplyUsd))],
+  );
+}
+
 /**
  * Replaces the stored health of one protocol's reserves with this run's results, in the tables owned
  * by the Symfony app, and records history in the same transaction:
  * - an event when the lasting failed checks of a listed reserve changed and the change was confirmed
  *   (see trackChanges);
+ * - incidents: the periods a listed reserve was critical (see planIncidents);
  * - one hourly sample per listed reserve, keeping the worst state seen in the hour;
  * - history older than the retention period is removed.
  * Reserves missing from `rows` (now obsolete, hidden or gone) are removed from lending_reserve so they
@@ -145,6 +187,8 @@ export async function saveReserveHealth(
       `ON CONFLICT (address) DO UPDATE SET ${STATE_COLUMNS.filter((c) => c !== 'address').map((c) => `${c} = EXCLUDED.${c}`).join(', ')}`,
     );
 
+    await saveIncidents(client, protocol, listed, states, transitions, checkedAt);
+
     // A sample shows the worst state of its hour, so a reserve stale for most of an hour is not
     // charted as healthy because the first run of the hour happened to catch a fresh price.
     await insertRows(
@@ -168,6 +212,7 @@ export async function saveReserveHealth(
     await client.query('DELETE FROM reserve_health_hourly WHERE protocol = $1 AND hour < $2', [protocol, daysBefore(checkedAt, HOURLY_RETENTION_DAYS)]);
     await client.query('DELETE FROM reserve_health_event WHERE protocol = $1 AND occurred_at < $2', [protocol, daysBefore(checkedAt, EVENT_RETENTION_DAYS)]);
     await client.query('DELETE FROM reserve_health_state WHERE protocol = $1 AND last_seen_at < $2', [protocol, daysBefore(checkedAt, STATE_RETENTION_DAYS)]);
+    await client.query('DELETE FROM reserve_incident WHERE protocol = $1 AND ended_at < $2', [protocol, daysBefore(checkedAt, EVENT_RETENTION_DAYS)]);
     await client.query('COMMIT');
     return transitions;
   } catch (e) {

@@ -130,6 +130,39 @@ final class HistoryApiTest extends ApiTestCase
         self::assertSame([], $client->request('GET', '/api/reserves/unknown/history', self::JSON)->toArray());
     }
 
+    public function testListsIncidentsWithTheirDuration(): void
+    {
+        $this->connection->executeStatement('DELETE FROM reserve_incident');
+        $this->insertIncident('FWDI', '2026-09-25 20:00:00', '2026-09-28 13:30:00');
+        $this->insertIncident('wstUSR', '2026-07-21 17:33:14', null);
+        $client = static::createClient();
+
+        $incidents = $client->request('GET', '/api/incidents', self::JSON)->toArray();
+        self::assertSame(['FWDI', 'wstUSR'], array_column($incidents, 'asset'));
+        self::assertSame(235_800, $incidents[0]['durationSeconds']);
+        self::assertSame('2026-09-28T13:30:00+00:00', $incidents[0]['endedAt']);
+        self::assertNull($incidents[1]['endedAt']);
+        self::assertNull($incidents[1]['durationSeconds']);
+
+        $ongoing = $client->request('GET', '/api/incidents?resolved=false', self::JSON)->toArray();
+        self::assertSame(['wstUSR'], array_column($ongoing, 'asset'));
+    }
+
+    private function insertIncident(string $asset, string $startedAt, ?string $endedAt): void
+    {
+        $this->connection->insert('reserve_incident', [
+            'address' => "reserve-$asset",
+            'protocol' => 'kamino',
+            'asset' => $asset,
+            'market_name' => 'Main Market',
+            'started_at' => $startedAt,
+            'start_estimated' => 'true',
+            'ended_at' => $endedAt,
+            'checks' => json_encode(['STALE:critical']),
+            'total_supply_usd' => 27_000_000,
+        ]);
+    }
+
     private function insertEvent(string $address, string $asset, string $at, array $previousChecks, array $checks, int $previousScore, int $score): void
     {
         $this->connection->insert('reserve_health_event', [
