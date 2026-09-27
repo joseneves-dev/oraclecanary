@@ -1,10 +1,10 @@
 nelmio_cors:
     defaults:
-        origin_regex: true
-        allow_origin: ['%env(CORS_ALLOW_ORIGIN)%']
-        allow_methods: ['GET', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE']
-        allow_headers: ['Content-Type', 'Authorization']
-        expose_headers: ['Link']
         max_age: 3600
     paths:
-        '^/': null
+        # The API is public and read-only: any site may read it, nothing may write to it.
+        '^/api/':
+            allow_origin: ['*']
+            allow_methods: ['GET', 'OPTIONS']
+            allow_headers: ['Accept', 'Content-Type']
+            expose_headers: ['Link']

@@ -6,39 +6,69 @@ Lending protocols decide loans and liquidations using oracle prices, but no publ
 which oracle each market reads, or whether it still works. When Switchboard shut down in
 September 2026, protocols had 6 days to migrate and nobody could list who was still exposed.
 
-OracleCanary maps the oracle dependencies of every Solana lending market and checks their health:
+OracleCanary maps the oracle dependencies of every Solana lending market (Kamino today) down to the
+upstream providers, following Kamino's Scope price chains, fallbacks, caps and TWAPs, and checks:
 
-- **Stale**: last update older than the market's own max age
-- **Deviating**: price differs from a Pyth reference
-- **Deprecated**: feed owned by a shut-down provider (e.g. Switchboard)
-- **No fallback**: single point of failure
+| Check | Severity | Meaning |
+|---|---|---|
+| `STALE` | critical | Price older than the reserve's own limit: the protocol rejects it |
+| `NEAR_STALE` | warning | Price older than 80% of that limit |
+| `DEPRECATED_PROVIDER` | critical / warning | Price depends on a shut-down provider (Switchboard); critical when nothing else can replace it |
+| `NO_FALLBACK` | warning | An oracle whose failure alone stops the price |
+| `NO_ORACLE` | critical | No oracle configured, or an empty price chain |
+| `EMPTY_PRICE_ENTRY` | critical | The price chain points at an unconfigured Scope entry |
+| `SOURCES_DIVERGE` | critical / warning | Fallback sources disagree beyond their own tolerance |
+| `FIXED_PRICE` | info | The price is fixed and does not follow the market |
 
-Each market gets a 0–100 risk score, with public alerts.
+Each reserve gets a 0–100 score (critical −50, warning −15, info −5).
 
 > Built for the Colosseum Crypto World's Fair hackathon (Sep–Oct 2026).
 
-## Status
-🚧 Work in progress.
+## API
 
-## License
-MIT
+Read-only REST API with OpenAPI docs at `/api/docs`.
+
+```
+GET /api/reserves?listed=true&score[lt]=100&order[totalSupplyUsd]=desc
+GET /api/reserves/{address}
+```
+
+`listed=true` keeps markets listed in the protocol's own app: anyone can create a Kamino market with
+arbitrary tokens and prices.
 
 ## Project structure
 
 ```
-indexer/   TypeScript — reads Solana (Kamino, marginfi, Pyth), runs health checks, writes to PostgreSQL
-web/       Symfony 8 — public website, market pages, API
+indexer/   TypeScript: reads Solana (Kamino reserves, Scope prices), runs the checks, writes to PostgreSQL
+web/       Symfony 8 + API Platform 5: the public API; owns the database schema (Doctrine migrations)
 ```
 
 ## Run locally
 
 ```bash
-# 1. Database (PostgreSQL in Docker)
+# 1. Database (PostgreSQL in Docker, host port 5433)
 cd web && docker compose up -d
+composer install && php bin/console doctrine:migrations:migrate
 
-# 2. Website
-composer install && symfony serve -d
+# 2. API on http://127.0.0.1:8000
+symfony serve -d
 
-# 3. Indexer
-cd ../indexer && cp .env.example .env && npm install && npm run dev
+# 3. Indexer: `npm run check` runs once, `npm run dev` checks every CHECK_INTERVAL_SECONDS
+cd ../indexer && cp .env.example .env && npm install && npm run check
 ```
+
+Tests: `cd web && php bin/phpunit` and `cd indexer && npm test`.
+
+## Production
+
+- Set `APP_ENV=prod` and a random `APP_SECRET` in the environment (or `.env.local`). The committed
+  `.env` defaults to `dev`, which enables the debug profiler.
+- Set `DATABASE_URL` for both `web` and `indexer`, and `RPC_URL` for the indexer. The public Solana
+  RPC rate-limits `getProgramAccounts`; use a dedicated RPC provider.
+- Run `php bin/console doctrine:migrations:migrate` on deploy, and keep `npm run dev` (the indexer
+  loop) running as a service.
+- API responses are cacheable for 30s (`s-maxage=60`), so a CDN can serve most traffic.
+
+## License
+
+MIT

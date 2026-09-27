@@ -13,8 +13,10 @@ use Doctrine\ORM\Mapping as ORM;
  * lives in App\ApiResource\Reserve.
  */
 #[ORM\Entity(repositoryClass: LendingReserveRepository::class)]
-#[ORM\Index(name: 'idx_lending_reserve_market', columns: ['protocol', 'market'])]
-#[ORM\Index(name: 'idx_lending_reserve_score', columns: ['score'])]
+#[ORM\Index(name: 'idx_lending_reserve_protocol', columns: ['protocol', 'checked_at'])]
+// Matches the API's default order (score, supply, then address as tiebreaker).
+#[ORM\Index(name: 'idx_lending_reserve_default_order', columns: ['score', 'total_supply_usd', 'address'])]
+#[ORM\Index(name: 'idx_lending_reserve_market', columns: ['market'])]
 class LendingReserve
 {
     /** Reserve / bank account address on Solana. */

@@ -157,6 +157,30 @@ final class ReserveApiTest extends ApiTestCase
         self::assertResponseStatusCodeSame(422);
     }
 
+    public function testAnySiteMayReadButNotWrite(): void
+    {
+        $client = static::createClient();
+
+        $client->request('GET', '/api/reserves', ['headers' => ['Accept' => 'application/json', 'Origin' => 'https://example.com']]);
+        self::assertResponseHeaderSame('access-control-allow-origin', 'https://example.com');
+
+        $client->request('OPTIONS', '/api/reserves', ['headers' => [
+            'Origin' => 'https://example.com',
+            'Access-Control-Request-Method' => 'DELETE',
+        ]]);
+        self::assertResponseHeaderSame('access-control-allow-methods', 'GET, OPTIONS');
+    }
+
+    public function testLetsCachesReuseResponsesBriefly(): void
+    {
+        static::createClient()->request('GET', '/api/reserves', ['headers' => ['Accept' => 'application/json']]);
+
+        $cacheControl = self::getClient()->getResponse()->headers->get('cache-control');
+        self::assertStringContainsString('public', $cacheControl);
+        self::assertStringContainsString('max-age=30', $cacheControl);
+        self::assertStringContainsString('s-maxage=60', $cacheControl);
+    }
+
     public function testDoesNotExposeStorageOnlyFields(): void
     {
         $data = static::createClient()->request('GET', '/api/reserves/reserve-sol', ['headers' => ['Accept' => 'application/json']])->toArray();
