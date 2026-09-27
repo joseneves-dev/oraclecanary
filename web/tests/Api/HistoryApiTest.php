@@ -146,6 +146,10 @@ final class HistoryApiTest extends ApiTestCase
 
         $ongoing = $client->request('GET', '/api/incidents?resolved=false', self::JSON)->toArray();
         self::assertSame(['wstUSR'], array_column($ongoing, 'asset'));
+
+        $this->connection->executeStatement("UPDATE reserve_incident SET total_supply_usd = 0 WHERE asset = 'wstUSR'");
+        $exposed = $client->request('GET', '/api/incidents?totalSupplyUsd[gte]=1', self::JSON)->toArray();
+        self::assertSame(['FWDI'], array_column($exposed, 'asset'));
     }
 
     private function insertIncident(string $asset, string $startedAt, ?string $endedAt): void

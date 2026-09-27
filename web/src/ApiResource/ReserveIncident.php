@@ -2,6 +2,7 @@
 
 namespace App\ApiResource;
 
+use ApiPlatform\Doctrine\Orm\Filter\ComparisonFilter;
 use ApiPlatform\Doctrine\Orm\Filter\DateFilter;
 use ApiPlatform\Doctrine\Orm\Filter\ExactFilter;
 use ApiPlatform\Doctrine\Orm\Filter\PartialSearchFilter;
@@ -51,6 +52,15 @@ use Symfony\Component\Validator\Constraints as Assert;
                     property: 'endedAt',
                     constraints: [new Assert\Choice(choices: NotNullFilter::VALUES)],
                     openApi: new Parameter('resolved', 'query', 'true: only incidents that ended; false: only ongoing ones', schema: ['type' => 'boolean']),
+                ),
+                'totalSupplyUsd' => new QueryParameter(
+                    filter: new ComparisonFilter(new ExactFilter()),
+                    constraints: [new Assert\Collection(
+                        fields: [
+                            'gte' => new Assert\Required([new Assert\Type('numeric'), new Assert\Range(min: 0, max: 1e15)]),
+                        ],
+                    )],
+                    openApi: new Parameter('totalSupplyUsd[gte]', 'query', 'Largest exposure at least this many USD, e.g. 1 to leave out empty reserves', schema: ['type' => 'number', 'minimum' => 0]),
                 ),
                 'startedAt' => new QueryParameter(
                     filter: new DateFilter(),
