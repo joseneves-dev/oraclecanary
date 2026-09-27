@@ -1,14 +1,16 @@
 import 'dotenv/config';
-import { Connection } from '@solana/web3.js';
+import { Connection, PublicKey } from '@solana/web3.js';
 import pg from 'pg';
 
+import { decodeDataStreamsTimestamp, fetchJupiterLendVaults, ORACLE_PROGRAM as JUPITER_ORACLE_PROGRAM } from './adapters/jupiterLend.js';
 import { fetchKaminoReserves } from './adapters/kamino.js';
 import { fetchMarginfiBanks } from './adapters/marginfi.js';
 import { saveReserveHealth, type ReserveHealthRow } from './db.js';
 import { evaluate } from './health.js';
+import { fetchChainlinkPrices } from './oracles/chainlink.js';
 import { fetchPythPrices } from './oracles/pyth.js';
 import { fetchScopeFeed, type ScopeFeed } from './oracles/scope.js';
-import type { Protocol } from './types.js';
+import type { OracleSource, Protocol } from './types.js';
 
 const RPC_URL = process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com';
 const INTERVAL_SECONDS = Number(process.env.CHECK_INTERVAL_SECONDS ?? 60);
@@ -58,9 +60,34 @@ async function checkMarginfi(): Promise<ReserveHealthRow[]> {
   }));
 }
 
+/** Last update time of each Jupiter Lend oracle source, read according to its type. */
+async function fetchJupiterSourceTimes(sources: OracleSource[]): Promise<Map<string, number>> {
+  const byType = (type: string) => sources.filter((s) => s.type === type).map((s) => s.account);
+  const times = new Map<string, number>();
+
+  for (const [account, price] of await fetchPythPrices(connection, byType('Pyth'))) times.set(account, price.publishTime);
+  for (const [account, price] of await fetchChainlinkPrices(connection, byType('Chainlink'))) times.set(account, price.timestamp);
+
+  const streams = [...new Set(byType('ChainlinkDataStreams'))];
+  const infos = await connection.getMultipleAccountsInfo(streams.map((a) => new PublicKey(a)));
+  infos.forEach((info, i) => {
+    if (info?.owner.toBase58() === JUPITER_ORACLE_PROGRAM) times.set(streams[i], decodeDataStreamsTimestamp(Buffer.from(info.data)));
+  });
+  return times;
+}
+
+async function checkJupiterLend(): Promise<ReserveHealthRow[]> {
+  const vaults = await fetchJupiterLendVaults(connection);
+  const sourceTimes = await fetchJupiterSourceTimes(vaults.flatMap((v) => v.oracle?.sources ?? []));
+
+  const now = nowSeconds();
+  return vaults.map((reserve) => ({ reserve, health: evaluate(reserve, { sourceTimes }, now) }));
+}
+
 const PROTOCOLS: [Protocol, () => Promise<ReserveHealthRow[]>][] = [
   ['kamino', checkKamino],
   ['marginfi', checkMarginfi],
+  ['jupiter-lend', checkJupiterLend],
 ];
 
 /** Checks each protocol on its own, so one failing protocol does not stop the others from updating. */

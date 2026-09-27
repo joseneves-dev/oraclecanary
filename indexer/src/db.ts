@@ -43,7 +43,7 @@ export async function saveReserveHealth(pool: pg.Pool, protocol: Protocol, rows:
           Number.isFinite(r.totalSupplyUsd) ? r.totalSupplyUsd : 0,
           r.maxAgePriceSeconds, h.priceAgeSeconds, h.score,
           JSON.stringify(h.providers), JSON.stringify(h.checks),
-          JSON.stringify({ ...r.feeds, scopeChain: r.scopeChain }), checkedAtUtc,
+          JSON.stringify({ ...r.feeds, scopeChain: r.scopeChain, oracle: r.oracle ?? null }), checkedAtUtc,
         );
         const base = row * COLUMNS.length;
         return `(${COLUMNS.map((_, c) => `$${base + c + 1}`).join(', ')})`;

@@ -92,7 +92,7 @@ final class ReserveApiTest extends ApiTestCase
         self::assertSame(35, $data['score']);
         self::assertSame(['address' => 'market', 'name' => 'Main Market'], $data['market']);
         self::assertSame(['code' => 'STALE', 'severity' => 'critical', 'message' => 'Price is 159998s old.'], $data['checks'][0]);
-        self::assertSame(['scopePrices' => 'prices', 'scopeChain' => [3], 'pyth' => null, 'switchboard' => null], $data['oracleAccounts']);
+        self::assertSame(['scopePrices' => 'prices', 'scopeChain' => [3], 'pyth' => null, 'switchboard' => null, 'oracle' => null, 'sources' => []], $data['oracleAccounts']);
     }
 
     public function testSummarisesSeverityAndPriceFreshness(): void
@@ -125,7 +125,25 @@ final class ReserveApiTest extends ApiTestCase
         $data = $client->request('GET', '/api/reserves/reserve-bad', ['headers' => ['Accept' => 'application/json']])->toArray();
         self::assertSame('warning', $data['severity'], 'an unknown severity must not read as healthy');
         self::assertSame(['NEW_CHECK', 'NO_MESSAGE', 'UNKNOWN'], array_column($data['checks'], 'code'));
-        self::assertSame(['scopePrices' => null, 'scopeChain' => [], 'pyth' => null, 'switchboard' => null], $data['oracleAccounts']);
+        self::assertSame(['scopePrices' => null, 'scopeChain' => [], 'pyth' => null, 'switchboard' => null, 'oracle' => null, 'sources' => []], $data['oracleAccounts']);
+    }
+
+    public function testExposesTheSourcesOfAChainedOracle(): void
+    {
+        $this->insertReserve('vault-jlp', 'JLP/USDC', score: 85, supplyUsd: 358_000_000);
+        self::getContainer()->get(Connection::class)->update('lending_reserve', ['feeds' => json_encode([
+            'scope' => null,
+            'scopeChain' => [],
+            'oracle' => ['account' => 'jl-oracle', 'sources' => [
+                ['type' => 'Chainlink', 'account' => 'jlp-usd'],
+                ['type' => 'bogus'],
+            ]],
+        ])], ['address' => 'vault-jlp']);
+
+        $data = static::createClient()->request('GET', '/api/reserves/vault-jlp', ['headers' => ['Accept' => 'application/json']])->toArray();
+
+        self::assertSame('jl-oracle', $data['oracleAccounts']['oracle']);
+        self::assertSame([['type' => 'Chainlink', 'account' => 'jlp-usd']], $data['oracleAccounts']['sources']);
     }
 
     public function testReportsUnknownPriceAgeAsUnknownStaleness(): void

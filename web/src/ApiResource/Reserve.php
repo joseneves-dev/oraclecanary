@@ -40,7 +40,7 @@ use Symfony\Component\Validator\Constraints as Assert;
             parameters: [
                 'protocol' => new QueryParameter(
                     filter: new ExactFilter(),
-                    openApi: new Parameter('protocol', 'query', 'Lending protocol', schema: ['type' => 'string', 'example' => 'kamino']),
+                    openApi: new Parameter('protocol', 'query', 'Lending protocol', schema: ['type' => 'string', 'enum' => ['kamino', 'marginfi', 'jupiter-lend']]),
                 ),
                 'market' => new QueryParameter(
                     filter: new ExactFilter(),

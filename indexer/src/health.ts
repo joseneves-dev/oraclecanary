@@ -275,13 +275,66 @@ function evaluateMarginfi(reserve: MarketOracleConfig, pyth: PythPrice | undefin
   return { score: score(checks), checks, providers, priceAgeSeconds };
 }
 
+/** Jupiter Lend oracle sources that are not a market price: exchange rates and pool pegs. */
+const JUPITER_NON_MARKET_SOURCES = new Set([
+  'StakePool', 'MsolPool', 'SinglePool', 'JupLend', 'PstPool', 'InfPool', 'DexSmartColPegOracle', 'DexSmartDebtPegOracle',
+]);
+
+/** Jupiter Lend rejects older prices for liquidations too; see USER_ACTION_MAX_AGE_SECONDS for user actions. */
+const JUPITER_LIQUIDATION_MAX_AGE_SECONDS = 7200;
+
+/**
+ * Checks a Jupiter Lend vault. Its oracle multiplies or divides every source in turn, so each
+ * market-price source is required; `sourceTimes` holds the last update of each readable source.
+ */
+function evaluateJupiterLend(reserve: MarketOracleConfig, sourceTimes: Map<string, number>, now: number): HealthResult {
+  const sources = reserve.oracle?.sources ?? [];
+  const checks: Check[] = [];
+  if (!sources.length) {
+    checks.push({ code: 'NO_ORACLE', severity: 'critical', message: 'The vault\'s oracle has no price source.' });
+    return { score: score(checks), checks, providers: [], priceAgeSeconds: null };
+  }
+
+  const providers = [...new Set(sources.map((s) => (s.type.startsWith('DexSmart') ? 'Dex peg' : s.type)))];
+  const market = sources.filter((s) => !JUPITER_NON_MARKET_SOURCES.has(s.type));
+  const unreadable = market.filter((s) => !sourceTimes.has(s.account));
+  const ages = market.flatMap((s) => (sourceTimes.has(s.account) ? [Math.max(0, now - sourceTimes.get(s.account)!)] : []));
+  const priceAgeSeconds = ages.length ? Math.max(...ages) : null;
+  const limit = reserve.maxAgePriceSeconds;
+
+  if (priceAgeSeconds !== null) {
+    if (priceAgeSeconds > JUPITER_LIQUIDATION_MAX_AGE_SECONDS) {
+      checks.push({ code: 'STALE', severity: 'critical', message: `Price is ${priceAgeSeconds}s old: users and even liquidations are rejected (limits ${limit}s and ${JUPITER_LIQUIDATION_MAX_AGE_SECONDS}s).` });
+    } else if (priceAgeSeconds > limit) {
+      checks.push({ code: 'STALE', severity: 'critical', message: `Price is ${priceAgeSeconds}s old; users cannot supply, borrow, repay or withdraw past ${limit}s.` });
+    } else if (priceAgeSeconds > limit * NEAR_STALE_RATIO) {
+      checks.push({ code: 'NEAR_STALE', severity: 'warning', message: `Price is ${priceAgeSeconds}s old, close to the ${limit}s limit.` });
+    }
+  }
+  if (unreadable.length) {
+    checks.push({ code: 'UNREADABLE_ORACLE', severity: 'warning', message: `Could not read the ${[...new Set(unreadable.map((s) => s.type))].join(', ')} source.` });
+  }
+  if (market.length) {
+    checks.push({
+      code: 'NO_FALLBACK',
+      severity: 'warning',
+      message: `Price has no fallback for ${[...new Set(market.map((s) => s.type))].join(', ')}: every source is required, so if one stops, the price stops.`,
+    });
+  }
+
+  return { score: score(checks), checks, providers, priceAgeSeconds };
+}
+
 export interface OracleData {
   scope?: ScopeFeed;
   pyth?: PythPrice;
+  /** Jupiter Lend: last update time of each oracle source account that could be read. */
+  sourceTimes?: Map<string, number>;
 }
 
 export function evaluate(reserve: MarketOracleConfig, oracles: OracleData, now: number): HealthResult {
   if (reserve.protocol === 'marginfi') return evaluateMarginfi(reserve, oracles.pyth, now);
+  if (reserve.protocol === 'jupiter-lend') return evaluateJupiterLend(reserve, oracles.sourceTimes ?? new Map(), now);
   return evaluateKamino(reserve, oracles.scope, now);
 }
 
