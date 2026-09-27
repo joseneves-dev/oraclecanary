@@ -2,15 +2,6 @@
 
 namespace App\Entity;
 
-use ApiPlatform\Doctrine\Orm\Filter\ComparisonFilter;
-use ApiPlatform\Doctrine\Orm\Filter\ExactFilter;
-use ApiPlatform\Doctrine\Orm\Filter\PartialSearchFilter;
-use ApiPlatform\Doctrine\Orm\Filter\SortFilter;
-use ApiPlatform\Metadata\ApiProperty;
-use ApiPlatform\Metadata\ApiResource;
-use ApiPlatform\Metadata\Get;
-use ApiPlatform\Metadata\GetCollection;
-use ApiPlatform\Metadata\QueryParameter;
 use App\Repository\LendingReserveRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -18,35 +9,9 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * Latest oracle health state of one lending reserve (a Kamino reserve, a marginfi bank...).
  *
- * Rows are written by the TypeScript indexer; the web app only reads them, so the API is read-only.
+ * Rows are written by the TypeScript indexer; the web app only reads them. The public API shape
+ * lives in App\ApiResource\Reserve.
  */
-#[ApiResource(
-    shortName: 'Reserve',
-    description: 'Oracle dependency and health of a lending reserve.',
-    operations: [
-        new GetCollection(
-            description: 'Lending reserves with their oracle health, filterable and sortable.',
-            parameters: [
-                'protocol' => new QueryParameter(filter: new ExactFilter(), description: 'e.g. kamino'),
-                'market' => new QueryParameter(filter: new ExactFilter(), description: 'Lending market address'),
-                'marketName' => new QueryParameter(filter: new PartialSearchFilter(), description: 'Part of the market name'),
-                'asset' => new QueryParameter(filter: new PartialSearchFilter(), description: 'Part of the asset symbol'),
-                'status' => new QueryParameter(filter: new ExactFilter(), description: 'active, obsolete or hidden'),
-                'score' => new QueryParameter(filter: new ComparisonFilter(new ExactFilter()), description: 'e.g. score[lt]=50'),
-                'totalSupplyUsd' => new QueryParameter(filter: new ComparisonFilter(new ExactFilter()), description: 'e.g. totalSupplyUsd[gte]=100000'),
-                'order[score]' => new QueryParameter(filter: new SortFilter(), property: 'score'),
-                'order[totalSupplyUsd]' => new QueryParameter(filter: new SortFilter(), property: 'totalSupplyUsd'),
-                'order[priceAgeSeconds]' => new QueryParameter(filter: new SortFilter(), property: 'priceAgeSeconds'),
-                'order[asset]' => new QueryParameter(filter: new SortFilter(), property: 'asset'),
-            ],
-        ),
-        new Get(),
-    ],
-    order: ['score' => 'ASC', 'totalSupplyUsd' => 'DESC'],
-    paginationClientItemsPerPage: true,
-    paginationItemsPerPage: 50,
-    paginationMaximumItemsPerPage: 500,
-)]
 #[ORM\Entity(repositoryClass: LendingReserveRepository::class)]
 #[ORM\Index(name: 'idx_lending_reserve_market', columns: ['protocol', 'market'])]
 #[ORM\Index(name: 'idx_lending_reserve_score', columns: ['score'])]
@@ -55,7 +20,6 @@ class LendingReserve
     /** Reserve / bank account address on Solana. */
     #[ORM\Id]
     #[ORM\Column(length: 44)]
-    #[ApiProperty(identifier: true)]
     private string $address;
 
     #[ORM\Column(length: 32)]

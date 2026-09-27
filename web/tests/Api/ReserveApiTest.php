@@ -15,7 +15,7 @@ final class ReserveApiTest extends ApiTestCase
         $connection->executeStatement('DELETE FROM lending_reserve');
 
         $this->insertReserve('reserve-sol', 'SOL', score: 100, supplyUsd: 300_000_000);
-        $this->insertReserve('reserve-fwdi', 'FWDI', score: 35, supplyUsd: 27_000_000, checks: [
+        $this->insertReserve('reserve-fwdi', 'FWDI', score: 35, supplyUsd: 27_000_000, priceAgeSeconds: 159998, checks: [
             ['code' => 'STALE', 'severity' => 'critical', 'message' => 'Price is 159998s old.'],
         ]);
         $this->insertReserve('reserve-alp', 'ALP', score: 45, supplyUsd: 30_000);
@@ -46,7 +46,32 @@ final class ReserveApiTest extends ApiTestCase
         self::assertResponseIsSuccessful();
         $data = $response->toArray();
         self::assertSame(35, $data['score']);
-        self::assertSame('STALE', $data['checks'][0]['code']);
+        self::assertSame(['address' => 'market', 'name' => 'Main Market'], $data['market']);
+        self::assertSame(['code' => 'STALE', 'severity' => 'critical', 'message' => 'Price is 159998s old.'], $data['checks'][0]);
+        self::assertSame(['scopePrices' => 'prices', 'scopeChain' => [3]], $data['oracleAccounts']);
+    }
+
+    public function testSummarisesSeverityAndPriceFreshness(): void
+    {
+        $client = static::createClient();
+        $headers = ['headers' => ['Accept' => 'application/json']];
+
+        $fwdi = $client->request('GET', '/api/reserves/reserve-fwdi', $headers)->toArray();
+        self::assertSame('critical', $fwdi['severity']);
+        self::assertSame(['ageSeconds' => 159998, 'maxAgeSeconds' => 120, 'isStale' => true], $fwdi['price']);
+
+        $sol = $client->request('GET', '/api/reserves/reserve-sol', $headers)->toArray();
+        self::assertSame('ok', $sol['severity']);
+        self::assertFalse($sol['price']['isStale']);
+    }
+
+    public function testDoesNotExposeStorageOnlyFields(): void
+    {
+        $data = static::createClient()->request('GET', '/api/reserves/reserve-sol', ['headers' => ['Accept' => 'application/json']])->toArray();
+
+        self::assertArrayNotHasKey('feeds', $data);
+        self::assertArrayNotHasKey('marketName', $data);
+        self::assertArrayNotHasKey('maxAgePriceSeconds', $data);
     }
 
     public function testIsReadOnly(): void
@@ -64,7 +89,7 @@ final class ReserveApiTest extends ApiTestCase
         self::assertArrayHasKey('/api/reserves', $response->toArray()['paths']);
     }
 
-    private function insertReserve(string $address, string $asset, int $score, float $supplyUsd, array $checks = []): void
+    private function insertReserve(string $address, string $asset, int $score, float $supplyUsd, int $priceAgeSeconds = 10, array $checks = []): void
     {
         self::getContainer()->get(Connection::class)->insert('lending_reserve', [
             'address' => $address,
@@ -76,7 +101,7 @@ final class ReserveApiTest extends ApiTestCase
             'status' => 'active',
             'total_supply_usd' => $supplyUsd,
             'max_age_price_seconds' => 120,
-            'price_age_seconds' => 10,
+            'price_age_seconds' => $priceAgeSeconds,
             'score' => $score,
             'providers' => json_encode(['PythLazer']),
             'checks' => json_encode($checks),
