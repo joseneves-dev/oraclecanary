@@ -3,8 +3,8 @@ services:
 ###> doctrine/doctrine-bundle ###
   database:
     ports:
-      # Fixed host port so the TypeScript indexer can connect too
-      - "5432:5432"
+      # Fixed host port 5433 (5432 is often taken by a local PostgreSQL); the indexer uses it too
+      - "5433:5432"
 ###< doctrine/doctrine-bundle ###
 
 ###> symfony/mailer ###
