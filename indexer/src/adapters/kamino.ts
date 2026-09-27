@@ -86,6 +86,7 @@ function toMarketOracleConfig(address: string, data: Buffer, listedMarkets: Map<
       scope: feed(tokenInfo.scopeConfiguration.priceFeed.toString()),
     },
     scopeChain,
+    oracleSetup: null,
     lastPriceUpdateTs: clampSeconds(reserve.liquidity.marketPriceLastUpdatedTs),
     totalSupplyUsd: (available + borrowed) * price,
   };

@@ -1,3 +1,4 @@
+import type { PythPrice } from './oracles/pyth.js';
 import type { ScopeEntry, ScopeFeed } from './oracles/scope.js';
 import { resolveLeaves } from './oracles/scope.js';
 import type { MarketOracleConfig } from './types.js';
@@ -216,7 +217,75 @@ function evaluateDirect(reserve: MarketOracleConfig): HealthResult {
   return { score: score(checks), checks, providers, priceAgeSeconds: null };
 }
 
-export function evaluate(reserve: MarketOracleConfig, scopeFeed: ScopeFeed | undefined, now: number): HealthResult {
+/** What a marginfi oracle setup multiplies the Pyth price by, for setups that are not a plain feed. */
+const MARGINFI_RATE_SOURCES: Record<string, string> = {
+  StakedWithPythPush: 'Stake pool rate',
+  PythLST: 'LST rate',
+  PythMSOL: 'mSOL rate',
+  KaminoPythPush: 'Kamino exchange rate',
+  KaminoLST: 'Kamino exchange rate',
+  KaminoMSOL: 'Kamino exchange rate',
+  DriftPythPull: 'Drift exchange rate',
+  SolendPythPull: 'Solend exchange rate',
+  JuplendPythPull: 'Jupiter Lend exchange rate',
+  JuplendLST: 'Jupiter Lend exchange rate',
+  JuplendMSOL: 'Jupiter Lend exchange rate',
+  PTPyth: 'PT discount',
+};
+
+/**
+ * Checks a marginfi bank. Each bank prices from exactly one oracle account, possibly multiplied by
+ * an exchange rate, so there is never a fallback oracle.
+ */
+function evaluateMarginfi(reserve: MarketOracleConfig, pyth: PythPrice | undefined, now: number): HealthResult {
+  const setup = reserve.oracleSetup ?? 'None';
+  const checks: Check[] = [];
+
+  if (setup === 'None') {
+    checks.push({ code: 'NO_ORACLE', severity: 'critical', message: 'No price oracle is configured for this bank.' });
+    return { score: score(checks), checks, providers: [], priceAgeSeconds: null };
+  }
+  if (setup.startsWith('Fixed')) {
+    checks.push({ code: 'FIXED_PRICE', severity: 'info', message: 'Price is fixed and does not follow the market.' });
+    return { score: score(checks), checks, providers: ['FixedPrice'], priceAgeSeconds: null };
+  }
+  if (reserve.feeds.switchboard) {
+    checks.push({ code: 'DEPRECATED_PROVIDER', severity: 'critical', message: 'Price comes only from a Switchboard feed, which has shut down.' });
+    return { score: score(checks), checks, providers: ['SwitchboardOnDemand'], priceAgeSeconds: null };
+  }
+  if (!reserve.feeds.pyth) {
+    checks.push({ code: 'UNREADABLE_ORACLE', severity: 'warning', message: `Oracle setup ${setup} is not analysed yet.` });
+    return { score: score(checks), checks, providers: [setup], priceAgeSeconds: null };
+  }
+
+  const providers = ['Pyth', ...(MARGINFI_RATE_SOURCES[setup] ? [MARGINFI_RATE_SOURCES[setup]] : [])];
+  if (!pyth) {
+    checks.push({ code: 'UNREADABLE_ORACLE', severity: 'warning', message: 'The Pyth price account could not be read.' });
+    return { score: score(checks), checks, providers, priceAgeSeconds: null };
+  }
+
+  const priceAgeSeconds = Math.max(0, now - pyth.publishTime);
+  if (priceAgeSeconds > reserve.maxAgePriceSeconds) {
+    checks.push({ code: 'STALE', severity: 'critical', message: `Price is ${priceAgeSeconds}s old; the protocol rejects prices older than ${reserve.maxAgePriceSeconds}s.` });
+  } else if (priceAgeSeconds > reserve.maxAgePriceSeconds * NEAR_STALE_RATIO) {
+    checks.push({ code: 'NEAR_STALE', severity: 'warning', message: `Price is ${priceAgeSeconds}s old, close to the ${reserve.maxAgePriceSeconds}s limit.` });
+  }
+  checks.push({ code: 'NO_FALLBACK', severity: 'warning', message: 'Price has no fallback for Pyth: marginfi reads a single feed, so if it stops, the price stops.' });
+
+  return { score: score(checks), checks, providers, priceAgeSeconds };
+}
+
+export interface OracleData {
+  scope?: ScopeFeed;
+  pyth?: PythPrice;
+}
+
+export function evaluate(reserve: MarketOracleConfig, oracles: OracleData, now: number): HealthResult {
+  if (reserve.protocol === 'marginfi') return evaluateMarginfi(reserve, oracles.pyth, now);
+  return evaluateKamino(reserve, oracles.scope, now);
+}
+
+function evaluateKamino(reserve: MarketOracleConfig, scopeFeed: ScopeFeed | undefined, now: number): HealthResult {
   if (reserve.feeds.scope) {
     if (!scopeFeed) {
       const checks: Check[] = [{ code: 'UNREADABLE_ORACLE', severity: 'warning', message: 'The Scope price account could not be read.' }];

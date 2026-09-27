@@ -6,8 +6,9 @@ Lending protocols decide loans and liquidations using oracle prices, but no publ
 which oracle each market reads, or whether it still works. When Switchboard shut down in
 September 2026, protocols had 6 days to migrate and nobody could list who was still exposed.
 
-OracleCanary maps the oracle dependencies of every Solana lending market (Kamino today) down to the
-upstream providers, following Kamino's Scope price chains, fallbacks, caps and TWAPs, and checks:
+OracleCanary maps the oracle dependencies of Solana lending markets (Kamino and marginfi) down to the
+upstream providers, following Kamino's Scope price chains, fallbacks, caps and TWAPs and marginfi's
+per-bank oracle setups, and checks:
 
 | Check | Severity | Meaning |
 |---|---|---|
@@ -33,13 +34,15 @@ GET /api/reserves?listed=true&score[lt]=100&order[totalSupplyUsd]=desc
 GET /api/reserves/{address}
 ```
 
-`listed=true` keeps markets listed in the protocol's own app: anyone can create a Kamino market with
-arbitrary tokens and prices.
+`listed=true` keeps markets listed in the protocol's own app (Kamino's listed markets, marginfi's main
+group): anyone can create a market with arbitrary tokens and prices. `protocol=kamino` or
+`protocol=marginfi` narrows to one protocol.
 
 ## Project structure
 
 ```
-indexer/   TypeScript: reads Solana (Kamino reserves, Scope prices), runs the checks, writes to PostgreSQL
+indexer/   TypeScript: reads Solana (Kamino reserves and Scope prices, marginfi banks and Pyth prices),
+           runs the checks, writes to PostgreSQL
 web/       Symfony 8 + API Platform 5: the public API; owns the database schema (Doctrine migrations)
 ```
 

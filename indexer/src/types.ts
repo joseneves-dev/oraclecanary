@@ -24,6 +24,8 @@ export interface MarketOracleConfig {
   };
   /** Kamino only: indices into the Scope price account that make up the price chain. */
   scopeChain: number[];
+  /** marginfi only: the bank's OracleSetup, which says how `feeds` are combined into a price. */
+  oracleSetup: string | null;
   /**
    * Unix timestamp of the last price the protocol stored on the reserve. Protocols only refresh
    * this when someone transacts, so it is not a measure of oracle staleness.
