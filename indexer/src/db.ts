@@ -1,7 +1,7 @@
 import pg from 'pg';
 
 import type { HealthResult } from './health.js';
-import type { MarketOracleConfig } from './types.js';
+import type { MarketOracleConfig, Protocol } from './types.js';
 
 export interface ReserveHealthRow {
   reserve: MarketOracleConfig;
@@ -16,9 +16,22 @@ const COLUMNS = [
 // Rows per INSERT statement; keeps the parameter count well under PostgreSQL's 65535 limit.
 const BATCH_SIZE = 200;
 
-/** Writes the latest health state of each reserve into the table owned by the Symfony app. */
-export async function saveReserveHealth(pool: pg.Pool, rows: ReserveHealthRow[], checkedAt: Date): Promise<void> {
+// Column lengths from the LendingReserve entity; longer on-chain values are cut instead of failing the run.
+const ASSET_LENGTH = 64;
+const MARKET_NAME_LENGTH = 120;
+
+/**
+ * Replaces the stored health of one protocol's reserves with this run's results, in the table owned
+ * by the Symfony app. Reserves missing from `rows` (now obsolete, hidden or gone) are removed so they
+ * cannot keep showing a stale "healthy" state.
+ */
+export async function saveReserveHealth(pool: pg.Pool, protocol: Protocol, rows: ReserveHealthRow[], checkedAt: Date): Promise<void> {
+  // The column has no time zone and the web app reads it as UTC; passing a Date would make
+  // node-postgres write it in the machine's local time.
+  const checkedAtUtc = checkedAt.toISOString().replace('Z', '');
+
   const client = await pool.connect();
+  let failure: Error | undefined;
   try {
     await client.query('BEGIN');
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {
@@ -26,13 +39,11 @@ export async function saveReserveHealth(pool: pg.Pool, rows: ReserveHealthRow[],
       const values: unknown[] = [];
       const placeholders = batch.map(({ reserve: r, health: h }, row) => {
         values.push(
-          r.reserve, r.protocol, r.market, r.marketName, r.asset.slice(0, 64), r.mint, r.status,
+          r.reserve, r.protocol, r.market, r.marketName?.slice(0, MARKET_NAME_LENGTH) ?? null, r.asset.slice(0, ASSET_LENGTH), r.mint, r.status,
           Number.isFinite(r.totalSupplyUsd) ? r.totalSupplyUsd : 0,
           r.maxAgePriceSeconds, h.priceAgeSeconds, h.score,
           JSON.stringify(h.providers), JSON.stringify(h.checks),
-          // The column has no time zone and the web app reads it as UTC; passing a Date would make
-          // node-postgres write it in the machine's local time.
-          JSON.stringify({ ...r.feeds, scopeChain: r.scopeChain }), checkedAt.toISOString().replace('Z', ''),
+          JSON.stringify({ ...r.feeds, scopeChain: r.scopeChain }), checkedAtUtc,
         );
         const base = row * COLUMNS.length;
         return `(${COLUMNS.map((_, c) => `$${base + c + 1}`).join(', ')})`;
@@ -44,11 +55,19 @@ export async function saveReserveHealth(pool: pg.Pool, rows: ReserveHealthRow[],
         values,
       );
     }
+    // An empty result more likely means a failed read than a protocol with no reserves; keep the old rows.
+    if (rows.length) {
+      await client.query('DELETE FROM lending_reserve WHERE protocol = $1 AND checked_at < $2', [protocol, checkedAtUtc]);
+    }
     await client.query('COMMIT');
   } catch (e) {
-    await client.query('ROLLBACK');
+    failure = e as Error;
+    await client.query('ROLLBACK').catch(() => {
+      // The connection itself is broken; the original error is the one worth reporting.
+    });
     throw e;
   } finally {
-    client.release();
+    // Passing the error discards a possibly broken connection instead of returning it to the pool.
+    client.release(failure);
   }
 }

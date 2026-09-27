@@ -65,12 +65,18 @@ interface Dependency {
 
 const leafKey = (e: ScopeEntry) => `${e.type}:${e.source ?? e.index}`;
 
+/** Whether `parent` would still use `source`, given the parent's own limit on source age. */
+function isFresh(source: ScopeEntry | undefined, parent: ScopeEntry, now: number): boolean {
+  if (!source || !parent.sourcesMaxAgeS) return true;
+  return now - source.unixTimestamp <= parent.sourcesMaxAgeS;
+}
+
 /**
  * Walks a Scope entry: multiplied sources (`all`) are each required, fallback sources (`any`)
  * only fail together. Bounds (caps and floors) limit the price but are not part of producing it.
  * Structural leaves (a peg, a staking rate) are not oracles, so they are never a point of failure.
  */
-function dependency(feed: ScopeFeed, index: number, missing: Set<number>, path = new Set<number>()): Dependency {
+function dependency(feed: ScopeFeed, index: number, now: number, missing: Set<number>, path = new Set<number>()): Dependency {
   const entry = feed.entries.get(index);
   if (!entry) {
     missing.add(index);
@@ -83,7 +89,7 @@ function dependency(feed: ScopeFeed, index: number, missing: Set<number>, path =
   }
 
   const inner = new Set(path).add(index);
-  const parts = entry.sources.map((i) => dependency(feed, i, missing, inner));
+  const parts = entry.sources.map((i) => dependency(feed, i, now, missing, inner));
 
   if (entry.combine === 'all') {
     return {
@@ -92,7 +98,8 @@ function dependency(feed: ScopeFeed, index: number, missing: Set<number>, path =
     };
   }
 
-  const working = parts.filter((p) => !p.broken);
+  // Scope skips sources older than its own limit, so a frozen source is not a live alternative.
+  const working = parts.filter((p, k) => !p.broken && isFresh(feed.entries.get(entry.sources[k]), entry, now));
   if (!working.length) return { broken: true, singlePoints: new Map() };
   const [first, ...rest] = working;
   const shared = [...first.singlePoints].filter(([key]) => rest.every((p) => p.singlePoints.has(key)));
@@ -110,7 +117,7 @@ function evaluateScope(reserve: MarketOracleConfig, feed: ScopeFeed, now: number
   const top = reserve.scopeChain.map((i) => feed.entries.get(i)).filter((e): e is ScopeEntry => !!e);
   const missing = new Set<number>();
   // The reserve's own chain multiplies its entries, so each one is required.
-  const parts = reserve.scopeChain.map((i) => dependency(feed, i, missing));
+  const parts = reserve.scopeChain.map((i) => dependency(feed, i, now, missing));
   const singlePoints = new Map(parts.flatMap((p) => [...p.singlePoints]));
 
   for (const index of missing) {
@@ -166,7 +173,9 @@ function evaluateScope(reserve: MarketOracleConfig, feed: ScopeFeed, now: number
     if (!entry) return;
     if (entry.maxDivergenceBps) {
       // Only the alternative sources are compared; a cap is a limit, not a competing price.
-      const sources = entry.sources.map((i) => feed.entries.get(i)).filter((e): e is ScopeEntry => !!e);
+      const sources = entry.sources
+        .map((i) => feed.entries.get(i))
+        .filter((e): e is ScopeEntry => !!e && isFresh(e, entry, now));
       const spread = spreadBps(sources);
       if (spread > entry.maxDivergenceBps * DIVERGENCE_WARNING_RATIO) {
         checks.push({

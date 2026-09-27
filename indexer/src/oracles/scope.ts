@@ -40,6 +40,8 @@ export interface ScopeEntry {
   dependsOn: number[];
   /** For fallback types (MostRecentOf): the maximum allowed divergence between sources, in bps. */
   maxDivergenceBps: number | null;
+  /** Sources older than this many seconds are ignored by Scope when computing this entry. */
+  sourcesMaxAgeS: number | null;
 }
 
 export interface ScopeFeed {
@@ -52,32 +54,49 @@ const UNSET = PublicKey.default.toBase58();
 // Scope marks "no reference price" with the max u16 value.
 const NO_REF_PRICE = 65535;
 
-type Composite = Pick<ScopeEntry, 'combine' | 'sources' | 'bounds' | 'maxDivergenceBps'>;
+type Composite = Pick<ScopeEntry, 'combine' | 'sources' | 'bounds' | 'maxDivergenceBps' | 'sourcesMaxAgeS'>;
 
-/** Reads how a composite entry is computed from other entries, using Scope's own parameter layouts. */
-function parseComposite(type: string, generic: Uint8Array, entryCount: number): Composite {
+const TWAP_TYPES = new Set(['ScopeTwap1h', 'ScopeTwap8h', 'ScopeTwap24h', 'ScopeTwap7d']);
+
+const LEAF: Composite = { combine: null, sources: [], bounds: [], maxDivergenceBps: null, sourcesMaxAgeS: null };
+
+/**
+ * Reads how a composite entry is computed from other entries, using Scope's own parameter layouts.
+ * `twapSource` is the mapping's twap/ref-price field, which holds the source entry for TWAP types.
+ */
+function parseComposite(type: string, generic: Uint8Array, twapSource: number, entryCount: number): Composite {
   const valid = (i: number) => i < entryCount; // unused source slots hold an out-of-range index
+  if (TWAP_TYPES.has(type)) return { ...LEAF, combine: 'all', sources: [twapSource].filter(valid) };
+
   switch (type) {
     case 'MostRecentOf': {
       const d = getMostRecentOfDataDecoder().decode(generic);
-      return { combine: 'any', sources: d.sourceEntries.filter(valid), bounds: [], maxDivergenceBps: d.maxDivergenceBps };
+      return { ...LEAF, combine: 'any', sources: d.sourceEntries.filter(valid), maxDivergenceBps: d.maxDivergenceBps, sourcesMaxAgeS: Number(d.sourcesMaxAgeS) };
     }
     case 'CappedMostRecentOf': {
       const d = getCappedMostRecentOfDataDecoder().decode(generic);
-      return { combine: 'any', sources: d.sourceEntries.filter(valid), bounds: [d.capEntry].filter(valid), maxDivergenceBps: d.maxDivergenceBps };
+      return {
+        combine: 'any',
+        sources: d.sourceEntries.filter(valid),
+        bounds: [d.capEntry].filter(valid),
+        maxDivergenceBps: d.maxDivergenceBps,
+        sourcesMaxAgeS: Number(d.sourcesMaxAgeS),
+      };
     }
     case 'CappedFloored': {
       const d = getCappedFlooredDataDecoder().decode(generic);
       const bounds = [d.capEntry, d.floorEntry].flatMap((o) => (o.__option === 'Some' ? [o.value] : []));
-      return { combine: 'all', sources: [d.sourceEntry].filter(valid), bounds: bounds.filter(valid), maxDivergenceBps: null };
+      return { ...LEAF, combine: 'all', sources: [d.sourceEntry].filter(valid), bounds: bounds.filter(valid) };
     }
-    case 'MultiplicationChain':
-      return { combine: 'all', sources: getMultiplicationChainDataDecoder().decode(generic).sourceEntries.filter(valid), bounds: [], maxDivergenceBps: null };
+    case 'MultiplicationChain': {
+      const d = getMultiplicationChainDataDecoder().decode(generic);
+      return { ...LEAF, combine: 'all', sources: d.sourceEntries.filter(valid), sourcesMaxAgeS: Number(d.sourcesMaxAgeS) };
+    }
     case 'Conditional':
       // The condition picks one of the sources, so each is an alternative.
-      return { combine: 'any', sources: getConditionalDataDecoder().decode(generic).sources.filter(valid), bounds: [], maxDivergenceBps: null };
+      return { ...LEAF, combine: 'any', sources: getConditionalDataDecoder().decode(generic).sources.filter(valid) };
     default:
-      return { combine: null, sources: [], bounds: [], maxDivergenceBps: null };
+      return LEAF;
   }
 }
 
@@ -118,7 +137,12 @@ export async function fetchScopeFeed(connection: Connection, pricesAccount: stri
     if (source === UNSET && dated.unixTimestamp === 0n) return;
 
     const type = OracleType[typeId] ?? `Unknown(${typeId})`;
-    const composite = parseComposite(type, Uint8Array.from(mappings.generic[index]), mappings.priceTypes.length);
+    const composite = parseComposite(
+      type,
+      Uint8Array.from(mappings.generic[index]),
+      mappings.twapSourceOrRefPriceToleranceBps[index],
+      mappings.priceTypes.length,
+    );
     entries.set(index, {
       index,
       type,

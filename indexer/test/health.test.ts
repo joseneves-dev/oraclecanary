@@ -22,12 +22,13 @@ function entry(index: number, type: string, overrides: Partial<ScopeEntry> = {})
     bounds: [],
     dependsOn: [],
     maxDivergenceBps: null,
+    sourcesMaxAgeS: null,
     ...overrides,
   };
 }
 
 /** Fallback entry: the most recent valid source wins. */
-function mostRecentOf(index: number, sources: number[], maxDivergenceBps = 1600, bounds: number[] = []): ScopeEntry {
+function mostRecentOf(index: number, sources: number[], maxDivergenceBps = 1600, bounds: number[] = [], sourcesMaxAgeS: number | null = null): ScopeEntry {
   return entry(index, bounds.length ? 'CappedMostRecentOf' : 'MostRecentOf', {
     source: null,
     combine: 'any',
@@ -35,6 +36,7 @@ function mostRecentOf(index: number, sources: number[], maxDivergenceBps = 1600,
     bounds,
     dependsOn: [...sources, ...bounds],
     maxDivergenceBps,
+    sourcesMaxAgeS,
   });
 }
 
@@ -186,6 +188,23 @@ describe('evaluate', () => {
       const result = evaluate(reserve(), f, NOW);
       assert.deepEqual(codes(result), []);
       assert.equal(result.score, 100);
+    });
+
+    it('does not count a frozen source as a fallback', () => {
+      const f = feed(
+        entry(1, 'SwitchboardOnDemand', { price: 80, unixTimestamp: NOW - 86_400 }),
+        entry(2, 'PythLazer', { price: 100 }),
+        mostRecentOf(3, [1, 2], 500, [], 3600),
+      );
+      const result = evaluate(reserve(), f, NOW);
+      assert.ok(codes(result).includes('NO_FALLBACK:warning'), 'only PythLazer is live');
+      assert.ok(!codes(result).some((c) => c.startsWith('SOURCES_DIVERGE')), 'the frozen price is not compared');
+    });
+
+    it('follows a TWAP entry to the oracle it averages', () => {
+      const twap = entry(5, 'ScopeTwap1h', { source: null, combine: 'all', sources: [1], dependsOn: [1] });
+      const result = evaluate(reserve({ scopeChain: [5] }), feed(entry(1, 'SwitchboardOnDemand'), twap), NOW);
+      assert.ok(codes(result).includes('DEPRECATED_PROVIDER:critical'));
     });
 
     it('flags a missing entry deep inside the price graph', () => {
