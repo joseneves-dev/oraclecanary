@@ -61,7 +61,7 @@ final class ReserveApiTest extends ApiTestCase
         self::assertSame(35, $data['score']);
         self::assertSame(['address' => 'market', 'name' => 'Main Market'], $data['market']);
         self::assertSame(['code' => 'STALE', 'severity' => 'critical', 'message' => 'Price is 159998s old.'], $data['checks'][0]);
-        self::assertSame(['scopePrices' => 'prices', 'scopeChain' => [3]], $data['oracleAccounts']);
+        self::assertSame(['scopePrices' => 'prices', 'scopeChain' => [3], 'pyth' => null, 'switchboard' => null], $data['oracleAccounts']);
     }
 
     public function testSummarisesSeverityAndPriceFreshness(): void

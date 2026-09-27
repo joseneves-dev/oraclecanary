@@ -56,6 +56,8 @@ use Symfony\Component\ObjectMapper\Attribute\Map;
         new Get(),
     ],
     order: ['score' => 'ASC', 'totalSupplyUsd' => 'DESC'],
+    // Every field is always present (null when unknown) so clients can rely on the shape.
+    normalizationContext: ['skip_null_values' => false],
     paginationClientItemsPerPage: true,
     paginationItemsPerPage: 50,
     paginationMaximumItemsPerPage: 500,
