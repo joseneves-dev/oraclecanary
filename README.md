@@ -65,13 +65,12 @@ Tests: `cd web && php bin/phpunit` and `cd indexer && npm test`.
 
 ## Production
 
-- Set `APP_ENV=prod` and a random `APP_SECRET` in the environment (or `.env.local`). The committed
-  `.env` defaults to `dev`, which enables the debug profiler.
-- Set `DATABASE_URL` for both `web` and `indexer`, and `RPC_URL` for the indexer. The public Solana
-  RPC rate-limits `getProgramAccounts`; use a dedicated RPC provider.
-- Run `php bin/console doctrine:migrations:migrate` on deploy, and keep `npm run dev` (the indexer
-  loop) running as a service.
-- API responses are cacheable for 30s (`s-maxage=60`), so a CDN can serve most traffic.
+[deploy/](deploy/README.md) runs everything on one server with Docker Compose: PostgreSQL, the API
+and web app behind Caddy with automatic HTTPS, the indexer, and daily backups. `GET /health`
+returns 503 when the data stops refreshing, for uptime monitors.
+
+The public Solana RPC rate-limits `getProgramAccounts`, so production needs a dedicated RPC
+provider. API responses are cacheable for 30s (`s-maxage=60`), so a CDN can serve most traffic.
 
 ## License
 

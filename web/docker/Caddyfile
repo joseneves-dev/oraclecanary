@@ -1,0 +1,35 @@
+# Production web server: the Symfony API under /api and /health, and the built web app for
+# every other path. SERVER_NAME is the public domain (Caddy then gets a TLS certificate) or a
+# plain port such as ":80" for local testing.
+{
+	skip_install_trust
+	frankenphp
+}
+
+{$SERVER_NAME::80} {
+	encode zstd br gzip
+
+	@symfony path /api /api/* /health /bundles/*
+	handle @symfony {
+		root * /app/public
+		php_server
+	}
+
+	# Build output with content hashes in the file names never changes, so caches may keep it. A
+	# missing asset must be a 404, not index.html, or a CDN could cache HTML as a script.
+	handle /assets/* {
+		root * /srv/ui
+		@exists file
+		header @exists Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# The web app is a single-page app: unknown paths get index.html and are routed in the browser.
+	# index.html is always revalidated so a deploy is picked up at once.
+	handle {
+		root * /srv/ui
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
