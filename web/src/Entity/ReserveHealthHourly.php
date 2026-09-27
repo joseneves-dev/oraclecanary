@@ -12,14 +12,19 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity]
 #[ORM\Index(name: 'idx_reserve_health_hourly_protocol', columns: ['protocol', 'hour'])]
+#[ORM\UniqueConstraint(name: 'uniq_reserve_health_hourly_sample', columns: ['address', 'hour'])]
 class ReserveHealthHourly
 {
+    // Doctrine cannot use a date in an identifier, so (address, hour) is a unique key instead.
     #[ORM\Id]
+    #[ORM\GeneratedValue]
+    #[ORM\Column(type: Types::BIGINT)]
+    private ?string $id = null;
+
     #[ORM\Column(length: 44)]
     private string $address;
 
     /** Start of the hour, in UTC. */
-    #[ORM\Id]
     #[ORM\Column]
     private \DateTimeImmutable $hour;
 

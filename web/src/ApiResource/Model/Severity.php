@@ -34,7 +34,7 @@ enum Severity: string
         return $worst;
     }
 
-    private function rank(): int
+    public function rank(): int
     {
         return match ($this) {
             self::Ok => 0,
