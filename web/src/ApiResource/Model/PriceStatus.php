@@ -9,13 +9,15 @@ final readonly class PriceStatus
         public ?int $ageSeconds,
         /** The protocol's own limit: older prices are rejected. */
         public int $maxAgeSeconds,
-        /** True when the price is older than the protocol accepts. */
-        public bool $isStale,
+        /** True when the price is older than the protocol accepts; null when the age is unknown. */
+        public ?bool $isStale,
     ) {
     }
 
     public static function from(?int $ageSeconds, int $maxAgeSeconds): self
     {
-        return new self($ageSeconds, $maxAgeSeconds, null !== $ageSeconds && $maxAgeSeconds > 0 && $ageSeconds > $maxAgeSeconds);
+        $isStale = null === $ageSeconds || $maxAgeSeconds <= 0 ? null : $ageSeconds > $maxAgeSeconds;
+
+        return new self($ageSeconds, $maxAgeSeconds, $isStale);
     }
 }

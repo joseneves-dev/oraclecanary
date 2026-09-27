@@ -109,6 +109,54 @@ final class ReserveApiTest extends ApiTestCase
         self::assertFalse($sol['price']['isStale']);
     }
 
+    public function testMalformedStoredChecksNeitherBreakTheListNorLookHealthy(): void
+    {
+        $this->insertReserve('reserve-bad', 'BAD', score: 100, supplyUsd: 1, checks: [
+            ['code' => 'NEW_CHECK', 'severity' => 'catastrophic', 'message' => 'Unknown severity'],
+            ['code' => 'NO_MESSAGE', 'severity' => 'info'],
+            'not an object',
+        ]);
+        self::getContainer()->get(Connection::class)->update('lending_reserve', ['feeds' => json_encode(['scope' => 42, 'scopeChain' => '3'])], ['address' => 'reserve-bad']);
+
+        $client = static::createClient();
+        $client->request('GET', '/api/reserves', ['headers' => ['Accept' => 'application/json']]);
+        self::assertResponseIsSuccessful();
+
+        $data = $client->request('GET', '/api/reserves/reserve-bad', ['headers' => ['Accept' => 'application/json']])->toArray();
+        self::assertSame('warning', $data['severity'], 'an unknown severity must not read as healthy');
+        self::assertSame(['NEW_CHECK', 'NO_MESSAGE', 'UNKNOWN'], array_column($data['checks'], 'code'));
+        self::assertSame(['scopePrices' => null, 'scopeChain' => [], 'pyth' => null, 'switchboard' => null], $data['oracleAccounts']);
+    }
+
+    public function testReportsUnknownPriceAgeAsUnknownStaleness(): void
+    {
+        self::getContainer()->get(Connection::class)->update('lending_reserve', ['price_age_seconds' => null], ['address' => 'reserve-sol']);
+
+        $data = static::createClient()->request('GET', '/api/reserves/reserve-sol', ['headers' => ['Accept' => 'application/json']])->toArray();
+
+        self::assertSame(['ageSeconds' => null, 'maxAgeSeconds' => 120, 'isStale' => null], $data['price']);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function invalidFilters(): iterable
+    {
+        yield 'non-numeric score' => ['score[lt]=abc'];
+        yield 'score out of range' => ['score[gt]=1000'];
+        yield 'score without operator' => ['score=35'];
+        yield 'overflowing supply' => ['totalSupplyUsd[gte]=1e999'];
+        yield 'nested asset array' => ['asset[][]=x'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidFilters')]
+    public function testRejectsInvalidFiltersWithAClientError(string $query): void
+    {
+        static::createClient()->request('GET', "/api/reserves?$query", ['headers' => ['Accept' => 'application/json']]);
+
+        self::assertResponseStatusCodeSame(422);
+    }
+
     public function testDoesNotExposeStorageOnlyFields(): void
     {
         $data = static::createClient()->request('GET', '/api/reserves/reserve-sol', ['headers' => ['Accept' => 'application/json']])->toArray();

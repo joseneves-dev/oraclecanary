@@ -10,13 +10,22 @@ enum Severity: string
     case Critical = 'critical';
 
     /**
-     * @param list<string> $severities
+     * Reads a severity stored by the indexer. An unknown value means something is wrong, so it is
+     * reported as a warning rather than silently as healthy.
+     */
+    public static function fromStored(mixed $value): self
+    {
+        return \is_string($value) ? (self::tryFrom($value) ?? self::Warning) : self::Warning;
+    }
+
+    /**
+     * @param list<mixed> $severities
      */
     public static function worstOf(array $severities): self
     {
         $worst = self::Ok;
         foreach ($severities as $value) {
-            $severity = self::tryFrom($value) ?? self::Ok;
+            $severity = self::fromStored($value);
             if ($severity->rank() > $worst->rank()) {
                 $worst = $severity;
             }

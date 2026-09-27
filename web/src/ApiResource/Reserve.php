@@ -20,6 +20,7 @@ use App\ApiResource\Model\Severity;
 use App\Entity\LendingReserve;
 use App\Filter\NotNullFilter;
 use Symfony\Component\ObjectMapper\Attribute\Map;
+use Symfony\Component\Validator\Constraints as Assert;
 
 /**
  * Public API view of a lending reserve's oracle health.
@@ -36,17 +37,25 @@ use Symfony\Component\ObjectMapper\Attribute\Map;
             parameters: [
                 'protocol' => new QueryParameter(filter: new ExactFilter(), description: 'e.g. kamino'),
                 'market' => new QueryParameter(filter: new ExactFilter(), description: 'Lending market address'),
-                'marketName' => new QueryParameter(filter: new PartialSearchFilter(), description: 'Part of the market name'),
+                'marketName' => new QueryParameter(filter: new PartialSearchFilter(), description: 'Part of the market name', constraints: [new Assert\Type('string')]),
                 'listed' => new QueryParameter(
                     filter: new NotNullFilter(),
                     property: 'marketName',
                     schema: ['type' => 'boolean'],
                     description: 'true: only markets listed in the protocol\'s own app. Unlisted (permissionless) markets can hold tokens with arbitrary prices.',
                 ),
-                'asset' => new QueryParameter(filter: new PartialSearchFilter(), description: 'Part of the asset symbol'),
+                'asset' => new QueryParameter(filter: new PartialSearchFilter(), description: 'Part of the asset symbol', constraints: [new Assert\Type('string')]),
                 'status' => new QueryParameter(filter: new ExactFilter(), description: 'active, obsolete or hidden'),
-                'score' => new QueryParameter(filter: new ComparisonFilter(new ExactFilter()), description: 'e.g. score[lt]=50'),
-                'totalSupplyUsd' => new QueryParameter(filter: new ComparisonFilter(new ExactFilter()), description: 'e.g. totalSupplyUsd[gte]=100000'),
+                'score' => new QueryParameter(
+                    filter: new ComparisonFilter(new ExactFilter()),
+                    description: 'Compare with gt, gte, lt, lte, e.g. score[lt]=50',
+                    constraints: [new Assert\Type('array'), new Assert\All([new Assert\Type('numeric'), new Assert\Range(min: 0, max: 100)])],
+                ),
+                'totalSupplyUsd' => new QueryParameter(
+                    filter: new ComparisonFilter(new ExactFilter()),
+                    description: 'Compare with gt, gte, lt, lte, e.g. totalSupplyUsd[gte]=100000',
+                    constraints: [new Assert\Type('array'), new Assert\All([new Assert\Type('numeric'), new Assert\Range(min: 0, max: 1e15)])],
+                ),
                 'order[score]' => new QueryParameter(filter: new SortFilter(), property: 'score'),
                 'order[totalSupplyUsd]' => new QueryParameter(filter: new SortFilter(), property: 'totalSupplyUsd'),
                 'order[priceAgeSeconds]' => new QueryParameter(filter: new SortFilter(), property: 'priceAgeSeconds'),
@@ -120,7 +129,7 @@ final class Reserve
 
     public static function toSeverity(array $checks): Severity
     {
-        return Severity::worstOf(array_column($checks, 'severity'));
+        return Severity::worstOf(array_map(static fn (HealthCheck $check) => $check->severity->value, self::toChecks($checks)));
     }
 
     public static function toPrice(?int $ageSeconds, LendingReserve $source): PriceStatus
@@ -131,6 +140,6 @@ final class Reserve
     /** @return list<HealthCheck> */
     public static function toChecks(array $checks): array
     {
-        return array_map(HealthCheck::fromArray(...), $checks);
+        return array_values(array_map(HealthCheck::fromArray(...), $checks));
     }
 }

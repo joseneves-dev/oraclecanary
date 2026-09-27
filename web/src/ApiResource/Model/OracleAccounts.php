@@ -20,10 +20,14 @@ final readonly class OracleAccounts
     }
 
     /**
-     * @param array{scope?: ?string, scopeChain?: list<int>, pyth?: ?string, switchboard?: ?string} $feeds
+     * Builds the accounts from the JSON the indexer stored, ignoring values of the wrong type.
      */
-    public static function fromArray(array $feeds): self
+    public static function fromArray(mixed $feeds): self
     {
-        return new self($feeds['scope'] ?? null, $feeds['scopeChain'] ?? [], $feeds['pyth'] ?? null, $feeds['switchboard'] ?? null);
+        $feeds = \is_array($feeds) ? $feeds : [];
+        $address = static fn (mixed $value): ?string => \is_string($value) ? $value : null;
+        $chain = \is_array($feeds['scopeChain'] ?? null) ? array_values(array_filter($feeds['scopeChain'], 'is_int')) : [];
+
+        return new self($address($feeds['scope'] ?? null), $chain, $address($feeds['pyth'] ?? null), $address($feeds['switchboard'] ?? null));
     }
 }
