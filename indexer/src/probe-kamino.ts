@@ -1,5 +1,4 @@
-// Day 1 probe: list Kamino reserves and the oracle feeds each one is configured with.
-// Run: npx tsx src/probe-kamino.ts
+// Lists Kamino reserves and the oracle feeds each one is configured with.
 import 'dotenv/config';
 import { Connection } from '@solana/web3.js';
 
