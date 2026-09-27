@@ -115,14 +115,14 @@ async function runCheck(): Promise<boolean> {
     const started = Date.now();
     try {
       const rows = await check();
-      await saveReserveHealth(pool, protocol, rows, new Date(nowSeconds() * 1000));
+      const changes = await saveReserveHealth(pool, protocol, rows, new Date(nowSeconds() * 1000));
 
       const listed = rows.filter((r) => r.reserve.marketName);
       const critical = listed.filter((r) => r.health.checks.some((c) => c.severity === 'critical')).length;
       const warning = listed.filter((r) => r.health.checks.some((c) => c.severity === 'warning')).length;
       console.log(
         `${new Date().toISOString()} ${protocol}: checked ${rows.length} reserves (${listed.length} in listed markets: ` +
-          `${critical} critical, ${warning} warning) in ${((Date.now() - started) / 1000).toFixed(1)}s`,
+          `${critical} critical, ${warning} warning), ${changes.length} changed, in ${((Date.now() - started) / 1000).toFixed(1)}s`,
       );
     } catch (e) {
       allSucceeded = false;
