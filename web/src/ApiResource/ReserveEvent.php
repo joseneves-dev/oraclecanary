@@ -23,7 +23,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  * Public API view of a change in a reserve's oracle health, e.g. its price went stale or recovered.
  */
 #[ApiResource(
-    shortName: 'HealthEvent',
+    shortName: 'ReserveEvent',
     description: 'A change in the failed checks of a lending reserve, recorded when a check starts or stops failing. "Near stale" alone is not a change.',
     operations: [
         new GetCollection(
@@ -76,7 +76,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     stateOptions: new Options(entityClass: ReserveHealthEvent::class),
 )]
 #[Map(source: ReserveHealthEvent::class)]
-final class HealthEvent
+final class ReserveEvent
 {
     #[ApiProperty(identifier: true)]
     public string $id;

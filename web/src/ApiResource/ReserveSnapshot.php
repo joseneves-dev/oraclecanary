@@ -19,7 +19,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  * Public API view of one hourly sample of a reserve's oracle health, for history charts.
  */
 #[ApiResource(
-    shortName: 'HealthSample',
+    shortName: 'ReserveSnapshot',
     description: 'A reserve\'s health at the start of an hour. Recorded for reserves in listed markets.',
     operations: [
         new GetCollection(
@@ -53,7 +53,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     stateOptions: new Options(entityClass: ReserveHealthHourly::class),
 )]
 #[Map(source: ReserveHealthHourly::class)]
-final class HealthSample
+final class ReserveSnapshot
 {
     public string $address;
 
