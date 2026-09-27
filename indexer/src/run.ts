@@ -1,4 +1,8 @@
 import 'dotenv/config';
+import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { Connection, PublicKey } from '@solana/web3.js';
 import pg from 'pg';
 
@@ -29,6 +33,20 @@ const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 pool.on('error', (e) => console.error('Database connection error:', e.message));
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+/**
+ * Written after every run in which all protocols were saved; the container health check fails when
+ * it gets old, so a stuck or failing loop shows up as "unhealthy".
+ */
+const HEARTBEAT_FILE = process.env.HEARTBEAT_FILE ?? join(tmpdir(), 'oraclecanary-indexer.heartbeat');
+
+async function writeHeartbeat(): Promise<void> {
+  try {
+    await writeFile(HEARTBEAT_FILE, new Date().toISOString());
+  } catch (e) {
+    console.warn(`Could not write the heartbeat file: ${(e as Error).message}`);
+  }
+}
 
 async function checkKamino(): Promise<ReserveHealthRow[]> {
   const reserves = (await fetchKaminoReserves(connection)).filter((r) => r.status === 'active');
@@ -116,6 +134,7 @@ async function runCheck(): Promise<boolean> {
 
 do {
   const ok = await runCheck();
+  if (ok) await writeHeartbeat();
   if (!ok && RUN_ONCE) process.exitCode = 1;
   if (!RUN_ONCE) await new Promise((resolve) => setTimeout(resolve, INTERVAL_SECONDS * 1000));
 } while (!RUN_ONCE);
