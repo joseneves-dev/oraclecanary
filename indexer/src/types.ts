@@ -5,6 +5,8 @@ export interface MarketOracleConfig {
   protocol: Protocol;
   /** Lending market (group) the reserve belongs to. */
   market: string;
+  /** Name shown by the protocol's own app; null for unlisted (permissionless) markets. */
+  marketName: string | null;
   /** Reserve / bank account address. */
   reserve: string;
   /** Human-readable asset name as configured by the protocol, e.g. "SOL". */
@@ -22,6 +24,11 @@ export interface MarketOracleConfig {
   };
   /** Kamino only: indices into the Scope price account that make up the price chain. */
   scopeChain: number[];
-  /** Unix timestamp of the last price the protocol itself stored on the reserve. */
+  /**
+   * Unix timestamp of the last price the protocol stored on the reserve. Protocols only refresh
+   * this when someone transacts, so it is not a measure of oracle staleness.
+   */
   lastPriceUpdateTs: number;
+  /** Deposited value (available + borrowed) at the protocol's last stored price, in USD. */
+  totalSupplyUsd: number;
 }
