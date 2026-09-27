@@ -4,8 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "tsx src/run.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "dev": "tsx src/run.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "check": "tsx src/run.ts --once"
   },
   "keywords": [],
   "author": "",
