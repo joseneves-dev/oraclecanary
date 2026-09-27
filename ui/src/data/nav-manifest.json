@@ -1,0 +1,48 @@
+{
+  "$schema": "nav-manifest/v1",
+  "meta": {
+    "sections": ["MONITOR", "DEVELOPERS"]
+  },
+  "nodes": [
+    {
+      "id": "overview",
+      "title": "Overview",
+      "slug": "overview",
+      "icon": "layout-dashboard",
+      "parent": null,
+      "section": "MONITOR",
+      "order": 1,
+      "badge": null,
+      "keywords": ["home", "dashboard", "summary", "alerts", "risk"],
+      "inMenu": true,
+      "alias": null
+    },
+    {
+      "id": "reserves",
+      "title": "Reserves",
+      "slug": "reserves",
+      "icon": "table",
+      "parent": null,
+      "section": "MONITOR",
+      "order": 2,
+      "badge": null,
+      "keywords": ["markets", "lending", "kamino", "oracle", "feeds", "health", "score"],
+      "inMenu": true,
+      "alias": null
+    },
+    {
+      "id": "api-docs",
+      "title": "API docs",
+      "slug": "api/docs",
+      "icon": "book",
+      "parent": null,
+      "section": "DEVELOPERS",
+      "order": 3,
+      "badge": null,
+      "keywords": ["api", "openapi", "swagger", "rest", "integration"],
+      "inMenu": true,
+      "alias": null,
+      "external": true
+    }
+  ]
+}
