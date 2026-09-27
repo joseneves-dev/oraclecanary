@@ -30,7 +30,9 @@ export async function saveReserveHealth(pool: pg.Pool, rows: ReserveHealthRow[],
           Number.isFinite(r.totalSupplyUsd) ? r.totalSupplyUsd : 0,
           r.maxAgePriceSeconds, h.priceAgeSeconds, h.score,
           JSON.stringify(h.providers), JSON.stringify(h.checks),
-          JSON.stringify({ ...r.feeds, scopeChain: r.scopeChain }), checkedAt,
+          // The column has no time zone and the web app reads it as UTC; passing a Date would make
+          // node-postgres write it in the machine's local time.
+          JSON.stringify({ ...r.feeds, scopeChain: r.scopeChain }), checkedAt.toISOString().replace('Z', ''),
         );
         const base = row * COLUMNS.length;
         return `(${COLUMNS.map((_, c) => `$${base + c + 1}`).join(', ')})`;
