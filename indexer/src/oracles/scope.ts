@@ -26,7 +26,17 @@ export interface ScopeEntry {
   lastUpdatedSlot: number;
   /** Index of the reference price Scope compares this entry against, if any. */
   refPrice: number | null;
-  /** Other Scope entries this one is computed from (fallbacks, caps, multiplications). */
+  /**
+   * How `sources` produce this entry's price: `all` when every source is needed (multiplied),
+   * `any` when each is an alternative (the most recent valid one wins), null for a leaf that reads
+   * an external account.
+   */
+  combine: 'all' | 'any' | null;
+  /** Entries this price is computed from. */
+  sources: number[];
+  /** Entries that only cap or floor the price; they are neither a price source nor a fallback. */
+  bounds: number[];
+  /** Every entry this one reads: sources and bounds. */
   dependsOn: number[];
   /** For fallback types (MostRecentOf): the maximum allowed divergence between sources, in bps. */
   maxDivergenceBps: number | null;
@@ -42,29 +52,32 @@ const UNSET = PublicKey.default.toBase58();
 // Scope marks "no reference price" with the max u16 value.
 const NO_REF_PRICE = 65535;
 
-/** Reads which other entries a composite entry is computed from, using Scope's own parameter layouts. */
-function parseComposite(type: string, generic: Uint8Array, entryCount: number) {
+type Composite = Pick<ScopeEntry, 'combine' | 'sources' | 'bounds' | 'maxDivergenceBps'>;
+
+/** Reads how a composite entry is computed from other entries, using Scope's own parameter layouts. */
+function parseComposite(type: string, generic: Uint8Array, entryCount: number): Composite {
   const valid = (i: number) => i < entryCount; // unused source slots hold an out-of-range index
   switch (type) {
     case 'MostRecentOf': {
       const d = getMostRecentOfDataDecoder().decode(generic);
-      return { dependsOn: d.sourceEntries.filter(valid), maxDivergenceBps: d.maxDivergenceBps };
+      return { combine: 'any', sources: d.sourceEntries.filter(valid), bounds: [], maxDivergenceBps: d.maxDivergenceBps };
     }
     case 'CappedMostRecentOf': {
       const d = getCappedMostRecentOfDataDecoder().decode(generic);
-      return { dependsOn: [...d.sourceEntries, d.capEntry].filter(valid), maxDivergenceBps: d.maxDivergenceBps };
+      return { combine: 'any', sources: d.sourceEntries.filter(valid), bounds: [d.capEntry].filter(valid), maxDivergenceBps: d.maxDivergenceBps };
     }
     case 'CappedFloored': {
       const d = getCappedFlooredDataDecoder().decode(generic);
-      const optional = [d.capEntry, d.floorEntry].flatMap((o) => (o.__option === 'Some' ? [o.value] : []));
-      return { dependsOn: [d.sourceEntry, ...optional].filter(valid), maxDivergenceBps: null };
+      const bounds = [d.capEntry, d.floorEntry].flatMap((o) => (o.__option === 'Some' ? [o.value] : []));
+      return { combine: 'all', sources: [d.sourceEntry].filter(valid), bounds: bounds.filter(valid), maxDivergenceBps: null };
     }
     case 'MultiplicationChain':
-      return { dependsOn: getMultiplicationChainDataDecoder().decode(generic).sourceEntries.filter(valid), maxDivergenceBps: null };
+      return { combine: 'all', sources: getMultiplicationChainDataDecoder().decode(generic).sourceEntries.filter(valid), bounds: [], maxDivergenceBps: null };
     case 'Conditional':
-      return { dependsOn: getConditionalDataDecoder().decode(generic).sources.filter(valid), maxDivergenceBps: null };
+      // The condition picks one of the sources, so each is an alternative.
+      return { combine: 'any', sources: getConditionalDataDecoder().decode(generic).sources.filter(valid), bounds: [], maxDivergenceBps: null };
     default:
-      return { dependsOn: [], maxDivergenceBps: null };
+      return { combine: null, sources: [], bounds: [], maxDivergenceBps: null };
   }
 }
 
@@ -105,6 +118,7 @@ export async function fetchScopeFeed(connection: Connection, pricesAccount: stri
     if (source === UNSET && dated.unixTimestamp === 0n) return;
 
     const type = OracleType[typeId] ?? `Unknown(${typeId})`;
+    const composite = parseComposite(type, Uint8Array.from(mappings.generic[index]), mappings.priceTypes.length);
     entries.set(index, {
       index,
       type,
@@ -113,7 +127,8 @@ export async function fetchScopeFeed(connection: Connection, pricesAccount: stri
       unixTimestamp: Number(dated.unixTimestamp),
       lastUpdatedSlot: Number(dated.lastUpdatedSlot),
       refPrice: mappings.refPrice[index] === NO_REF_PRICE ? null : mappings.refPrice[index],
-      ...parseComposite(type, Uint8Array.from(mappings.generic[index]), mappings.priceTypes.length),
+      ...composite,
+      dependsOn: [...composite.sources, ...composite.bounds],
     });
   });
 

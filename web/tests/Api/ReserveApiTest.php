@@ -39,6 +39,37 @@ final class ReserveApiTest extends ApiTestCase
         self::assertSame(['ALP', 'FWDI'], array_column($response->toArray(), 'asset'));
     }
 
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function sortOrders(): iterable
+    {
+        yield 'default order' => [''];
+        yield 'score' => ['&order[score]=desc'];
+        yield 'supply' => ['&order[totalSupplyUsd]=asc'];
+        yield 'price age' => ['&order[priceAgeSeconds]=asc'];
+        yield 'asset' => ['&order[asset]=asc'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('sortOrders')]
+    public function testPagesNeitherSkipNorRepeatReservesWithTiedSortValues(string $order): void
+    {
+        // Seven reserves with identical score, supply, price age and asset: only the address differs.
+        for ($i = 0; $i < 7; ++$i) {
+            $this->insertReserve("reserve-tie-$i", 'TIE', score: 100, supplyUsd: 0);
+        }
+        $client = static::createClient();
+
+        $seen = [];
+        for ($page = 1; $page <= 5; ++$page) {
+            $rows = $client->request('GET', "/api/reserves?itemsPerPage=2&page=$page$order", ['headers' => ['Accept' => 'application/json']])->toArray();
+            array_push($seen, ...array_column($rows, 'address'));
+        }
+
+        self::assertCount(10, $seen);
+        self::assertCount(10, array_unique($seen), 'a reserve appeared on two pages');
+    }
+
     public function testFiltersListedMarkets(): void
     {
         $this->insertReserve('reserve-junk', 'JUNK', score: 100, supplyUsd: 2e12, marketName: null);

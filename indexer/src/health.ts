@@ -5,7 +5,16 @@ import type { MarketOracleConfig } from './types.js';
 export type Severity = 'critical' | 'warning' | 'info';
 
 export interface Check {
-  code: 'STALE' | 'NEAR_STALE' | 'DEPRECATED_PROVIDER' | 'NO_FALLBACK' | 'EMPTY_PRICE_ENTRY' | 'SOURCES_DIVERGE' | 'FIXED_PRICE' | 'UNREADABLE_ORACLE';
+  code:
+    | 'STALE'
+    | 'NEAR_STALE'
+    | 'DEPRECATED_PROVIDER'
+    | 'NO_FALLBACK'
+    | 'NO_ORACLE'
+    | 'EMPTY_PRICE_ENTRY'
+    | 'SOURCES_DIVERGE'
+    | 'FIXED_PRICE'
+    | 'UNREADABLE_ORACLE';
   severity: Severity;
   message: string;
 }
@@ -46,15 +55,66 @@ function spreadBps(entries: ScopeEntry[]): number {
   return ((Math.max(...prices) - min) / min) * 10_000;
 }
 
+/** Result of asking "which single oracle, if it stopped, would break this price?". */
+interface Dependency {
+  /** The price cannot be produced at all (a required entry is missing or the graph loops). */
+  broken: boolean;
+  /** Market-price leaves whose failure alone breaks the price, keyed by type and source account. */
+  singlePoints: Map<string, ScopeEntry>;
+}
+
+const leafKey = (e: ScopeEntry) => `${e.type}:${e.source ?? e.index}`;
+
+/**
+ * Walks a Scope entry: multiplied sources (`all`) are each required, fallback sources (`any`)
+ * only fail together. Bounds (caps and floors) limit the price but are not part of producing it.
+ * Structural leaves (a peg, a staking rate) are not oracles, so they are never a point of failure.
+ */
+function dependency(feed: ScopeFeed, index: number, missing: Set<number>, path = new Set<number>()): Dependency {
+  const entry = feed.entries.get(index);
+  if (!entry) {
+    missing.add(index);
+    return { broken: true, singlePoints: new Map() };
+  }
+  if (path.has(index)) return { broken: true, singlePoints: new Map() };
+
+  if (!entry.combine) {
+    return { broken: false, singlePoints: NON_MARKET_SOURCES.has(entry.type) ? new Map() : new Map([[leafKey(entry), entry]]) };
+  }
+
+  const inner = new Set(path).add(index);
+  const parts = entry.sources.map((i) => dependency(feed, i, missing, inner));
+
+  if (entry.combine === 'all') {
+    return {
+      broken: parts.length === 0 || parts.some((p) => p.broken),
+      singlePoints: new Map(parts.flatMap((p) => [...p.singlePoints])),
+    };
+  }
+
+  const working = parts.filter((p) => !p.broken);
+  if (!working.length) return { broken: true, singlePoints: new Map() };
+  const [first, ...rest] = working;
+  const shared = [...first.singlePoints].filter(([key]) => rest.every((p) => p.singlePoints.has(key)));
+  return { broken: false, singlePoints: new Map(shared) };
+}
+
 /** Checks a reserve whose price comes from a Scope chain. */
 function evaluateScope(reserve: MarketOracleConfig, feed: ScopeFeed, now: number): HealthResult {
   const checks: Check[] = [];
-  const top: ScopeEntry[] = [];
+  if (!reserve.scopeChain.length) {
+    checks.push({ code: 'NO_ORACLE', severity: 'critical', message: 'Scope is configured but the price chain is empty, so the reserve has no price source.' });
+    return { score: score(checks), checks, providers: [], priceAgeSeconds: null };
+  }
 
-  for (const index of reserve.scopeChain) {
-    const entry = feed.entries.get(index);
-    if (entry) top.push(entry);
-    else checks.push({ code: 'EMPTY_PRICE_ENTRY', severity: 'critical', message: `Price chain points at Scope entry ${index}, which is not configured.` });
+  const top = reserve.scopeChain.map((i) => feed.entries.get(i)).filter((e): e is ScopeEntry => !!e);
+  const missing = new Set<number>();
+  // The reserve's own chain multiplies its entries, so each one is required.
+  const parts = reserve.scopeChain.map((i) => dependency(feed, i, missing));
+  const singlePoints = new Map(parts.flatMap((p) => [...p.singlePoints]));
+
+  for (const index of missing) {
+    checks.push({ code: 'EMPTY_PRICE_ENTRY', severity: 'critical', message: `Price depends on Scope entry ${index}, which is not configured.` });
   }
 
   const leaves = reserve.scopeChain.flatMap((i) => resolveLeaves(feed, i));
@@ -69,21 +129,34 @@ function evaluateScope(reserve: MarketOracleConfig, feed: ScopeFeed, now: number
     }
   }
 
-  const deprecated = providers.filter((p) => DEPRECATED_PROVIDERS.has(p));
-  if (deprecated.length) {
-    const onlySource = leaves.every((l) => DEPRECATED_PROVIDERS.has(l.type) || NON_MARKET_SOURCES.has(l.type));
+  const typesOf = (entries: Iterable<ScopeEntry>) => [...new Set([...entries].map((e) => e.type))].join(', ');
+
+  const deprecatedSinglePoints = [...singlePoints.values()].filter((e) => DEPRECATED_PROVIDERS.has(e.type));
+  if (deprecatedSinglePoints.length) {
     checks.push({
       code: 'DEPRECATED_PROVIDER',
-      severity: onlySource ? 'critical' : 'warning',
-      message: `Price depends on ${deprecated.join(', ')}, which has shut down${onlySource ? ' and has no other source' : ''}.`,
+      severity: 'critical',
+      message: `Price breaks without ${typesOf(deprecatedSinglePoints)}, which has shut down.`,
+    });
+  } else if (providers.some((p) => DEPRECATED_PROVIDERS.has(p))) {
+    checks.push({
+      code: 'DEPRECATED_PROVIDER',
+      severity: 'warning',
+      message: `Price still reads ${typesOf(leaves.filter((l) => DEPRECATED_PROVIDERS.has(l.type)))}, which has shut down, but has another source.`,
     });
   }
 
-  const marketSources = new Set(leaves.filter((l) => !NON_MARKET_SOURCES.has(l.type)).map((l) => `${l.type}:${l.source}`));
-  if (marketSources.size === 1) {
-    checks.push({ code: 'NO_FALLBACK', severity: 'warning', message: `Price comes from a single oracle (${[...marketSources][0].split(':')[0]}) with no fallback.` });
-  } else if (marketSources.size === 0 && leaves.some((l) => l.type === 'FixedPrice')) {
-    checks.push({ code: 'FIXED_PRICE', severity: 'info', message: 'Price is fixed and does not follow the market.' });
+  const liveSinglePoints = [...singlePoints.values()].filter((e) => !DEPRECATED_PROVIDERS.has(e.type));
+  if (liveSinglePoints.length) {
+    checks.push({ code: 'NO_FALLBACK', severity: 'warning', message: `Price has no fallback for ${typesOf(liveSinglePoints)}: if it stops, the price stops.` });
+  }
+
+  if (!missing.size && !leaves.some((l) => !NON_MARKET_SOURCES.has(l.type))) {
+    if (leaves.some((l) => l.type === 'FixedPrice')) {
+      checks.push({ code: 'FIXED_PRICE', severity: 'info', message: 'Price is fixed and does not follow the market.' });
+    } else if (!leaves.length) {
+      checks.push({ code: 'NO_ORACLE', severity: 'critical', message: 'The price chain reads no oracle.' });
+    }
   }
 
   const visit = (index: number, seen = new Set<number>()) => {
@@ -92,7 +165,8 @@ function evaluateScope(reserve: MarketOracleConfig, feed: ScopeFeed, now: number
     const entry = feed.entries.get(index);
     if (!entry) return;
     if (entry.maxDivergenceBps) {
-      const sources = entry.dependsOn.map((i) => feed.entries.get(i)).filter((e): e is ScopeEntry => !!e);
+      // Only the alternative sources are compared; a cap is a limit, not a competing price.
+      const sources = entry.sources.map((i) => feed.entries.get(i)).filter((e): e is ScopeEntry => !!e);
       const spread = spreadBps(sources);
       if (spread > entry.maxDivergenceBps * DIVERGENCE_WARNING_RATIO) {
         checks.push({
@@ -115,6 +189,10 @@ function evaluateDirect(reserve: MarketOracleConfig): HealthResult {
   const providers: string[] = [];
   if (reserve.feeds.pyth) providers.push('Pyth');
   if (reserve.feeds.switchboard) providers.push('SwitchboardOnDemand');
+
+  if (!providers.length) {
+    checks.push({ code: 'NO_ORACLE', severity: 'critical', message: 'No price oracle is configured for this reserve.' });
+  }
 
   if (reserve.feeds.switchboard) {
     checks.push({

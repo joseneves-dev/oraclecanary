@@ -7,6 +7,7 @@ import type { MarketOracleConfig } from '../src/types.js';
 
 const NOW = 1_800_000_000;
 
+/** A leaf entry that reads an external oracle account. */
 function entry(index: number, type: string, overrides: Partial<ScopeEntry> = {}): ScopeEntry {
   return {
     index,
@@ -16,10 +17,30 @@ function entry(index: number, type: string, overrides: Partial<ScopeEntry> = {})
     unixTimestamp: NOW - 10,
     lastUpdatedSlot: 1,
     refPrice: null,
+    combine: null,
+    sources: [],
+    bounds: [],
     dependsOn: [],
     maxDivergenceBps: null,
     ...overrides,
   };
+}
+
+/** Fallback entry: the most recent valid source wins. */
+function mostRecentOf(index: number, sources: number[], maxDivergenceBps = 1600, bounds: number[] = []): ScopeEntry {
+  return entry(index, bounds.length ? 'CappedMostRecentOf' : 'MostRecentOf', {
+    source: null,
+    combine: 'any',
+    sources,
+    bounds,
+    dependsOn: [...sources, ...bounds],
+    maxDivergenceBps,
+  });
+}
+
+/** Product entry: every source is required. */
+function multiplication(index: number, sources: number[]): ScopeEntry {
+  return entry(index, 'MultiplicationChain', { source: null, combine: 'all', sources, dependsOn: sources });
 }
 
 function feed(...entries: ScopeEntry[]): ScopeFeed {
@@ -51,7 +72,7 @@ describe('evaluate', () => {
     const f = feed(
       entry(1, 'Chainlink'),
       entry(2, 'PythLazer', { price: 100.5 }),
-      entry(3, 'MostRecentOf', { dependsOn: [1, 2], maxDivergenceBps: 1600 }),
+      mostRecentOf(3, [1, 2]),
     );
     const result = evaluate(reserve(), f, NOW);
     assert.deepEqual(result.checks, []);
@@ -96,7 +117,7 @@ describe('evaluate', () => {
     const f = feed(
       entry(1, 'SwitchboardOnDemand'),
       entry(2, 'PythLazer'),
-      entry(3, 'MostRecentOf', { dependsOn: [1, 2], maxDivergenceBps: 1600 }),
+      mostRecentOf(3, [1, 2]),
     );
     assert.ok(codes(evaluate(reserve(), f, NOW)).includes('DEPRECATED_PROVIDER:warning'));
   });
@@ -105,7 +126,7 @@ describe('evaluate', () => {
     const f = feed(
       entry(1, 'Chainlink', { price: 100 }),
       entry(2, 'PythLazer', { price: 120 }),
-      entry(3, 'MostRecentOf', { dependsOn: [1, 2], maxDivergenceBps: 1000 }),
+      mostRecentOf(3, [1, 2], 1000),
     );
     assert.ok(codes(evaluate(reserve(), f, NOW)).includes('SOURCES_DIVERGE:critical'));
   });
@@ -119,5 +140,74 @@ describe('evaluate', () => {
 
   it('reports an unreadable Scope account instead of guessing', () => {
     assert.deepEqual(codes(evaluate(reserve(), undefined, NOW)), ['UNREADABLE_ORACLE:warning']);
+  });
+
+  describe('fallbacks and multiplied sources', () => {
+    it('is critical when a shut-down provider is multiplied into the price, even next to a live oracle', () => {
+      const f = feed(entry(1, 'SwitchboardOnDemand'), entry(2, 'PythPull'));
+      const result = evaluate(reserve({ scopeChain: [1, 2] }), f, NOW);
+      assert.ok(codes(result).includes('DEPRECATED_PROVIDER:critical'));
+      assert.ok(codes(result).includes('NO_FALLBACK:warning'), 'PythPull is also required');
+    });
+
+    it('treats every factor of a MultiplicationChain as required', () => {
+      const f = feed(entry(1, 'OrcaWhirlpoolAtoB'), entry(2, 'PythPull'), multiplication(3, [1, 2]));
+      const result = evaluate(reserve(), f, NOW);
+      assert.deepEqual(codes(result), ['NO_FALLBACK:warning']);
+      assert.match(result.checks[0].message, /OrcaWhirlpoolAtoB, PythPull/);
+    });
+
+    it('finds an oracle shared by every fallback branch', () => {
+      const f = feed(
+        entry(1, 'PythLazer'),
+        entry(2, 'OrcaWhirlpoolAtoB'),
+        entry(3, 'RaydiumAmmV3AtoB'),
+        multiplication(4, [1, 2]),
+        multiplication(5, [1, 3]),
+        mostRecentOf(6, [4, 5]),
+      );
+      const result = evaluate(reserve({ scopeChain: [6] }), f, NOW);
+      assert.deepEqual(codes(result), ['NO_FALLBACK:warning']);
+      assert.match(result.checks[0].message, /for PythLazer:/);
+    });
+
+    it('is healthy when a staking rate multiplies a price that has a fallback', () => {
+      const f = feed(entry(1, 'Chainlink'), entry(2, 'PythLazer'), mostRecentOf(3, [1, 2]), entry(210, 'SplStake'));
+      assert.deepEqual(codes(evaluate(reserve({ scopeChain: [210, 3] }), f, NOW)), []);
+    });
+
+    it('does not compare a cap against the prices it limits', () => {
+      const f = feed(
+        entry(1, 'Chainlink', { price: 1.0 }),
+        entry(2, 'PythLazer', { price: 1.0 }),
+        entry(4, 'FixedPrice', { price: 1.2 }),
+        mostRecentOf(3, [1, 2], 100, [4]),
+      );
+      const result = evaluate(reserve(), f, NOW);
+      assert.deepEqual(codes(result), []);
+      assert.equal(result.score, 100);
+    });
+
+    it('flags a missing entry deep inside the price graph', () => {
+      const f = feed(entry(1, 'PythLazer'), multiplication(3, [1, 99]));
+      assert.ok(codes(evaluate(reserve(), f, NOW)).includes('EMPTY_PRICE_ENTRY:critical'));
+    });
+  });
+
+  describe('reserves without an oracle', () => {
+    it('is critical when Scope is configured with an empty price chain', () => {
+      const result = evaluate(reserve({ scopeChain: [] }), feed(entry(3, 'PythLazer')), NOW);
+      assert.deepEqual(codes(result), ['NO_ORACLE:critical']);
+    });
+
+    it('is critical when no oracle is configured at all', () => {
+      const r = reserve({ feeds: { pyth: null, switchboard: null, switchboardTwap: null, scope: null }, scopeChain: [] });
+      assert.deepEqual(codes(evaluate(r, undefined, NOW)), ['NO_ORACLE:critical']);
+    });
+
+    it('is critical when only a Switchboard TWAP account is set', () => {
+      const r = reserve({ feeds: { pyth: null, switchboard: null, switchboardTwap: 'twap', scope: null }, scopeChain: [] });
+      assert.deepEqual(codes(evaluate(r, undefined, NOW)), ['NO_ORACLE:critical']);
+    });
   });
 });
