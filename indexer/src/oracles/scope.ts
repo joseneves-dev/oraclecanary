@@ -102,15 +102,17 @@ function parseComposite(type: string, generic: Uint8Array, twapSource: number, e
 
 /**
  * Follows composite entries down to the entries that read an external source.
- * Returns each leaf once, even when several branches reach it.
+ * Returns each leaf once, even when several branches reach it. With `includeBounds` false, caps and
+ * floors are not followed, so only the entries the price itself is computed from are returned.
  */
-export function resolveLeaves(feed: ScopeFeed, index: number, seen = new Set<number>()): ScopeEntry[] {
+export function resolveLeaves(feed: ScopeFeed, index: number, includeBounds = true, seen = new Set<number>()): ScopeEntry[] {
   if (seen.has(index)) return [];
   seen.add(index);
   const entry = feed.entries.get(index);
   if (!entry) return [];
+  const next = includeBounds ? entry.dependsOn : entry.sources;
   if (entry.dependsOn.length === 0) return [entry];
-  return entry.dependsOn.flatMap((i) => resolveLeaves(feed, i, seen));
+  return next.flatMap((i) => resolveLeaves(feed, i, includeBounds, seen));
 }
 
 async function fetchData(connection: Connection, address: string, expectedSize: number): Promise<Uint8Array> {

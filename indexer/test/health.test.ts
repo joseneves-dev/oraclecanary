@@ -234,3 +234,20 @@ describe('evaluate', () => {
     });
   });
 });
+
+describe('providers', () => {
+  it('lists where the price comes from, not the caps that bound it', () => {
+    const f = feed(
+      entry(1, 'Chainlink'),
+      entry(2, 'PythLazer'),
+      entry(4, 'FixedPrice', { price: 1.2 }),
+      mostRecentOf(3, [1, 2], 100, [4]),
+    );
+    assert.deepEqual(evaluateKamino(reserve(), f, NOW).providers.sort(), ['Chainlink', 'PythLazer']);
+  });
+
+  it('still warns about a shut-down provider behind a cap', () => {
+    const f = feed(entry(1, 'Chainlink'), entry(2, 'PythLazer'), entry(4, 'SwitchboardOnDemand'), mostRecentOf(3, [1, 2], 100, [4]));
+    assert.ok(codes(evaluateKamino(reserve(), f, NOW)).includes('DEPRECATED_PROVIDER:warning'));
+  });
+});

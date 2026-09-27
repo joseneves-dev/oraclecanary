@@ -11,6 +11,7 @@ import type { MarketOracleConfig, OracleSource } from '../types.js';
 
 export const VAULTS_PROGRAM = 'jupr81YtYssSyPt8jbnGuiWon5f6x9TcDEFxYe3Bdzi';
 export const ORACLE_PROGRAM = 'jupnw4B6Eqs7ft6rxpzYLJZYSnrpRgPcr589n5Kv4oc';
+const UNSET_KEY = PublicKey.default.toBase58();
 
 // Jupiter Lend rejects prices older than this for supply, borrow, repay and withdraw; liquidations
 // accept up to 7200 seconds.
@@ -156,11 +157,14 @@ export async function fetchJupiterLendVaults(connection: Connection): Promise<Ma
     const borrow = tokens.get(config.borrowToken);
     const state = stateById.get(config.vaultId);
 
-    const sources: OracleSource[] = (sourcesByOracle.get(config.oracle) ?? []).flatMap((s) => {
-      // A Dex peg source prices from a pool but converts with another oracle source, which must also be live.
-      const conversion = pegConversion.get(s.account);
-      return conversion ? [s, conversion] : [s];
-    });
+    const sources: OracleSource[] = (sourcesByOracle.get(config.oracle) ?? [])
+      .flatMap((s) => {
+        // A Dex peg source prices from a pool but converts with another oracle source, which must also be live.
+        const conversion = pegConversion.get(s.account);
+        return conversion ? [s, conversion] : [s];
+      })
+      // Unused slots, including a Dex peg without a conversion source, point at the default (all-zero) key.
+      .filter((s) => s.account !== UNSET_KEY);
 
     const collateral =
       state && supply ? (Number(state.totalSupply) * Number(state.vaultSupplyExchangePrice)) / EXCHANGE_PRICE_PRECISION / 10 ** INTERNAL_DECIMALS : 0;

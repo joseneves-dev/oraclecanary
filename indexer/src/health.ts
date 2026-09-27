@@ -125,7 +125,10 @@ function evaluateScope(reserve: MarketOracleConfig, feed: ScopeFeed, now: number
     checks.push({ code: 'EMPTY_PRICE_ENTRY', severity: 'critical', message: `Price depends on Scope entry ${index}, which is not configured.` });
   }
 
-  const leaves = reserve.scopeChain.flatMap((i) => resolveLeaves(feed, i));
+  // The price is computed from `leaves`; caps and floors are read too, so a shut-down provider
+  // behind one still matters, but they are not where the price comes from.
+  const leaves = reserve.scopeChain.flatMap((i) => resolveLeaves(feed, i, false));
+  const leavesWithBounds = reserve.scopeChain.flatMap((i) => resolveLeaves(feed, i));
   const providers = [...new Set(leaves.map((l) => l.type))];
 
   const priceAgeSeconds = top.length ? now - Math.min(...top.map((e) => e.unixTimestamp)) : null;
@@ -146,11 +149,11 @@ function evaluateScope(reserve: MarketOracleConfig, feed: ScopeFeed, now: number
       severity: 'critical',
       message: `Price breaks without ${typesOf(deprecatedSinglePoints)}, which has shut down.`,
     });
-  } else if (providers.some((p) => DEPRECATED_PROVIDERS.has(p))) {
+  } else if (leavesWithBounds.some((l) => DEPRECATED_PROVIDERS.has(l.type))) {
     checks.push({
       code: 'DEPRECATED_PROVIDER',
       severity: 'warning',
-      message: `Price still reads ${typesOf(leaves.filter((l) => DEPRECATED_PROVIDERS.has(l.type)))}, which has shut down, but has another source.`,
+      message: `Price still reads ${typesOf(leavesWithBounds.filter((l) => DEPRECATED_PROVIDERS.has(l.type)))}, which has shut down, but has another source.`,
     });
   }
 
