@@ -18,6 +18,7 @@ use App\ApiResource\Model\OracleAccounts;
 use App\ApiResource\Model\PriceStatus;
 use App\ApiResource\Model\Severity;
 use App\Entity\LendingReserve;
+use App\Filter\NotNullFilter;
 use Symfony\Component\ObjectMapper\Attribute\Map;
 
 /**
@@ -36,6 +37,12 @@ use Symfony\Component\ObjectMapper\Attribute\Map;
                 'protocol' => new QueryParameter(filter: new ExactFilter(), description: 'e.g. kamino'),
                 'market' => new QueryParameter(filter: new ExactFilter(), description: 'Lending market address'),
                 'marketName' => new QueryParameter(filter: new PartialSearchFilter(), description: 'Part of the market name'),
+                'listed' => new QueryParameter(
+                    filter: new NotNullFilter(),
+                    property: 'marketName',
+                    schema: ['type' => 'boolean'],
+                    description: 'true: only markets listed in the protocol\'s own app. Unlisted (permissionless) markets can hold tokens with arbitrary prices.',
+                ),
                 'asset' => new QueryParameter(filter: new PartialSearchFilter(), description: 'Part of the asset symbol'),
                 'status' => new QueryParameter(filter: new ExactFilter(), description: 'active, obsolete or hidden'),
                 'score' => new QueryParameter(filter: new ComparisonFilter(new ExactFilter()), description: 'e.g. score[lt]=50'),

@@ -39,6 +39,19 @@ final class ReserveApiTest extends ApiTestCase
         self::assertSame(['ALP', 'FWDI'], array_column($response->toArray(), 'asset'));
     }
 
+    public function testFiltersListedMarkets(): void
+    {
+        $this->insertReserve('reserve-junk', 'JUNK', score: 100, supplyUsd: 2e12, marketName: null);
+        $headers = ['headers' => ['Accept' => 'application/json']];
+        $client = static::createClient();
+
+        $listed = $client->request('GET', '/api/reserves?listed=true', $headers)->toArray();
+        self::assertNotContains('JUNK', array_column($listed, 'asset'));
+
+        $unlisted = $client->request('GET', '/api/reserves?listed=false', $headers)->toArray();
+        self::assertSame(['JUNK'], array_column($unlisted, 'asset'));
+    }
+
     public function testReturnsOneReserveWithItsChecks(): void
     {
         $response = static::createClient()->request('GET', '/api/reserves/reserve-fwdi', ['headers' => ['Accept' => 'application/json']]);
@@ -89,13 +102,13 @@ final class ReserveApiTest extends ApiTestCase
         self::assertArrayHasKey('/api/reserves', $response->toArray()['paths']);
     }
 
-    private function insertReserve(string $address, string $asset, int $score, float $supplyUsd, int $priceAgeSeconds = 10, array $checks = []): void
+    private function insertReserve(string $address, string $asset, int $score, float $supplyUsd, int $priceAgeSeconds = 10, array $checks = [], ?string $marketName = 'Main Market'): void
     {
         self::getContainer()->get(Connection::class)->insert('lending_reserve', [
             'address' => $address,
             'protocol' => 'kamino',
             'market' => 'market',
-            'market_name' => 'Main Market',
+            'market_name' => $marketName,
             'asset' => $asset,
             'mint' => 'mint-'.$asset,
             'status' => 'active',
