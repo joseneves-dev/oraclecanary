@@ -15,6 +15,15 @@
 		php_server
 	}
 
+	# Scripts and styles of Swagger UI (/api/docs), compiled by Symfony's asset mapper into public/.
+	# More specific than /assets/*, so Caddy tries it first.
+	handle /assets/bundles/* {
+		root * /app/public
+		@exists file
+		header @exists Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
 	# Build output with content hashes in the file names never changes, so caches may keep it. A
 	# missing asset must be a 404, not index.html, or a CDN could cache HTML as a script.
 	handle /assets/* {
