@@ -17,7 +17,21 @@ services:
       - database_data:/var/lib/postgresql/data:rw
       # You may use a bind-mounted host directory instead, so that it is harder to accidentally remove the volume and lose all your data!
       # - ./docker/db/data:/var/lib/postgresql/data:rw
+    restart: unless-stopped
 ###< doctrine/doctrine-bundle ###
+
+  # Reads Solana and refreshes the lending_reserve table every CHECK_INTERVAL_SECONDS.
+  # The table is created by the Symfony migrations, so run them before starting it.
+  indexer:
+    build: ../indexer
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-!ChangeMe!}@database:5432/${POSTGRES_DB:-app}
+      RPC_URL: ${RPC_URL:-https://api.mainnet-beta.solana.com}
+      CHECK_INTERVAL_SECONDS: ${CHECK_INTERVAL_SECONDS:-60}
 
 volumes:
 ###> doctrine/doctrine-bundle ###
