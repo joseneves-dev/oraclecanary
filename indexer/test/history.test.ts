@@ -2,42 +2,69 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { ReserveHealthRow } from '../src/db.js';
-import { checkKeys, detectTransitions, hourOf, type StoredHealth } from '../src/history.js';
+import { checkKeys, hourOf, lastingCheckKeys, trackChanges, type AlertState } from '../src/history.js';
 
-function row(address: string, score: number, checks: { code: string; severity: 'critical' | 'warning' | 'info'; message?: string }[]): ReserveHealthRow {
+type Severity = 'critical' | 'warning' | 'info';
+
+function row(address: string, score: number, checks: { code: string; severity: Severity; message?: string }[]): ReserveHealthRow {
   return {
     reserve: { reserve: address } as ReserveHealthRow['reserve'],
     health: { score, checks: checks.map((c) => ({ ...c, message: c.message ?? 'm' })) as ReserveHealthRow['health']['checks'], providers: [], priceAgeSeconds: 1 },
   };
 }
 
-describe('detectTransitions', () => {
-  const previous = new Map<string, StoredHealth>([
-    ['steady', { score: 85, checks: ['NO_FALLBACK:warning'] }],
-    ['went-stale', { score: 85, checks: ['NO_FALLBACK:warning'] }],
-    ['recovered', { score: 35, checks: ['NO_FALLBACK:warning', 'STALE:critical'] }],
-  ]);
+const at = (minute: number) => new Date(Date.UTC(2026, 8, 27, 20, minute));
+const CONFIRM = 180;
 
-  it('reports reserves whose score or checks changed, not those whose messages did', () => {
-    const transitions = detectTransitions(previous, [
-      row('steady', 85, [{ code: 'NO_FALLBACK', severity: 'warning', message: 'price is 12s old' }]),
-      row('went-stale', 35, [{ code: 'STALE', severity: 'critical' }, { code: 'NO_FALLBACK', severity: 'warning' }]),
-      row('recovered', 85, [{ code: 'NO_FALLBACK', severity: 'warning' }]),
-    ]);
+const healthy = row('fwdi', 85, [{ code: 'NO_FALLBACK', severity: 'warning' }]);
+const stale = row('fwdi', 35, [{ code: 'STALE', severity: 'critical' }, { code: 'NO_FALLBACK', severity: 'warning' }]);
+const unreadable = row('fwdi', 85, [{ code: 'UNREADABLE_ORACLE', severity: 'warning' }]);
 
-    assert.deepEqual(transitions.map((t) => t.row.reserve.reserve), ['went-stale', 'recovered']);
-    assert.deepEqual(transitions[0].current, { score: 35, checks: ['NO_FALLBACK:warning', 'STALE:critical'] });
-    assert.deepEqual(transitions[1].previous.checks, ['NO_FALLBACK:warning', 'STALE:critical']);
+/** Runs the rows one run per minute, starting at minute 0, and returns every confirmed change. */
+function runEveryMinute(runs: ReserveHealthRow[][], initial = new Map<string, AlertState>()) {
+  let states = initial;
+  const changes = runs.flatMap((rows, minute) => {
+    const result = trackChanges(states, rows, at(minute), CONFIRM);
+    states = new Map([...states, ...result.states]);
+    return result.transitions.map((t) => ({ minute, ...t }));
+  });
+  return { changes, states };
+}
+
+describe('trackChanges', () => {
+  it('reports a change once it has lasted the confirmation time, dated when it started', () => {
+    const { changes } = runEveryMinute([[healthy], [stale], [stale], [stale], [stale], [stale]]);
+
+    assert.equal(changes.length, 1);
+    assert.equal(changes[0].minute, 4);
+    assert.deepEqual(changes[0].since, at(1));
+    assert.deepEqual(changes[0].previous, { score: 85, checks: ['NO_FALLBACK:warning'] });
+    assert.deepEqual(changes[0].current, { score: 35, checks: ['NO_FALLBACK:warning', 'STALE:critical'] });
   });
 
-  it('does not report reserves seen for the first time', () => {
-    assert.deepEqual(detectTransitions(previous, [row('new', 50, [{ code: 'STALE', severity: 'critical' }])]), []);
+  it('ignores a price that goes stale and back between runs', () => {
+    const { changes } = runEveryMinute([[healthy], [stale], [healthy], [stale], [healthy], [stale], [healthy]]);
+    assert.deepEqual(changes, []);
   });
 
-  it('ignores a reserve going in and out of near-stale', () => {
-    const flapping = new Map<string, StoredHealth>([['usds', { score: 85, checks: ['NO_FALLBACK:warning'] }]]);
-    const rows = [row('usds', 70, [{ code: 'NEAR_STALE', severity: 'warning' }, { code: 'NO_FALLBACK', severity: 'warning' }])];
-    assert.deepEqual(detectTransitions(flapping, rows), []);
+  it('keeps the last state through failed oracle reads instead of reporting a recovery', () => {
+    const { changes, states } = runEveryMinute([[stale], [unreadable], [unreadable], [unreadable], [unreadable], [stale]]);
+
+    assert.deepEqual(changes, []);
+    assert.deepEqual(states.get('fwdi')?.reported.checks, ['NO_FALLBACK:warning', 'STALE:critical']);
+  });
+
+  it('reports a reserve that comes back in a different state', () => {
+    // Seen healthy, then missing from three runs, then back stale for good.
+    const { changes } = runEveryMinute([[healthy], [], [], [], [stale], [stale], [stale], [stale]]);
+    assert.deepEqual(changes.map((c) => c.minute), [7]);
+  });
+
+  it('does not report reserves seen for the first time, or near-stale alone', () => {
+    const nearStale = row('fwdi', 70, [{ code: 'NEAR_STALE', severity: 'warning' }, { code: 'NO_FALLBACK', severity: 'warning' }]);
+    const { changes } = runEveryMinute([[stale], [stale], [healthy], [nearStale], [nearStale], [nearStale], [nearStale]]);
+
+    assert.deepEqual(changes.map((c) => [c.minute, c.current.checks]), [[5, ['NO_FALLBACK:warning']]]);
   });
 });
 
@@ -47,6 +74,10 @@ describe('checkKeys', () => {
       checkKeys([{ code: 'STALE', severity: 'critical' }, { code: 'NO_FALLBACK', severity: 'warning' }, { code: 'STALE', severity: 'critical' }]),
       ['NO_FALLBACK:warning', 'STALE:critical'],
     );
+  });
+
+  it('leaves transient checks out of the lasting ones', () => {
+    assert.deepEqual(lastingCheckKeys([{ code: 'NEAR_STALE', severity: 'warning' }, { code: 'NO_FALLBACK', severity: 'warning' }]), ['NO_FALLBACK:warning']);
   });
 });
 

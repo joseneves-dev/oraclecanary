@@ -2,6 +2,7 @@
 
 namespace App\ApiResource;
 
+use ApiPlatform\Doctrine\Orm\Filter\ComparisonFilter;
 use ApiPlatform\Doctrine\Orm\Filter\DateFilter;
 use ApiPlatform\Doctrine\Orm\Filter\ExactFilter;
 use ApiPlatform\Doctrine\Orm\Filter\PartialSearchFilter;
@@ -16,6 +17,7 @@ use App\ApiResource\Model\CheckState;
 use App\ApiResource\Model\Severity;
 use App\Entity\ReserveHealthEvent;
 use App\Filter\NotNullFilter;
+use App\Validator\UtcDateTime;
 use Symfony\Component\ObjectMapper\Attribute\Map;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -30,13 +32,22 @@ use Symfony\Component\Validator\Constraints as Assert;
             uriTemplate: '/events',
             description: 'Health changes, newest first.',
             parameters: [
+                'id' => new QueryParameter(
+                    filter: new ComparisonFilter(new ExactFilter()),
+                    constraints: [new Assert\Collection(
+                        fields: ['gt' => new Assert\Required([new Assert\Type('string'), new Assert\Regex('/^\d{1,18}$/')])],
+                    )],
+                    openApi: new Parameter('id[gt]', 'query', 'Only events recorded after the event with this id. Ids only grow, so pollers can pass the highest id they have seen to get each event once.', schema: ['type' => 'integer', 'minimum' => 0]),
+                ),
                 'protocol' => new QueryParameter(
                     filter: new ExactFilter(),
-                    openApi: new Parameter('protocol', 'query', 'Lending protocol', schema: ['type' => 'string', 'enum' => ['kamino', 'marginfi', 'jupiter-lend']]),
+                    constraints: [new Assert\Choice(choices: Reserve::PROTOCOLS)],
+                    openApi: new Parameter('protocol', 'query', 'Lending protocol', schema: ['type' => 'string', 'enum' => Reserve::PROTOCOLS]),
                 ),
                 'reserve' => new QueryParameter(
                     filter: new ExactFilter(),
                     property: 'address',
+                    constraints: [new Assert\Type('string')],
                     openApi: new Parameter('reserve', 'query', 'Reserve address', schema: ['type' => 'string']),
                 ),
                 'asset' => new QueryParameter(
@@ -47,24 +58,26 @@ use Symfony\Component\Validator\Constraints as Assert;
                 'listed' => new QueryParameter(
                     filter: new NotNullFilter(),
                     property: 'marketName',
+                    constraints: [new Assert\Choice(choices: NotNullFilter::VALUES)],
                     openApi: new Parameter('listed', 'query', 'true: only markets listed in the protocol\'s own app', schema: ['type' => 'boolean']),
                 ),
                 'occurredAt' => new QueryParameter(
                     filter: new DateFilter(),
                     constraints: [new Assert\Collection(
                         fields: [
-                            'after' => new Assert\Optional([new Assert\Type('string'), new Assert\DateTime(format: \DateTimeInterface::ATOM)]),
-                            'before' => new Assert\Optional([new Assert\Type('string'), new Assert\DateTime(format: \DateTimeInterface::ATOM)]),
+                            'after' => new Assert\Optional([new UtcDateTime()]),
+                            'before' => new Assert\Optional([new UtcDateTime()]),
                         ],
                     )],
                     openApi: [
-                        new Parameter('occurredAt[after]', 'query', 'Changes at or after this time, e.g. 2026-09-27T00:00:00+00:00', schema: ['type' => 'string', 'format' => 'date-time']),
-                        new Parameter('occurredAt[before]', 'query', 'Changes at or before this time', schema: ['type' => 'string', 'format' => 'date-time']),
+                        new Parameter('occurredAt[after]', 'query', 'Changes that started at or after this UTC time, e.g. 2026-09-27T00:00:00Z', schema: ['type' => 'string', 'format' => 'date-time']),
+                        new Parameter('occurredAt[before]', 'query', 'Changes that started at or before this UTC time', schema: ['type' => 'string', 'format' => 'date-time']),
                     ],
                 ),
             ],
         ),
-        new Get(uriTemplate: '/events/{id}'),
+        // Ids are BIGINT; anything else would reach the database and fail there instead of a 404.
+        new Get(uriTemplate: '/events/{id}', requirements: ['id' => '\d{1,18}']),
     ],
     order: ['occurredAt' => 'DESC', 'id' => 'DESC'],
     // Every field is always present (null when unknown) so clients can rely on the shape.
@@ -92,9 +105,14 @@ final class ReserveEvent
     /** Null for markets not listed in the protocol's own app. */
     public ?string $marketName;
 
+    /** When the new state was first seen. The event is recorded a few minutes later, once the change has lasted. */
     public \DateTimeImmutable $occurredAt;
 
-    /** "degraded" when the worst severity got worse, "recovered" when it got better, "changed" otherwise. */
+    /**
+     * "degraded" when the worst severity got worse (or, with the same severity, the score dropped),
+     * "recovered" for the opposite, "changed" when neither moved.
+     */
+    #[ApiProperty(schema: ['type' => 'string', 'enum' => ['degraded', 'recovered', 'changed']])]
     #[Map(source: 'checks', transform: [self::class, 'toDirection'])]
     public string $direction;
 
@@ -126,27 +144,52 @@ final class ReserveEvent
         return Severity::worstOf(array_map(static fn (CheckState $check) => $check->severity->value, CheckState::listFromStored($checks)));
     }
 
+    /** Worse severity first; with the same severity, a lower score. */
     public static function toDirection(array $checks, ReserveHealthEvent $source): string
     {
-        $before = self::toSeverity($source->getPreviousChecks())->rank();
-        $after = self::toSeverity($checks)->rank();
+        $before = [self::toSeverity($source->getPreviousChecks())->rank(), -$source->getPreviousScore()];
+        $after = [self::toSeverity($checks)->rank(), -$source->getScore()];
 
-        return match (true) {
-            $after > $before => 'degraded',
-            $after < $before => 'recovered',
+        return match ($after <=> $before) {
+            1 => 'degraded',
+            -1 => 'recovered',
             default => 'changed',
         };
     }
 
-    /** @return list<CheckState> */
+    /**
+     * Checks failing now that were not failing before, or failing with another severity.
+     *
+     * @return list<CheckState>
+     */
     public static function toStarted(array $checks, ReserveHealthEvent $source): array
     {
-        return CheckState::listFromStored(array_values(array_diff($checks, $source->getPreviousChecks())));
+        return array_values(array_diff_key(self::byKey($checks), self::byKey($source->getPreviousChecks())));
     }
 
-    /** @return list<CheckState> */
+    /**
+     * Checks no longer failing at all (a check whose severity changed is listed under started).
+     *
+     * @return list<CheckState>
+     */
     public static function toResolved(array $checks, ReserveHealthEvent $source): array
     {
-        return CheckState::listFromStored(array_values(array_diff($source->getPreviousChecks(), $checks)));
+        $failingCodes = array_map(static fn (CheckState $check) => $check->code, CheckState::listFromStored($checks));
+
+        return array_values(array_filter(
+            CheckState::listFromStored($source->getPreviousChecks()),
+            static fn (CheckState $check) => !\in_array($check->code, $failingCodes, true),
+        ));
+    }
+
+    /** @return array<string, CheckState> keyed by "CODE:severity" */
+    private static function byKey(array $checks): array
+    {
+        $states = [];
+        foreach (CheckState::listFromStored($checks) as $check) {
+            $states[$check->code.':'.$check->severity->value] = $check;
+        }
+
+        return $states;
     }
 }

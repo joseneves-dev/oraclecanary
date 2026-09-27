@@ -1,7 +1,7 @@
 import pg from 'pg';
 
 import type { HealthResult } from './health.js';
-import { checkKeys, detectTransitions, hourOf, type HealthTransition, type StoredHealth } from './history.js';
+import { checkKeys, hourOf, trackChanges, type AlertState, type HealthTransition } from './history.js';
 import type { MarketOracleConfig, Protocol } from './types.js';
 
 export interface ReserveHealthRow {
@@ -42,35 +42,74 @@ const EVENT_COLUMNS = [
 
 const HOURLY_COLUMNS = ['address', 'hour', 'protocol', 'score', 'price_age_seconds', 'total_supply_usd', 'checks'] as const;
 
-async function loadStoredHealth(client: pg.PoolClient, protocol: Protocol): Promise<Map<string, StoredHealth>> {
-  const { rows } = await client.query<{ address: string; score: number; checks: { code: string; severity: string }[] }>(
-    'SELECT address, score, checks FROM lending_reserve WHERE protocol = $1',
+const STATE_COLUMNS = [
+  'address', 'protocol', 'reported_score', 'reported_checks', 'pending_score', 'pending_checks', 'pending_since', 'last_seen_at',
+] as const;
+
+// History kept: hourly samples feed charts of the last weeks; events are the incident record.
+const HOURLY_RETENTION_DAYS = 90;
+const EVENT_RETENTION_DAYS = 365;
+// Alert state of a reserve not seen for this long (closed, delisted) is dropped.
+const STATE_RETENTION_DAYS = 7;
+
+const daysBefore = (date: Date, days: number) => utc(new Date(date.getTime() - days * 86_400_000));
+
+async function loadAlertStates(client: pg.PoolClient, protocol: Protocol): Promise<Map<string, AlertState>> {
+  const { rows } = await client.query<{
+    address: string;
+    reported_score: number;
+    reported_checks: unknown;
+    pending_score: number | null;
+    pending_checks: unknown;
+    pending_since: Date | null;
+  }>(
+    // pg reads "timestamp without time zone" as local time; the column holds UTC.
+    `SELECT address, reported_score, reported_checks, pending_score, pending_checks, pending_since AT TIME ZONE 'UTC' AS pending_since
+       FROM reserve_health_state WHERE protocol = $1`,
     [protocol],
   );
-  return new Map(rows.map((r) => [r.address, { score: r.score, checks: checkKeys(Array.isArray(r.checks) ? r.checks : []) }]));
+  const keys = (checks: unknown) => (Array.isArray(checks) ? checks.filter((c): c is string => typeof c === 'string') : []);
+  return new Map(
+    rows.map((r) => [
+      r.address,
+      {
+        reported: { score: r.reported_score, checks: keys(r.reported_checks) },
+        pending: r.pending_score !== null ? { score: r.pending_score, checks: keys(r.pending_checks) } : null,
+        pendingSince: r.pending_since,
+      },
+    ]),
+  );
 }
 
 /**
  * Replaces the stored health of one protocol's reserves with this run's results, in the tables owned
  * by the Symfony app, and records history in the same transaction:
- * - an event for every reserve whose score or failed checks changed since the last run;
- * - one hourly sample per listed reserve, from the first run of each hour.
- * Reserves missing from `rows` (now obsolete, hidden or gone) are removed so they cannot keep showing
- * a stale "healthy" state.
+ * - an event when the lasting failed checks of a listed reserve changed and the change was confirmed
+ *   (see trackChanges);
+ * - one hourly sample per listed reserve, keeping the worst state seen in the hour;
+ * - history older than the retention period is removed.
+ * Reserves missing from `rows` (now obsolete, hidden or gone) are removed from lending_reserve so they
+ * cannot keep showing a stale "healthy" state.
  *
- * Returns the changes, for alerting.
+ * Returns the confirmed changes, for alerting.
  */
 export async function saveReserveHealth(
   pool: pg.Pool,
   protocol: Protocol,
   rows: ReserveHealthRow[],
   checkedAt: Date,
+  confirmSeconds: number,
 ): Promise<HealthTransition[]> {
   const client = await pool.connect();
   let failure: Error | undefined;
   try {
     await client.query('BEGIN');
-    const transitions = detectTransitions(await loadStoredHealth(client, protocol), rows);
+    // Two indexers running at once (e.g. a manual `npm run check`) would report every change twice.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`oraclecanary:${protocol}`]);
+
+    // Unlisted markets hold arbitrary tokens and prices; their history is not worth keeping.
+    const listed = rows.filter(({ reserve: r }) => r.marketName);
+    const { transitions, states } = trackChanges(await loadAlertStates(client, protocol), listed, checkedAt, confirmSeconds);
 
     const updates = RESERVE_COLUMNS.filter((c) => c !== 'address').map((c) => `${c} = EXCLUDED.${c}`).join(', ');
     await insertRows(
@@ -89,29 +128,46 @@ export async function saveReserveHealth(
       client,
       'reserve_health_event',
       EVENT_COLUMNS,
-      transitions.map(({ row: { reserve: r }, previous, current }) => [
-        r.reserve, r.protocol, asset(r), marketName(r), utc(checkedAt), previous.score, current.score,
+      transitions.map(({ row: { reserve: r }, previous, current, since }) => [
+        r.reserve, r.protocol, asset(r), marketName(r), utc(since), previous.score, current.score,
         JSON.stringify(previous.checks), JSON.stringify(current.checks), finite(r.totalSupplyUsd),
       ]),
     );
 
-    // Unlisted markets hold arbitrary tokens and prices; their history is not worth keeping.
+    await insertRows(
+      client,
+      'reserve_health_state',
+      STATE_COLUMNS,
+      [...states].map(([address, s]) => [
+        address, protocol, s.reported.score, JSON.stringify(s.reported.checks), s.pending?.score ?? null,
+        s.pending ? JSON.stringify(s.pending.checks) : null, s.pendingSince ? utc(s.pendingSince) : null, utc(checkedAt),
+      ]),
+      `ON CONFLICT (address) DO UPDATE SET ${STATE_COLUMNS.filter((c) => c !== 'address').map((c) => `${c} = EXCLUDED.${c}`).join(', ')}`,
+    );
+
+    // A sample shows the worst state of its hour, so a reserve stale for most of an hour is not
+    // charted as healthy because the first run of the hour happened to catch a fresh price.
     await insertRows(
       client,
       'reserve_health_hourly',
       HOURLY_COLUMNS,
-      rows
-        .filter(({ reserve: r }) => r.marketName)
-        .map(({ reserve: r, health: h }) => [
-          r.reserve, utc(hourOf(checkedAt)), r.protocol, h.score, h.priceAgeSeconds, finite(r.totalSupplyUsd), JSON.stringify(checkKeys(h.checks)),
-        ]),
-      'ON CONFLICT (address, hour) DO NOTHING',
+      listed.map(({ reserve: r, health: h }) => [
+        r.reserve, utc(hourOf(checkedAt)), r.protocol, h.score, h.priceAgeSeconds, finite(r.totalSupplyUsd), JSON.stringify(checkKeys(h.checks)),
+      ]),
+      `ON CONFLICT (address, hour) DO UPDATE SET
+         checks = CASE WHEN EXCLUDED.score < reserve_health_hourly.score THEN EXCLUDED.checks ELSE reserve_health_hourly.checks END,
+         score = LEAST(reserve_health_hourly.score, EXCLUDED.score),
+         price_age_seconds = GREATEST(reserve_health_hourly.price_age_seconds, EXCLUDED.price_age_seconds),
+         total_supply_usd = EXCLUDED.total_supply_usd`,
     );
 
     // An empty result more likely means a failed read than a protocol with no reserves; keep the old rows.
     if (rows.length) {
       await client.query('DELETE FROM lending_reserve WHERE protocol = $1 AND checked_at < $2', [protocol, utc(checkedAt)]);
     }
+    await client.query('DELETE FROM reserve_health_hourly WHERE protocol = $1 AND hour < $2', [protocol, daysBefore(checkedAt, HOURLY_RETENTION_DAYS)]);
+    await client.query('DELETE FROM reserve_health_event WHERE protocol = $1 AND occurred_at < $2', [protocol, daysBefore(checkedAt, EVENT_RETENTION_DAYS)]);
+    await client.query('DELETE FROM reserve_health_state WHERE protocol = $1 AND last_seen_at < $2', [protocol, daysBefore(checkedAt, STATE_RETENTION_DAYS)]);
     await client.query('COMMIT');
     return transitions;
   } catch (e) {

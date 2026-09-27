@@ -21,6 +21,9 @@ final class NotNullFilter implements FilterInterface, OpenApiParameterFilterInte
     use BackwardCompatibleFilterDescriptionTrait;
     use OpenApiFilterTrait;
 
+    /** Accepted values, for an `Assert\Choice` on the parameter; anything else would be ignored. */
+    public const VALUES = ['true', 'false', '1', '0'];
+
     public function apply(QueryBuilder $queryBuilder, QueryNameGeneratorInterface $queryNameGenerator, string $resourceClass, ?Operation $operation = null, array $context = []): void
     {
         $parameter = $context['parameter'];

@@ -40,10 +40,12 @@ use Symfony\Component\Validator\Constraints as Assert;
             parameters: [
                 'protocol' => new QueryParameter(
                     filter: new ExactFilter(),
-                    openApi: new Parameter('protocol', 'query', 'Lending protocol', schema: ['type' => 'string', 'enum' => ['kamino', 'marginfi', 'jupiter-lend']]),
+                    constraints: [new Assert\Choice(choices: self::PROTOCOLS)],
+                    openApi: new Parameter('protocol', 'query', 'Lending protocol', schema: ['type' => 'string', 'enum' => self::PROTOCOLS]),
                 ),
                 'market' => new QueryParameter(
                     filter: new ExactFilter(),
+                    constraints: [new Assert\Type('string')],
                     openApi: new Parameter('market', 'query', 'Lending market address', schema: ['type' => 'string']),
                 ),
                 'marketName' => new QueryParameter(
@@ -54,6 +56,7 @@ use Symfony\Component\Validator\Constraints as Assert;
                 'listed' => new QueryParameter(
                     filter: new NotNullFilter(),
                     property: 'marketName',
+                    constraints: [new Assert\Choice(choices: NotNullFilter::VALUES)],
                     openApi: new Parameter('listed', 'query', 'true: only markets listed in the protocol\'s own app. Unlisted (permissionless) markets can hold tokens with arbitrary prices.', schema: ['type' => 'boolean']),
                 ),
                 'asset' => new QueryParameter(
@@ -63,6 +66,7 @@ use Symfony\Component\Validator\Constraints as Assert;
                 ),
                 'status' => new QueryParameter(
                     filter: new ExactFilter(),
+                    constraints: [new Assert\Choice(choices: ['active', 'obsolete', 'hidden', 'unknown'])],
                     openApi: new Parameter('status', 'query', 'Reserve status', schema: ['type' => 'string', 'enum' => ['active', 'obsolete', 'hidden', 'unknown']]),
                 ),
                 'score' => new QueryParameter(
@@ -120,6 +124,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[Map(source: LendingReserve::class)]
 final class Reserve
 {
+    public const PROTOCOLS = ['kamino', 'marginfi', 'jupiter-lend'];
+
     /** Reserve / bank account address on Solana. */
     #[ApiProperty(identifier: true)]
     public string $address;

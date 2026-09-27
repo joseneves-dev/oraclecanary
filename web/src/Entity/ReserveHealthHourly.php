@@ -8,7 +8,7 @@ use Doctrine\ORM\Mapping as ORM;
 /**
  * One sample per hour of a listed reserve's health, for history charts.
  *
- * Written by the indexer from the first run of each hour.
+ * Written by the indexer: the worst state seen during the hour.
  */
 #[ORM\Entity]
 #[ORM\Index(name: 'idx_reserve_health_hourly_protocol', columns: ['protocol', 'hour'])]

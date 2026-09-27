@@ -19,6 +19,9 @@ import type { OracleSource, Protocol } from './types.js';
 const RPC_URL = process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com';
 const INTERVAL_SECONDS = Number(process.env.CHECK_INTERVAL_SECONDS ?? 60);
 const RUN_ONCE = process.argv.includes('--once');
+// A health change is recorded only once it has lasted this long, so a price that is late for one run
+// does not become an alert.
+const CONFIRM_SECONDS = Number(process.env.ALERT_CONFIRM_SECONDS ?? 180);
 // getProgramAccounts over every Kamino reserve is the slowest call; a hung request must not stall the loop.
 const RPC_TIMEOUT_MS = 60_000;
 
@@ -115,7 +118,7 @@ async function runCheck(): Promise<boolean> {
     const started = Date.now();
     try {
       const rows = await check();
-      const changes = await saveReserveHealth(pool, protocol, rows, new Date(nowSeconds() * 1000));
+      const changes = await saveReserveHealth(pool, protocol, rows, new Date(nowSeconds() * 1000), CONFIRM_SECONDS);
 
       const listed = rows.filter((r) => r.reserve.marketName);
       const critical = listed.filter((r) => r.health.checks.some((c) => c.severity === 'critical')).length;

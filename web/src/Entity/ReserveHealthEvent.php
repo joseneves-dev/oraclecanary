@@ -6,13 +6,15 @@ use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
- * A change in a reserve's health: its score or the set of failed checks changed between two runs.
+ * A change in a reserve's health: the set of lasting failed checks changed.
  *
- * Written by the indexer; the basis for alerts and the incident timeline.
+ * Written by the indexer for listed markets, once a change has lasted a few minutes; the basis for
+ * alerts and the incident timeline.
  */
 #[ORM\Entity]
-#[ORM\Index(name: 'idx_reserve_health_event_occurred', columns: ['occurred_at'])]
-#[ORM\Index(name: 'idx_reserve_health_event_reserve', columns: ['address', 'occurred_at'])]
+#[ORM\Index(name: 'idx_reserve_health_event_occurred', columns: ['occurred_at', 'id'])]
+#[ORM\Index(name: 'idx_reserve_health_event_protocol', columns: ['protocol', 'occurred_at', 'id'])]
+#[ORM\Index(name: 'idx_reserve_health_event_reserve', columns: ['address', 'occurred_at', 'id'])]
 class ReserveHealthEvent
 {
     #[ORM\Id]
@@ -42,11 +44,11 @@ class ReserveHealthEvent
     #[ORM\Column(type: Types::SMALLINT)]
     private int $score;
 
-    /** Failed checks before the change, as "CODE:severity" strings. */
+    /** Lasting failed checks before the change, as "CODE:severity" strings (near-stale is left out). */
     #[ORM\Column(type: Types::JSON)]
     private array $previousChecks = [];
 
-    /** Failed checks after the change, as "CODE:severity" strings. */
+    /** Lasting failed checks after the change, as "CODE:severity" strings. */
     #[ORM\Column(type: Types::JSON)]
     private array $checks = [];
 

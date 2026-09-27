@@ -3,6 +3,7 @@
 namespace App\ApiResource;
 
 use ApiPlatform\Doctrine\Orm\Filter\DateFilter;
+use ApiPlatform\Doctrine\Orm\Filter\SortFilter;
 use ApiPlatform\Doctrine\Orm\State\Options;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\GetCollection;
@@ -12,6 +13,7 @@ use ApiPlatform\OpenApi\Model\Parameter;
 use App\ApiResource\Model\CheckState;
 use App\ApiResource\Model\Severity;
 use App\Entity\ReserveHealthHourly;
+use App\Validator\UtcDateTime;
 use Symfony\Component\ObjectMapper\Attribute\Map;
 use Symfony\Component\Validator\Constraints as Assert;
 
@@ -20,26 +22,27 @@ use Symfony\Component\Validator\Constraints as Assert;
  */
 #[ApiResource(
     shortName: 'ReserveSnapshot',
-    description: 'A reserve\'s health at the start of an hour. Recorded for reserves in listed markets.',
+    description: 'A reserve\'s worst health during an hour. Recorded for reserves in listed markets.',
     operations: [
         new GetCollection(
             uriTemplate: '/reserves/{address}/history',
             uriVariables: ['address' => new Link(fromClass: ReserveHealthHourly::class, identifiers: ['address'])],
-            description: 'Hourly health samples of one reserve, newest first. Empty for unknown reserves and unlisted markets.',
+            description: 'Hourly health of one reserve, newest first by default. Empty for unknown reserves and unlisted markets.',
             parameters: [
                 'hour' => new QueryParameter(
                     filter: new DateFilter(),
                     constraints: [new Assert\Collection(
                         fields: [
-                            'after' => new Assert\Optional([new Assert\Type('string'), new Assert\DateTime(format: \DateTimeInterface::ATOM)]),
-                            'before' => new Assert\Optional([new Assert\Type('string'), new Assert\DateTime(format: \DateTimeInterface::ATOM)]),
+                            'after' => new Assert\Optional([new UtcDateTime()]),
+                            'before' => new Assert\Optional([new UtcDateTime()]),
                         ],
                     )],
                     openApi: [
-                        new Parameter('hour[after]', 'query', 'Samples at or after this time, e.g. 2026-09-27T00:00:00+00:00', schema: ['type' => 'string', 'format' => 'date-time']),
-                        new Parameter('hour[before]', 'query', 'Samples at or before this time', schema: ['type' => 'string', 'format' => 'date-time']),
+                        new Parameter('hour[after]', 'query', 'Hours starting at or after this UTC time, e.g. 2026-09-27T00:00:00Z', schema: ['type' => 'string', 'format' => 'date-time']),
+                        new Parameter('hour[before]', 'query', 'Hours starting at or before this UTC time', schema: ['type' => 'string', 'format' => 'date-time']),
                     ],
                 ),
+                'order[hour]' => new QueryParameter(filter: new SortFilter(), property: 'hour', openApi: new Parameter('order[hour]', 'query', 'asc for charts (oldest first)', schema: ['type' => 'string', 'enum' => ['asc', 'desc']])),
             ],
         ),
     ],
@@ -60,7 +63,7 @@ final class ReserveSnapshot
     /** Start of the hour, in UTC. */
     public \DateTimeImmutable $hour;
 
-    /** 0 (broken) to 100 (healthy). */
+    /** Lowest score during the hour, 0 (broken) to 100 (healthy). */
     public int $score;
 
     /** Worst severity among the failed checks, or "ok" when none failed. */
