@@ -18,6 +18,12 @@ const TAGS: { code: string; label: string; badge: string; fallbackTitle: string 
     badge: 'ax-badge--info',
     fallbackTitle: 'The US stock market was closed, so the price was not updating: expected, but the protocol still rejects it.',
   },
+  {
+    code: 'FIXED_PRICE',
+    label: 'Fixed price',
+    badge: 'ax-badge--neutral',
+    fallbackTitle: 'The price is a fixed value set by the protocol and does not follow the market.',
+  },
 ]
 
 const tags = computed(() =>

@@ -92,6 +92,16 @@ describe('evaluate', () => {
     assert.ok(codes(result).includes('STALE:critical'));
   });
 
+  it('does not flag the age of a price made only of fixed values', () => {
+    const fixed = evaluateKamino(reserve(), feed(entry(3, 'FixedPrice', { unixTimestamp: NOW - 456 })), NOW);
+    assert.deepEqual(codes(fixed), ['FIXED_PRICE:info']);
+    assert.equal(fixed.priceAgeSeconds, 456);
+
+    // A fixed value multiplied with a market price still ages with that price.
+    const mixed = evaluateKamino(reserve({ scopeChain: [3, 4] }), feed(entry(3, 'FixedPrice', { unixTimestamp: NOW - 456 }), entry(4, 'PythLazer')), NOW);
+    assert.ok(codes(mixed).includes('STALE:critical'));
+  });
+
   it('warns when a price is close to the limit', () => {
     const result = evaluateKamino(reserve(), feed(entry(3, 'PythLazer', { unixTimestamp: NOW - 100 })), NOW);
     assert.ok(codes(result).includes('NEAR_STALE:warning'));

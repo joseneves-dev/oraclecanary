@@ -136,8 +136,12 @@ function evaluateScope(reserve: MarketOracleConfig, feed: ScopeFeed, now: number
   const leavesWithBounds = reserve.scopeChain.flatMap((i) => resolveLeaves(feed, i));
   const providers = [...new Set(leaves.map((l) => l.type))];
 
+  // A price made only of fixed values says nothing about the market, so an old one is as right as a
+  // new one: its timestamp only moves when Scope is refreshed. Its age is reported but not flagged.
+  const fixedOnly = !missing.size && leaves.length > 0 && leaves.every((l) => l.type === 'FixedPrice');
+
   const priceAgeSeconds = top.length ? now - Math.min(...top.map((e) => e.unixTimestamp)) : null;
-  if (priceAgeSeconds !== null && reserve.maxAgePriceSeconds > 0) {
+  if (!fixedOnly && priceAgeSeconds !== null && reserve.maxAgePriceSeconds > 0) {
     if (priceAgeSeconds > reserve.maxAgePriceSeconds) {
       checks.push({ code: 'STALE', severity: 'critical', message: `Price is ${priceAgeSeconds}s old; the protocol rejects prices older than ${reserve.maxAgePriceSeconds}s.` });
     } else if (priceAgeSeconds > reserve.maxAgePriceSeconds * NEAR_STALE_RATIO) {
@@ -168,7 +172,13 @@ function evaluateScope(reserve: MarketOracleConfig, feed: ScopeFeed, now: number
   }
 
   if (!missing.size && !leaves.some((l) => !NON_MARKET_SOURCES.has(l.type))) {
-    if (leaves.some((l) => l.type === 'FixedPrice')) {
+    if (fixedOnly) {
+      checks.push({
+        code: 'FIXED_PRICE',
+        severity: 'info',
+        message: 'Price is fixed and does not follow the market; how long ago it was refreshed does not change it, so its age is not checked.',
+      });
+    } else if (leaves.some((l) => l.type === 'FixedPrice')) {
       checks.push({ code: 'FIXED_PRICE', severity: 'info', message: 'Price is fixed and does not follow the market.' });
     } else if (!leaves.length) {
       checks.push({ code: 'NO_ORACLE', severity: 'critical', message: 'The price chain reads no oracle.' });
