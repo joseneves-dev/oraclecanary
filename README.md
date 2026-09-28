@@ -30,9 +30,14 @@ Each reserve gets a 0–100 score (critical −50, warning −15, info −5).
 
 Read-only REST API with OpenAPI docs at `/api/docs`.
 
+Live at https://oraclecanary.com/api/docs.
+
 ```
 GET /api/reserves?listed=true&score[lt]=100&order[totalSupplyUsd]=desc
 GET /api/reserves/{address}
+GET /api/reserves/{address}/history      hourly health, for charts
+GET /api/events?id[gt]=123               changes in failed checks, for alerts
+GET /api/incidents?resolved=false        periods a reserve's price could not be used, with duration
 ```
 
 `listed=true` keeps markets listed in the protocol's own app (Kamino's listed markets, marginfi's main
@@ -45,6 +50,8 @@ and prices. `protocol=kamino`, `protocol=jupiter-lend` or `protocol=marginfi` na
 indexer/   TypeScript: reads Solana (Kamino reserves and Scope prices, Jupiter Lend vaults, marginfi
            banks, Pyth and Chainlink prices), runs the checks, writes to PostgreSQL
 web/       Symfony 8 + API Platform 5: the public API; owns the database schema (Doctrine migrations)
+onchain/   Anchor program oracle_guard: other programs call assert_oracle_healthy with a health
+           attestation signed by OracleCanary and fail when the reserve's oracle is unhealthy
 ```
 
 ## Run locally
