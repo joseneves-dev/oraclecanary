@@ -119,8 +119,9 @@ const lastChecked = computed(() => {
         <span class="story__text">
           <template v-if="!switchboardListed.length">No listed market depends on it any more.</template>
           <template v-else>{{ switchboardListed.length }} listed reserves still depend on it.</template>
+          <!-- The compiler drops whitespace between templates, so the space between sentences is explicit. -->
           <template v-if="switchboardUnlisted.length">
-            {{ switchboardUnlisted.length }} reserves in unlisted markets still do, and their price can no longer be produced.
+            {{ ' ' }}{{ switchboardUnlisted.length }} reserves in unlisted markets still do, and their price can no longer be produced.
           </template>
         </span>
         <span class="story__more">Switchboard exposure →</span>
