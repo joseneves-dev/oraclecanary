@@ -16,6 +16,7 @@ function row(address: string, score: number, checks: { code: string; severity: S
 const at = (minute: number) => new Date(Date.UTC(2026, 8, 27, 20, minute));
 const CONFIRM = 180;
 
+const closedStale = row('fwdi', 35, [{ code: 'STALE', severity: 'critical' }, { code: 'MARKET_CLOSED', severity: 'info' }]);
 const healthy = row('fwdi', 85, [{ code: 'NO_FALLBACK', severity: 'warning' }]);
 const stale = row('fwdi', 35, [{ code: 'STALE', severity: 'critical' }, { code: 'NO_FALLBACK', severity: 'warning' }]);
 const unreadable = row('fwdi', 85, [{ code: 'UNREADABLE_ORACLE', severity: 'warning' }]);
@@ -78,6 +79,19 @@ describe('planIncidents', () => {
 
     assert.deepEqual(plan.open.map((o) => [o.startedAt, o.estimated, o.checks]), [[at(20), false, ['STALE:critical']]]);
     assert.deepEqual(plan.close, []);
+  });
+
+  it('keeps a closed stock market with the incident it explains', () => {
+    const transition = { row: closedStale, previous: state([]).reported, current: state(['MARKET_CLOSED:info', 'STALE:critical']).reported, since: at(20) };
+    const plan = planIncidents(new Set(), [closedStale], new Map([['fwdi', state(['MARKET_CLOSED:info', 'STALE:critical'])]]), [transition], now);
+
+    assert.deepEqual(plan.open.map((o) => o.checks), [['STALE:critical', 'MARKET_CLOSED:info']]);
+  });
+
+  it('does not open an incident for a closed market alone', () => {
+    const plan = planIncidents(new Set(), [closedStale], new Map([['fwdi', state(['MARKET_CLOSED:info'])]]), [], now);
+
+    assert.deepEqual(plan.open, []);
   });
 
   it('estimates the start of a reserve already stale when first tracked from its price age', () => {

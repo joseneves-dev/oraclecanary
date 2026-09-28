@@ -1,6 +1,7 @@
 import type { PythPrice } from './oracles/pyth.js';
 import type { ScopeEntry, ScopeFeed } from './oracles/scope.js';
 import { resolveLeaves } from './oracles/scope.js';
+import { type ClosedReason, US_STOCK_MINTS, usStockSession } from './marketHours.js';
 import type { MarketOracleConfig } from './types.js';
 
 export type Severity = 'critical' | 'warning' | 'info';
@@ -15,7 +16,8 @@ export interface Check {
     | 'EMPTY_PRICE_ENTRY'
     | 'SOURCES_DIVERGE'
     | 'FIXED_PRICE'
-    | 'UNREADABLE_ORACLE';
+    | 'UNREADABLE_ORACLE'
+    | 'MARKET_CLOSED';
   severity: Severity;
   message: string;
 }
@@ -45,8 +47,11 @@ const NEAR_STALE_RATIO = 0.8;
 /** Past this share of a fallback's allowed divergence, its sources are reported as disagreeing. */
 const DIVERGENCE_WARNING_RATIO = 0.5;
 
+/** Checks that explain another check rather than report a problem of their own. */
+const NO_PENALTY = new Set<Check['code']>(['MARKET_CLOSED']);
+
 function score(checks: Check[]): number {
-  return Math.max(0, 100 - checks.reduce((sum, c) => sum + PENALTY[c.severity], 0));
+  return Math.max(0, 100 - checks.reduce((sum, c) => sum + (NO_PENALTY.has(c.code) ? 0 : PENALTY[c.severity]), 0));
 }
 
 function spreadBps(entries: ScopeEntry[]): number {
@@ -336,9 +341,47 @@ export interface OracleData {
 }
 
 export function evaluate(reserve: MarketOracleConfig, oracles: OracleData, now: number): HealthResult {
-  if (reserve.protocol === 'marginfi') return evaluateMarginfi(reserve, oracles.pyth, now);
-  if (reserve.protocol === 'jupiter-lend') return evaluateJupiterLend(reserve, oracles.sourceTimes ?? new Map(), now);
-  return evaluateKamino(reserve, oracles.scope, now);
+  const result =
+    reserve.protocol === 'marginfi'
+      ? evaluateMarginfi(reserve, oracles.pyth, now)
+      : reserve.protocol === 'jupiter-lend'
+        ? evaluateJupiterLend(reserve, oracles.sourceTimes ?? new Map(), now)
+        : evaluateKamino(reserve, oracles.scope, now);
+  const closed = marketClosedCheck(reserve, result, now);
+  return closed ? { ...result, checks: [...result.checks, closed] } : result;
+}
+
+/** A price that stopped this long before the close is taken to have stopped when trading did. */
+const CLOSE_GRACE_SECONDS = 15 * 60;
+
+const CLOSED_FOR: Record<ClosedReason, string> = { weekend: 'for the weekend', holiday: 'for a holiday', overnight: 'overnight' };
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** e.g. "Fri 25 Sep 20:00 UTC"; built by hand because locale data varies between Node builds. */
+const utcLabel = (d: Date) =>
+  `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.toISOString().slice(11, 16)} UTC`;
+
+/**
+ * Explains a stale tokenized stock whose feed stopped when the US market closed: the protocol still
+ * rejects the price, but the oracle is following the market rather than failing. A price that
+ * stopped during trading hours is not explained away.
+ */
+function marketClosedCheck(reserve: MarketOracleConfig, result: HealthResult, now: number): Check | null {
+  if (!US_STOCK_MINTS.has(reserve.mint) || result.priceAgeSeconds === null) return null;
+  if (!result.checks.some((c) => c.code === 'STALE')) return null;
+  const market = usStockSession(new Date(now * 1000));
+  if (market.open) return null;
+  const lastPrice = now - result.priceAgeSeconds;
+  if (lastPrice < market.lastClose.getTime() / 1000 - CLOSE_GRACE_SECONDS) return null;
+  return {
+    code: 'MARKET_CLOSED',
+    severity: 'info',
+    message:
+      `The US stock market is closed ${CLOSED_FOR[market.reason]}: the price stopped at the ${utcLabel(market.lastClose)} close ` +
+      `and should resume at the ${utcLabel(market.nextOpen)} open. Until then the protocol rejects it.`,
+  };
 }
 
 function evaluateKamino(reserve: MarketOracleConfig, scopeFeed: ScopeFeed | undefined, now: number): HealthResult {

@@ -98,11 +98,13 @@ export interface IncidentStart {
   startedAt: Date;
   /** The reserve was already critical when first tracked: the start is estimated from the price age. */
   estimated: boolean;
-  /** Critical checks, as "CODE:severity". */
+  /** Critical checks, and whether the stock market was closed, as "CODE:severity". */
   checks: string[];
 }
 
 const criticalKeys = (keys: string[]) => keys.filter((k) => k.endsWith(':critical'));
+/** Checks that explain an incident rather than cause one; kept with it so the log shows why. */
+const contextKeys = (keys: string[]) => keys.filter((k) => k.startsWith('MARKET_CLOSED:'));
 
 /**
  * Incidents to open and close so that a reserve has an open incident exactly while its reported
@@ -133,7 +135,7 @@ export function planIncidents(
         row,
         startedAt: transition?.since ?? new Date(now.getTime() - (staleFor ?? 0) * 1000),
         estimated: !transition,
-        checks: critical,
+        checks: [...critical, ...contextKeys(state.reported.checks)],
       });
     } else if (!critical.length && openIncidents.has(address)) {
       close.push({ address, endedAt: transition?.since ?? now });

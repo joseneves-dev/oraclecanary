@@ -45,7 +45,7 @@ class ReserveIncident
     #[ORM\Column(nullable: true)]
     private ?\DateTimeImmutable $endedAt = null;
 
-    /** Critical checks when it started, as "CODE:severity" strings. */
+    /** Critical checks when it started (plus MARKET_CLOSED if the stock market was closed), as "CODE:severity" strings. */
     #[ORM\Column(type: Types::JSON)]
     private array $checks = [];
 

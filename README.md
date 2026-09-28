@@ -21,8 +21,9 @@ setups. It then checks:
 | `EMPTY_PRICE_ENTRY` | critical | The price chain points at an unconfigured Scope entry |
 | `SOURCES_DIVERGE` | critical / warning | Fallback sources disagree beyond their own tolerance |
 | `FIXED_PRICE` | info | The price is fixed and does not follow the market |
+| `MARKET_CLOSED` | info | A tokenized US stock is `STALE` because its price stopped at the market close; it should resume at the next open (no score penalty) |
 
-Each reserve gets a 0–100 score (critical −50, warning −15, info −5).
+Each reserve gets a 0–100 score (critical −50, warning −15, info −5; `MARKET_CLOSED` only explains a `STALE` and costs nothing).
 
 > Built for the Colosseum Crypto World's Fair hackathon (Sep–Oct 2026).
 

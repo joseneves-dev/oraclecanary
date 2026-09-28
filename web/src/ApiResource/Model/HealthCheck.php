@@ -5,7 +5,7 @@ namespace App\ApiResource\Model;
 final readonly class HealthCheck
 {
     public function __construct(
-        /** e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE. */
+        /** e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE, MARKET_CLOSED. */
         public string $code,
         public Severity $severity,
         public string $message,

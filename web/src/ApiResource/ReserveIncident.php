@@ -122,7 +122,7 @@ final class ReserveIncident
     #[Map(source: 'endedAt', transform: [self::class, 'toDuration'])]
     public ?int $durationSeconds;
 
-    /** @var list<CheckState> The critical checks when the incident started. */
+    /** @var list<CheckState> The critical checks when the incident started, plus MARKET_CLOSED (info) if the stock market was closed. */
     #[Map(source: 'checks', transform: [CheckState::class, 'listFromStored'])]
     public array $checks;
 
