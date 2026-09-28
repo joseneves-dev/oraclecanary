@@ -58,3 +58,18 @@ losing the server.
 
 Point an uptime monitor (UptimeRobot, Better Stack...) at `https://<domain>/api/health` to be alerted
 when the API is down or the data stops refreshing.
+
+## Telegram alerts
+
+The `alerts` service posts to a Telegram channel when a reserve with at least `ALERT_MIN_SUPPLY_USD`
+supplied gets a critical check, gets a new one, or recovers. A tokenized stock that goes stale
+because its market closed is not alerted, but one still frozen after the market opens is.
+
+1. Create a bot with @BotFather and a public channel; add the bot to the channel as an
+   administrator allowed to post.
+2. Set `TELEGRAM_BOT_TOKEN` (and `TELEGRAM_CHAT_ID` if the channel is not `@OracleCanaryAlerts`) in
+   `deploy/.env`, then run `./deploy/deploy.sh`.
+
+Without a token the service stays idle. On its first start it alerts only on events recorded from
+then on; after that it remembers the last event handled (volume `alerts_data`), so restarts neither
+repeat nor skip alerts. Logs: `docker compose -f deploy/compose.yaml --env-file deploy/.env logs -f alerts`.

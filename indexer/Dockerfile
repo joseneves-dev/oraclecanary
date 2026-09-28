@@ -10,5 +10,8 @@ RUN npm ci --legacy-peer-deps --no-audit --no-fund
 COPY tsconfig.json ./
 COPY src ./src
 
+# State kept across restarts (the alerts cursor); a named volume mounted here inherits this owner.
+RUN mkdir /data && chown node:node /data
+
 USER node
 CMD ["npm", "start"]

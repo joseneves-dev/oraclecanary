@@ -57,6 +57,22 @@ services:
       retries: 1
       start_period: 180s
 
+  # Posts alerts for new incidents to a Telegram channel; idle until TELEGRAM_BOT_TOKEN is set.
+  alerts:
+    build: ../indexer
+    restart: unless-stopped
+    depends_on:
+      - api # applies the database migrations on start
+    command: ["npm", "run", "notify"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-oraclecanary}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-oraclecanary}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-@OracleCanaryAlerts}
+      SITE_URL: ${SITE_URL:-https://oraclecanary.com}
+      ALERT_MIN_SUPPLY_USD: ${ALERT_MIN_SUPPLY_USD:-10000}
+    volumes:
+      - alerts_data:/data
+
   # Dumps the database every day into ./backups and keeps the last BACKUP_KEEP_DAYS dumps.
   backup:
     image: postgres:16-alpine
@@ -88,3 +104,4 @@ volumes:
   database_data:
   caddy_data:
   caddy_config:
+  alerts_data:
