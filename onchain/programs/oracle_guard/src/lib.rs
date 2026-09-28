@@ -98,7 +98,7 @@ pub struct Attestation {
     pub severity: u8,
     /// Age of the oldest price in the reserve's price chain; `PRICE_AGE_UNKNOWN` if unreadable.
     pub price_age_seconds: u32,
-    /// Unix seconds when OracleCanary signed the attestation.
+    /// Unix seconds when OracleCanary measured the reserve's health (not when it signed).
     pub issued_at: i64,
 }
 

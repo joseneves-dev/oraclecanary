@@ -72,8 +72,19 @@ services:
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-@OracleCanaryAlerts}
       SITE_URL: ${SITE_URL:-https://oraclecanary.com}
       ALERT_MIN_SUPPLY_USD: ${ALERT_MIN_SUPPLY_USD:-10000}
+      # Polls every CHECK_INTERVAL_SECONDS; the health check reads the same value and HEARTBEAT_FILE.
+      CHECK_INTERVAL_SECONDS: 60
+      HEARTBEAT_FILE: /data/alerts.heartbeat
     volumes:
       - alerts_data:/data
+    # "unhealthy" when polls keep failing or Telegram keeps refusing messages (e.g. the bot was
+    # removed from the channel). Without a token there is no heartbeat, so it shows as unhealthy.
+    healthcheck:
+      test: ["CMD", "node", "--import", "tsx", "src/healthcheck.ts"]
+      interval: 60s
+      timeout: 10s
+      retries: 1
+      start_period: 180s
 
   # Dumps the database every day into ./backups and keeps the last BACKUP_KEEP_DAYS dumps.
   backup:

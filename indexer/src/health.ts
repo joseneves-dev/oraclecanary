@@ -351,8 +351,14 @@ export function evaluate(reserve: MarketOracleConfig, oracles: OracleData, now: 
   return closed ? { ...result, checks: [...result.checks, closed] } : result;
 }
 
-/** A price that stopped this long before the close is taken to have stopped when trading did. */
-const CLOSE_GRACE_SECONDS = 15 * 60;
+/**
+ * Feeds that follow extended hours keep publishing until 20:00 New York time, four hours after the
+ * regular close; a price that stopped later than that did not stop because trading ended.
+ */
+const AFTER_HOURS_SECONDS = 4 * 3600;
+
+/** Warned once per process, so a missing calendar year shows in the logs without flooding them. */
+let calendarWarned = false;
 
 const CLOSED_FOR: Record<ClosedReason, string> = { weekend: 'for the weekend', holiday: 'for a holiday', overnight: 'overnight' };
 
@@ -364,22 +370,34 @@ const utcLabel = (d: Date) =>
   `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.toISOString().slice(11, 16)} UTC`;
 
 /**
- * Explains a stale tokenized stock whose feed stopped when the US market closed: the protocol still
- * rejects the price, but the oracle is following the market rather than failing. A price that
- * stopped during trading hours is not explained away.
+ * Explains a stale tokenized stock whose feed stopped because the US market closed: the protocol still
+ * rejects the price, but the oracle is following the market rather than failing. Only a price that
+ * was still fresh at the close (so not already stale while trading) and stopped by the end of the
+ * after-hours session is explained away.
  */
 function marketClosedCheck(reserve: MarketOracleConfig, result: HealthResult, now: number): Check | null {
   if (!US_STOCK_MINTS.has(reserve.mint) || result.priceAgeSeconds === null) return null;
   if (!result.checks.some((c) => c.code === 'STALE')) return null;
-  const market = usStockSession(new Date(now * 1000));
+
+  let market: ReturnType<typeof usStockSession>;
+  try {
+    market = usStockSession(new Date(now * 1000));
+  } catch (e) {
+    if (!calendarWarned) console.warn(`MARKET_CLOSED is disabled: ${(e as Error).message}`);
+    calendarWarned = true;
+    return null;
+  }
   if (market.open) return null;
+
   const lastPrice = now - result.priceAgeSeconds;
-  if (lastPrice < market.lastClose.getTime() / 1000 - CLOSE_GRACE_SECONDS) return null;
+  const close = market.lastClose.getTime() / 1000;
+  if (lastPrice < close - reserve.maxAgePriceSeconds || lastPrice > close + AFTER_HOURS_SECONDS) return null;
+  const stopped = lastPrice <= close ? `at the ${utcLabel(market.lastClose)} close` : `at ${utcLabel(new Date(lastPrice * 1000))}, after the close`;
   return {
     code: 'MARKET_CLOSED',
     severity: 'info',
     message:
-      `The US stock market is closed ${CLOSED_FOR[market.reason]}: the price stopped at the ${utcLabel(market.lastClose)} close ` +
+      `The US stock market is closed ${CLOSED_FOR[market.reason]}: the price stopped ${stopped} ` +
       `and should resume at the ${utcLabel(market.nextOpen)} open. Until then the protocol rejects it.`,
   };
 }

@@ -33,10 +33,18 @@ final readonly class ReserveAttestationProvider implements ProviderInterface
             throw new ServiceUnavailableHttpException(null, 'Attestation signing is not configured on this server.');
         }
 
-        $severity = Severity::worstOf(array_column($reserve->getChecks(), 'severity'));
+        $severity = self::signedSeverity($reserve->getChecks());
         // The indexer writes checked_at in UTC without a time zone.
         $issuedAt = new \DateTimeImmutable($reserve->getCheckedAt()->format('Y-m-d H:i:s'), new \DateTimeZone('UTC'));
         $message = AttestationSigner::encode($reserve->getAddress(), $reserve->getScore(), $severity, $reserve->getPriceAgeSeconds(), $issuedAt->getTimestamp());
+
+        try {
+            $signature = $this->signer->sign($message);
+            $publicKey = $this->signer->publicKey();
+        } catch (\LogicException) {
+            // A malformed key: say so rather than fail with a bare 500. The key itself is never shown.
+            throw new ServiceUnavailableHttpException(null, 'Attestation signing is misconfigured on this server.');
+        }
 
         return new ReserveAttestation(
             $reserve->getAddress(),
@@ -45,8 +53,29 @@ final readonly class ReserveAttestationProvider implements ProviderInterface
             $reserve->getPriceAgeSeconds(),
             $issuedAt,
             base64_encode($message),
-            base64_encode($this->signer->sign($message)),
-            $this->signer->publicKey(),
+            base64_encode($signature),
+            $publicKey,
         );
+    }
+
+    /**
+     * Worst severity of the stored checks, for signing. Unlike the public listing, which reads an
+     * unknown severity as a warning, anything unrecognised here counts as critical: a signature
+     * vouches for the reserve on-chain, so doubt must never make it look healthier.
+     *
+     * @param list<mixed> $checks
+     */
+    public static function signedSeverity(array $checks): Severity
+    {
+        $worst = Severity::Ok;
+        foreach ($checks as $check) {
+            $severity = \is_array($check) && \is_string($check['severity'] ?? null) ? Severity::tryFrom($check['severity']) : null;
+            $severity ??= Severity::Critical;
+            if ($severity->rank() > $worst->rank()) {
+                $worst = $severity;
+            }
+        }
+
+        return $worst;
     }
 }

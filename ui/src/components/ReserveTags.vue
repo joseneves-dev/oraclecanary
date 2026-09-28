@@ -30,9 +30,14 @@ const tags = computed(() =>
 
 <template>
   <span v-if="tags.length" class="tags">
-    <span v-for="tag in tags" :key="tag.code" class="ax-badge ax-badge--soft ax-badge--pill tag" :class="tag.badge" :title="tag.title">{{ tag.label }}</span>
+    <!-- The explanation is a tooltip for the mouse and hidden text for screen readers. -->
+    <span v-for="tag in tags" :key="tag.code" class="ax-badge ax-badge--soft ax-badge--pill tag" :class="tag.badge" :title="tag.title">
+      {{ tag.label }}<span class="ax-visually-hidden">: {{ tag.title }}</span>
+    </span>
   </span>
-  <span v-else-if="!hideEmpty" class="none" aria-label="No tags">—</span>
+  <template v-else-if="!hideEmpty">
+    <span class="none" aria-hidden="true">—</span><span class="ax-visually-hidden">No tags</span>
+  </template>
 </template>
 
 <style scoped>

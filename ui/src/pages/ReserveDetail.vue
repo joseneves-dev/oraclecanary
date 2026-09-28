@@ -208,6 +208,7 @@ const accountRows = (r: Reserve) =>
 <style scoped>
 .title {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--ax-space-3);
 }

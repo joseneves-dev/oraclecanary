@@ -2,6 +2,7 @@
  * Devnet operations for oracle_guard and the demo vault.
  *
  *   npx tsx ts/devnet.ts init <attestation public key>   point the guard at the API's signing key
+ *   npx tsx ts/devnet.ts rotate <attestation public key> replace that key (set_authority)
  *   npx tsx ts/devnet.ts demo <reserve address> [amount]  try a demo_vault deposit with the API's
  *                                                         current attestation for that reserve
  *
@@ -53,26 +54,44 @@ const payer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(KEYP
 const discriminator = (name: string) => createHash('sha256').update(`global:${name}`).digest().subarray(0, 8);
 const explorer = (signature: string) => `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 
-/** Sends without preflight and reports how the transaction ended, with the guard's error if any. */
-async function send(instructions: TransactionInstruction[]): Promise<boolean> {
-  const tx = new Transaction().add(...instructions);
-  const signature = await connection.sendTransaction(tx, [payer], { skipPreflight: true });
-  await connection.confirmTransaction(signature, 'confirmed');
-  const result = await connection.getTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
-  const logs = result?.meta?.logMessages ?? [];
-  console.log(explorer(signature));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  if (!result?.meta?.err) {
-    logs.filter((l) => l.startsWith('Program log: ')).forEach((l) => console.log(`  ${l.slice(13)}`));
+/**
+ * Sends without preflight and reports how the transaction ended, with the guard's error if any.
+ * Returns true only for a transaction seen to succeed; an outcome it cannot read is a failure.
+ */
+async function send(instructions: TransactionInstruction[]): Promise<boolean> {
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+  const tx = new Transaction({ blockhash, lastValidBlockHeight, feePayer: payer.publicKey }).add(...instructions);
+  // Signed here rather than by sendTransaction, which would swap in its own blockhash.
+  tx.sign(payer);
+  const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: true });
+  console.log(explorer(signature));
+  const confirmation = await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
+
+  // Load-balanced RPCs can briefly answer null for a transaction they just confirmed.
+  let result = null;
+  for (let attempt = 0; attempt < 10 && !result; attempt++) {
+    result = await connection.getTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
+    if (!result) await sleep(1000);
+  }
+  const err = result?.meta ? result.meta.err : confirmation.value.err;
+  if (!result && !err) {
+    console.log('  UNKNOWN: confirmed, but the RPC did not return the transaction; check the explorer link');
+    return false;
+  }
+
+  if (!err) {
+    (result?.meta?.logMessages ?? []).filter((l) => l.startsWith('Program log: ')).forEach((l) => console.log(`  ${l.slice(13)}`));
     return true;
   }
-  const custom = JSON.stringify(result.meta.err).match(/"Custom":(\d+)/);
+  const custom = JSON.stringify(err).match(/"Custom":(\d+)/);
   const code = custom ? Number(custom[1]) : null;
-  console.log(`  REFUSED: ${code !== null ? (GUARD_ERRORS[code] ?? `custom error ${code}`) : JSON.stringify(result.meta.err)}`);
+  console.log(`  REFUSED: ${code !== null ? (GUARD_ERRORS[code] ?? `custom error ${code}`) : JSON.stringify(err)}`);
   return false;
 }
 
-async function init(authority: PublicKey): Promise<void> {
+async function init(authority: PublicKey): Promise<boolean> {
   const [programData] = PublicKey.findProgramAddressSync([ORACLE_GUARD_PROGRAM_ID.toBuffer()], BPF_LOADER_UPGRADEABLE);
   const data = Buffer.concat([discriminator('initialize'), authority.toBuffer()]);
   const ok = await send([
@@ -89,6 +108,23 @@ async function init(authority: PublicKey): Promise<void> {
     }),
   ]);
   console.log(ok ? `oracle_guard now accepts attestations signed by ${authority.toBase58()}` : 'initialize failed');
+  return ok;
+}
+
+/** Replaces the accepted signing key (after the API's key changed or leaked); signed by the config admin. */
+async function rotate(authority: PublicKey): Promise<boolean> {
+  const ok = await send([
+    new TransactionInstruction({
+      programId: ORACLE_GUARD_PROGRAM_ID,
+      keys: [
+        { pubkey: configAddress(), isSigner: false, isWritable: true },
+        { pubkey: payer.publicKey, isSigner: true, isWritable: false },
+      ],
+      data: Buffer.concat([discriminator('set_authority'), authority.toBuffer()]),
+    }),
+  ]);
+  console.log(ok ? `oracle_guard now accepts attestations signed by ${authority.toBase58()} only` : 'set_authority failed');
+  return ok;
 }
 
 interface ApiAttestation {
@@ -101,7 +137,7 @@ interface ApiAttestation {
   publicKey: string;
 }
 
-async function demo(reserve: PublicKey, amount: bigint): Promise<void> {
+async function demo(reserve: PublicKey, amount: bigint): Promise<boolean> {
   const response = await fetch(`${API_URL}/api/reserves/${reserve.toBase58()}/attestation`, { headers: { Accept: 'application/json' } });
   if (!response.ok) throw new Error(`The API answered ${response.status} for the attestation`);
   const body = (await response.json()) as ApiAttestation;
@@ -122,7 +158,7 @@ async function demo(reserve: PublicKey, amount: bigint): Promise<void> {
   data.writeBigUInt64LE(amount, 8);
 
   console.log(`Depositing ${amount} into the demo vault (accepts severity up to "warning", attestations up to 600s old):`);
-  await send([
+  return send([
     ed25519Instruction(signed),
     new TransactionInstruction({
       programId: DEMO_VAULT_PROGRAM_ID,
@@ -141,9 +177,13 @@ async function demo(reserve: PublicKey, amount: bigint): Promise<void> {
 }
 
 const [command, arg, amount] = process.argv.slice(2);
-if (command === 'init' && arg) await init(new PublicKey(arg));
-else if (command === 'demo' && arg) await demo(new PublicKey(arg), BigInt(amount ?? 1000));
+let ok: boolean;
+if (command === 'init' && arg) ok = await init(new PublicKey(arg));
+else if (command === 'rotate' && arg) ok = await rotate(new PublicKey(arg));
+else if (command === 'demo' && arg) ok = await demo(new PublicKey(arg), BigInt(amount ?? 1000));
 else {
-  console.error('Usage: npx tsx ts/devnet.ts init <attestation public key> | demo <reserve address> [amount]');
-  process.exitCode = 1;
+  console.error('Usage: npx tsx ts/devnet.ts init <attestation public key> | rotate <attestation public key> | demo <reserve address> [amount]');
+  ok = false;
 }
+// A refused deposit is the demo working as intended, but still a failed transaction: exit 1 either way.
+if (!ok) process.exitCode = 1;

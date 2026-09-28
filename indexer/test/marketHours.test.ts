@@ -37,6 +37,15 @@ describe('usStockSession', () => {
     assert.equal(usStockSession(utc('2026-11-27T18:00:00')).open, false);
   });
 
+  it('refuses to guess for years without a holiday list', () => {
+    assert.throws(() => usStockSession(utc('2028-01-17T15:00:00')), /No US market holidays listed for 2028/);
+  });
+
+  it('has holidays listed for the next six months', () => {
+    // Fails once the list is about to run out: add the next year from nyse.com.
+    assert.doesNotThrow(() => usStockSession(new Date(Date.now() + 183 * 86_400_000)));
+  });
+
   it('crosses the switch to winter time', () => {
     // US clocks go back on Sunday 1 Nov 2026: Friday closes at 20:00 UTC, Monday opens at 14:30 UTC.
     const session = usStockSession(utc('2026-11-01T12:00:00'));
@@ -87,8 +96,16 @@ describe('MARKET_CLOSED', () => {
     assert.equal(result.score, 35);
   });
 
-  it('does not explain a price that stopped while the market was open', () => {
-    assert.equal(check(FWDI, '2026-09-25T17:00:00', '2026-09-28T10:27:00').closed, undefined);
+  it('does not explain a price that was already stale before the close', () => {
+    // The limit is 185s: a price from 19:56 was stale while the market was still open.
+    assert.equal(check(FWDI, '2026-09-25T19:56:00', '2026-09-28T10:27:00').closed, undefined);
+    assert.ok(check(FWDI, '2026-09-25T19:58:00', '2026-09-28T10:27:00').closed);
+  });
+
+  it('explains a feed that followed the after-hours session, but not one that stopped later', () => {
+    const afterHours = check(FWDI, '2026-09-25T23:59:00', '2026-09-28T10:27:00').closed;
+    assert.match(afterHours!.message, /the price stopped at Fri 25 Sep 23:59 UTC, after the close/);
+    assert.equal(check(FWDI, '2026-09-26T01:00:00', '2026-09-28T10:27:00').closed, undefined);
   });
 
   it('does not explain a price that is still stale after the open', () => {

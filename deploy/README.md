@@ -70,6 +70,24 @@ because its market closed is not alerted, but one still frozen after the market 
 2. Set `TELEGRAM_BOT_TOKEN` (and `TELEGRAM_CHAT_ID` if the channel is not `@OracleCanaryAlerts`) in
    `deploy/.env`, then run `./deploy/deploy.sh`.
 
-Without a token the service stays idle. On its first start it alerts only on events recorded from
-then on; after that it remembers the last event handled (volume `alerts_data`), so restarts neither
-repeat nor skip alerts. Logs: `docker compose -f deploy/compose.yaml --env-file deploy/.env logs -f alerts`.
+Without a token the service stays idle (and shows as unhealthy, having no heartbeat). On its first
+start it alerts only on events recorded from then on; after that it remembers the last event handled
+and which alerts are still open (volume `alerts_data`), so restarts neither repeat nor skip alerts,
+and every alert gets its "Recovered". A message Telegram refuses (e.g. the bot was removed from the
+channel) is logged and skipped, and the container turns **unhealthy** until messages go through
+again: check `ps` after a deploy. Logs: `docker compose -f deploy/compose.yaml --env-file deploy/.env logs -f alerts`.
+
+## Attestation signing key
+
+The API signs `/api/reserves/{address}/attestation` with `ATTESTATION_SECRET_KEY`, and the on-chain
+`oracle_guard` only accepts the matching public key. Create the key **once**, on the server:
+
+```bash
+grep -q '^ATTESTATION_SECRET_KEY=.' deploy/.env || printf '\nATTESTATION_SECRET_KEY=%s\n' "$(openssl rand -base64 32)" >> deploy/.env
+./deploy/deploy.sh
+```
+
+The public key is the `publicKey` field of any attestation. Give it to the guard with
+`onchain/ts/devnet.ts init` the first time. Replacing the secret changes the public key, and the guard
+then rejects every attestation (`WrongSigner`) until `onchain/ts/devnet.ts rotate <new public key>`
+is run with the admin wallet. Back up the secret like the database password.

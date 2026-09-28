@@ -8,6 +8,9 @@ defineProps<{ incidents: ReserveIncident[] }>()
 
 const router = useRouter()
 
+/** The critical checks that caused an incident; tags such as MARKET_CLOSED are shown in their own column. */
+const cause = (i: ReserveIncident) => i.checks.filter((c) => c.severity === 'critical').map((c) => c.code).join(', ') || '—'
+
 /** Ended incidents have a duration; ongoing ones are measured up to now. */
 const elapsed = (i: ReserveIncident) =>
   i.durationSeconds ?? Math.max(0, Math.round((Date.now() - Date.parse(i.startedAt)) / 1000))
@@ -34,7 +37,7 @@ const elapsed = (i: ReserveIncident) =>
             <RouterLink :to="{ name: 'reserve', params: { address: i.reserve } }">{{ i.asset }}</RouterLink>
             <div class="muted">{{ i.protocol }} · {{ i.marketName }}</div>
           </td>
-          <td class="codes">{{ i.checks.filter((c) => c.severity === 'critical').map((c) => c.code).join(', ') }}</td>
+          <td class="codes">{{ cause(i) }}</td>
           <td><ReserveTags :checks="i.checks" /></td>
           <td class="nowrap">
             <span v-if="i.startEstimated" title="Already failing when tracking started: worked out from the age of its price">≈ </span>{{ dateTime(i.startedAt) }}

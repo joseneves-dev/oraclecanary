@@ -431,4 +431,10 @@ fn demo_vault_deposits_only_when_oracle_is_healthy() {
     let position = env.svm.get_account(&position_pda(&reserve, &user)).unwrap();
     let deposited = u64::from_le_bytes(position.data[8 + 64..8 + 72].try_into().unwrap());
     assert_eq!(deposited, 500, "refused deposits must not change the position");
+
+    // Exactly the vault's limit (600 s, the indexer's interval plus margin) is still accepted.
+    let e = env.healthy(OK, NOW - 600);
+    env.send(&[ed25519_ix(&[e]), deposit_ix(&user, &reserve, 100)], &[]).expect("deposit at the age limit");
+    let position = env.svm.get_account(&position_pda(&reserve, &user)).unwrap();
+    assert_eq!(u64::from_le_bytes(position.data[8 + 64..8 + 72].try_into().unwrap()), 600);
 }

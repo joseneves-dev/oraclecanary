@@ -1,5 +1,5 @@
-// Container health check: exits 1 when the indexer has not completed a full run recently.
-// Usage: tsx src/healthcheck.ts  (reads HEARTBEAT_FILE and CHECK_INTERVAL_SECONDS like run.ts)
+// Container health check: exits 1 when the indexer (or the alerts notifier) has not completed a run
+// recently. Usage: tsx src/healthcheck.ts  (reads HEARTBEAT_FILE and CHECK_INTERVAL_SECONDS like they do)
 import { stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

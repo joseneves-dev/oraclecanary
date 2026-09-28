@@ -1,8 +1,10 @@
 /**
- * Decides which recorded health changes are worth a public alert, and words them. An alert is sent
- * when a reserve's price becomes unusable or usable again: a critical check starts or all of them
- * stop. A tokenized stock that goes stale because its market closed is expected and is not an
- * alert, but one still frozen after the market opens is.
+ * Decides which recorded health changes are worth a public alert, and words them.
+ *
+ * An alert opens when a reserve gets a critical problem that is not explained away, and closes with a
+ * "Recovered" when none is left. The only thing explained away is a tokenized stock's price going
+ * stale because its market closed (the MARKET_CLOSED check); any other critical problem is alerted at
+ * any time, and a stock still frozen once the market opens is too.
  */
 
 /** A row of reserve_health_event, as read by the notifier. */
@@ -23,26 +25,38 @@ export type AlertKind = 'started' | 'worsened' | 'still-frozen' | 'resolved';
 export interface Alert {
   kind: AlertKind;
   event: HealthEvent;
+  /** The critical problems that are not explained away, after the change. */
+  codes: string[];
 }
 
-const codesOf = (keys: string[], severity: string) => keys.filter((k) => k.endsWith(`:${severity}`)).map((k) => k.split(':')[0]);
 const isMarketClosed = (keys: string[]) => keys.some((k) => k.startsWith('MARKET_CLOSED:'));
 
-/** The alert a change calls for, or null. `minSupplyUsd` leaves out reserves with little at stake. */
-export function alertFor(event: HealthEvent, minSupplyUsd: number): Alert | null {
-  if (event.totalSupplyUsd < minSupplyUsd) return null;
+/** Critical codes that count as problems: a stale price is excused while its stock market is closed. */
+export function problemCodes(keys: string[]): string[] {
+  const critical = keys.filter((k) => k.endsWith(':critical')).map((k) => k.split(':')[0]);
+  return isMarketClosed(keys) ? critical.filter((code) => code !== 'STALE') : critical;
+}
 
-  const before = codesOf(event.previousChecks, 'critical');
-  const after = codesOf(event.checks, 'critical');
-  const wasClosed = isMarketClosed(event.previousChecks);
-  const closed = isMarketClosed(event.checks);
+/**
+ * The alert a change calls for, or null.
+ *
+ * `open` says whether this reserve has an alert that has not been closed yet; the caller keeps that
+ * state, opening it on "started" and "still-frozen" and closing it on "resolved". `minSupplyUsd` only
+ * applies to opening an alert, so an open one is always closed, however small the reserve became.
+ */
+export function alertFor(event: HealthEvent, open: boolean, minSupplyUsd: number): Alert | null {
+  const before = problemCodes(event.previousChecks);
+  const after = problemCodes(event.checks);
+  const added = after.filter((code) => !before.includes(code));
 
-  if (!before.length && after.length) return closed ? null : { kind: 'started', event };
-  if (before.length && !after.length) return wasClosed ? null : { kind: 'resolved', event };
-  if (!before.length || !after.length) return null;
-  if (wasClosed && !closed) return { kind: 'still-frozen', event };
-  if (after.some((code) => !before.includes(code)) && !closed) return { kind: 'worsened', event };
-  return null;
+  if (open) {
+    if (!after.length) return { kind: 'resolved', event, codes: [] };
+    return added.length ? { kind: 'worsened', event, codes: after } : null;
+  }
+  if (!added.length || event.totalSupplyUsd < minSupplyUsd) return null;
+  // A stale price that was excused a moment ago is now one the market opening did not fix.
+  const unfrozen = added.length === 1 && added[0] === 'STALE' && isMarketClosed(event.previousChecks);
+  return { kind: unfrozen ? 'still-frozen' : 'started', event, codes: after };
 }
 
 /** What each critical check means for users, in a few words. */
@@ -73,10 +87,8 @@ const HEADLINES: Record<AlertKind, string> = {
 };
 
 /** The alert as a Telegram message in HTML parse mode. */
-export function formatAlert({ kind, event }: Alert, siteUrl: string): string {
+export function formatAlert({ kind, event, codes }: Alert, siteUrl: string): string {
   const where = [PROTOCOL_NAMES[event.protocol] ?? event.protocol, event.marketName].filter(Boolean).join(' · ');
-  const critical = codesOf(event.checks, 'critical');
-  const reasons = critical.map((code) => CRITICAL_MEANING[code] ?? code);
 
   let detail: string;
   if (kind === 'resolved') {
@@ -84,9 +96,9 @@ export function formatAlert({ kind, event }: Alert, siteUrl: string): string {
   } else if (kind === 'still-frozen') {
     detail = 'The US stock market is open, but the price has not resumed: the protocol still rejects it.';
   } else {
-    detail = `${reasons.join('; ')}.`;
+    detail = `${codes.map((code) => CRITICAL_MEANING[code] ?? code).join('; ')}.`;
     detail = detail.charAt(0).toUpperCase() + detail.slice(1);
-    if (critical.includes('STALE')) detail += ' Borrowing and liquidations fail until it updates.';
+    if (codes.includes('STALE')) detail += ' Borrowing and liquidations fail until it updates.';
   }
 
   return [

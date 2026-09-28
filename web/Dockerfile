@@ -1,8 +1,11 @@
 # Production image of the OracleCanary API: FrankenPHP (Caddy + PHP 8.4) serving Symfony.
 FROM dunglas/frankenphp:1-php8.4
 
+# PHP runs in UTC: the indexer stores times in UTC without a zone, and reading them in a zone with
+# daylight saving could shift a signed attestation's time by an hour.
 RUN install-php-extensions pdo_pgsql intl opcache apcu zip \
-	&& mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+	&& mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+	&& echo 'date.timezone = UTC' > "$PHP_INI_DIR/conf.d/timezone.ini"
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 

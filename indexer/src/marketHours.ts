@@ -18,6 +18,9 @@ const HOLIDAYS = new Set([
 /** Days the market closes at 13:00, New York dates. */
 const EARLY_CLOSES = new Set(['2026-11-27', '2026-12-24', '2027-11-26']);
 
+/** Years HOLIDAYS covers; outside them holidays would pass for trading days, so nothing is assumed. */
+export const CALENDAR_YEARS = new Set([2026, 2027]);
+
 /**
  * Tokenized US stocks by mint. Listed explicitly rather than guessed from names, so an unrelated
  * token is never labelled as a stock.
@@ -96,11 +99,15 @@ const isWeekend = (day: Day) => day.weekday === 0 || day.weekday === 6;
 
 /** Opening and closing instants of a day's regular session, or null when the market is shut. */
 function session(day: Day): { open: Date; close: Date } | null {
+  if (!CALENDAR_YEARS.has(day.year)) throw new Error(`No US market holidays listed for ${day.year} (marketHours.ts)`);
   if (isWeekend(day) || HOLIDAYS.has(day.date)) return null;
   return { open: nyTime(day, OPEN_MINUTE), close: nyTime(day, EARLY_CLOSES.has(day.date) ? EARLY_CLOSE_MINUTE : CLOSE_MINUTE) };
 }
 
-/** Whether the US stock market is in its regular session at `now`, and if not, since and until when. */
+/**
+ * Whether the US stock market is in its regular session at `now`, and if not, since and until when.
+ * Throws when the holidays around `now` are not listed.
+ */
 export function usStockSession(now: Date): MarketSession {
   const t = now.getTime();
   const today = dayOf(t);

@@ -3,6 +3,7 @@
 namespace App\Tests\Api;
 
 use ApiPlatform\Test\ApiTestCase;
+use App\ApiResource\Model\Severity;
 use App\Attestation\AttestationSigner;
 use App\Repository\LendingReserveRepository;
 use App\Solana\Base58;
@@ -57,7 +58,7 @@ final class AttestationApiTest extends ApiTestCase
 
         $message = base64_decode($body['message'], true);
         $issuedAt = (new \DateTimeImmutable('2026-09-28 10:26:59', new \DateTimeZone('UTC')))->getTimestamp();
-        self::assertSame(bin2hex(AttestationSigner::encode(self::FWDI, 35, \App\ApiResource\Model\Severity::Critical, 224820, $issuedAt)), bin2hex($message));
+        self::assertSame(bin2hex(AttestationSigner::encode(self::FWDI, 35, Severity::Critical, 224820, $issuedAt)), bin2hex($message));
         self::assertTrue(sodium_crypto_sign_verify_detached(base64_decode($body['signature'], true), $message, Base58::decodePublicKey($body['publicKey'])));
     }
 
@@ -66,6 +67,24 @@ final class AttestationApiTest extends ApiTestCase
         static::createClient()->request('GET', '/api/reserves/11111111111111111111111111111111/attestation', ['headers' => ['Accept' => 'application/json']]);
 
         self::assertResponseStatusCodeSame(404);
+    }
+
+    public function testSignsUnrecognisedOrMissingSeveritiesAsCritical(): void
+    {
+        self::assertSame(Severity::Warning, ReserveAttestationProvider::signedSeverity([['code' => 'NO_FALLBACK', 'severity' => 'warning']]));
+        self::assertSame(Severity::Ok, ReserveAttestationProvider::signedSeverity([]));
+        self::assertSame(Severity::Critical, ReserveAttestationProvider::signedSeverity([['code' => 'NEW_CHECK', 'severity' => 'high']]));
+        self::assertSame(Severity::Critical, ReserveAttestationProvider::signedSeverity([['code' => 'NEW_CHECK']]));
+        self::assertSame(Severity::Critical, ReserveAttestationProvider::signedSeverity(['not a check']));
+    }
+
+    public function testAnswers503WhenTheKeyIsMalformed(): void
+    {
+        $provider = new ReserveAttestationProvider(self::getContainer()->get(LendingReserveRepository::class), new AttestationSigner(base64_encode('not a 32-byte seed')));
+
+        $this->expectException(ServiceUnavailableHttpException::class);
+        $this->expectExceptionMessage('misconfigured');
+        $provider->provide(new Get(), ['address' => self::FWDI]);
     }
 
     public function testRefusesWhenNoSigningKeyIsConfigured(): void

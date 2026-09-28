@@ -8,7 +8,7 @@
  *   40      score u8 (0-100)
  *   41      severity u8 (0 ok, 1 info, 2 warning, 3 critical)
  *   42..46  price_age_seconds u32 (0xFFFFFFFF = unknown)
- *   46..54  issued_at i64, unix seconds
+ *   46..54  issued_at i64, unix seconds when the health was measured (not when it was signed)
  */
 import { Ed25519Program, PublicKey, SYSVAR_INSTRUCTIONS_PUBKEY, TransactionInstruction } from '@solana/web3.js';
 import nacl from 'tweetnacl';

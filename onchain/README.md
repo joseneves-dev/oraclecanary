@@ -98,6 +98,7 @@ pass the config PDA, the Instructions sysvar and the oracle_guard program, then:
 ```rust
 let attestation = oracle_guard::cpi::assert_oracle_healthy(
     CpiContext::new(guard_program, AssertOracleHealthy { config, instructions }),
+    // 600 s: the shortest max age that works with a 5-minute indexer; see "Limitations" for what it allows.
     reserve_key, oracle_guard::SEVERITY_WARNING, 600,
 )?.get();
 ```
@@ -111,7 +112,8 @@ key), `ed25519Instruction` and `assertOracleHealthyInstruction`.
 In production nobody needs to sign: `GET /api/reserves/{address}/attestation` returns the reserve's latest
 health already signed (`message`, `signature`, `publicKey`; see `web/src/Attestation/`). Its `issued_at`
 is when the indexer measured the health, not when it was signed, so a stopped indexer cannot produce
-fresh-looking attestations; with a check every 5 minutes, callers need a max age of at least that.
+fresh-looking attestations. With a check every 5 minutes, a max age under about 600 s fails often;
+see "Limitations" for the window that leaves open.
 
 ```ts
 const signed = signAttestation(attestationFromHealth(reserve, health, Math.floor(Date.now() / 1000)), key.secretKey);
@@ -169,16 +171,19 @@ npx tsx ts/devnet.ts init <attestation public key>
 npx tsx ts/devnet.ts demo <reserve address>
 ```
 
-`initialize` must be signed by the upgrade authority; `set_authority` rotates the key later. Deploy to
-mainnet only after a review. `demo_vault` is a demo and should not go to mainnet.
-`demo_vault` is a demo and should not go to mainnet.
+`initialize` must be signed by the upgrade authority and runs once. If the API's signing key changes
+(or leaks), `npx tsx ts/devnet.ts rotate <new public key>` calls `set_authority` with the admin wallet.
+Deploy to mainnet only after a review. `demo_vault` is a demo and should not go to mainnet.
 
 ## Limitations
 
-- An attestation is a snapshot. Within `max_attestation_age_seconds`, a caller can pick any
-  attestation OracleCanary signed for that reserve, including a healthy one issued just before the
-  oracle broke. Short max ages limit this. It does not replace the lending protocol's own
-  staleness checks.
+- An attestation is a snapshot, and the guard takes the newest one *the transaction includes*. A
+  caller who kept an earlier healthy attestation can leave out newer ones, so a transaction can pass
+  for up to `max_attestation_age_seconds` after the last healthy measurement, including after
+  OracleCanary has already signed a critical one. With the indexer checking every 5 minutes in
+  production, 600 s is the shortest max age that works reliably, not a safe default: at 600 s an
+  action can pass up to about 10 minutes after the oracle broke. Integrators who need less must run
+  checks more often. The guard does not replace the lending protocol's own staleness checks.
 - The guard trusts one off-chain signer. A compromised attestation key can mark any reserve healthy
   until the admin rotates it.
 - The domain tag does not name the cluster. Reserve addresses differ between clusters, and the key
