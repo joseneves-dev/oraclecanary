@@ -22,7 +22,7 @@ const ISSUES: Record<string, string> = {
   EMPTY_PRICE_ENTRY: 'Empty price entry',
   UNREADABLE_ORACLE: 'Oracle not readable',
   NO_FALLBACK: 'No fallback oracle',
-  MARKET_CLOSED: 'Market closed',
+  MARKET_CLOSED: 'Market hours',
   FIXED_PRICE: 'Fixed price',
 }
 
