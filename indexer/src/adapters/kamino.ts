@@ -89,6 +89,9 @@ function toMarketOracleConfig(address: string, data: Buffer, listedMarkets: Map<
     oracleSetup: null,
     lastPriceUpdateTs: clampSeconds(reserve.liquidity.marketPriceLastUpdatedTs),
     totalSupplyUsd: (available + borrowed) * price,
+    supplyTokens: available + borrowed,
+    // Raw units, like a vault's ctokenAllocation: their ratio is a vault's share of the reserve.
+    ctokenSupply: Number(reserve.collateral.mintTotalSupply.toString()),
   };
 }
 

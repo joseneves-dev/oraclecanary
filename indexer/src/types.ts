@@ -40,6 +40,15 @@ export interface MarketOracleConfig {
    * this when someone transacts, so it is not a measure of oracle staleness.
    */
   lastPriceUpdateTs: number;
-  /** Deposited value (available + borrowed) at the protocol's last stored price, in USD. */
+  /**
+   * Deposited value (available + borrowed) in USD: at the protocol's last stored price in listed
+   * markets, and at the market price in unlisted ones (see run.ts), whose own price anyone can set.
+   */
   totalSupplyUsd: number;
+  /** Deposited amount (available + borrowed) in tokens, when known. */
+  supplyTokens?: number;
+  /** marginfi only: the price a Fixed oracle setup uses. */
+  fixedPrice?: number;
+  /** Kamino only: collateral tokens (cTokens) in circulation, in raw units. */
+  ctokenSupply?: number;
 }

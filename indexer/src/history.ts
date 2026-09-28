@@ -34,9 +34,10 @@ export function checkKeys(checks: { code: string; severity: string }[]): string[
 
 /**
  * Checks that flip with every feed update (a slow stablecoin feed goes in and out of "near stale" each
- * minute). They are left out of change detection and of recorded events.
+ * minute; a small token's Pyth confidence hovers around its threshold). They are left out of change
+ * detection and of recorded events.
  */
-const TRANSIENT_CHECKS = new Set(['NEAR_STALE']);
+const TRANSIENT_CHECKS = new Set(['NEAR_STALE', 'WIDE_CONFIDENCE']);
 
 /** Failed checks worth reporting a change of, as "CODE:severity". */
 export function lastingCheckKeys(checks: { code: string; severity: string }[]): string[] {

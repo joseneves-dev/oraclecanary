@@ -8,13 +8,15 @@ import pg from 'pg';
 
 import { decodeDataStreamsTimestamp, fetchJupiterLendVaults, ORACLE_PROGRAM as JUPITER_ORACLE_PROGRAM } from './adapters/jupiterLend.js';
 import { fetchKaminoReserves } from './adapters/kamino.js';
+import { fetchVaults, valueVaults } from './adapters/kaminoVaults.js';
 import { fetchMarginfiBanks } from './adapters/marginfi.js';
-import { saveReserveHealth, type ReserveHealthRow } from './db.js';
-import { evaluate } from './health.js';
+import { saveReserveHealth, saveVaults, storedSupplyUsd, type ReserveHealthRow } from './db.js';
+import { evaluate, setPriceDeviationCheck } from './health.js';
 import { fetchChainlinkPrices } from './oracles/chainlink.js';
+import { fetchMarketPrices, valueUnlisted, type MarketPrice, type MarketPrices } from './oracles/marketPrice.js';
 import { fetchPythPrices } from './oracles/pyth.js';
 import { fetchScopeFeed, type ScopeFeed } from './oracles/scope.js';
-import type { OracleSource, Protocol } from './types.js';
+import type { MarketOracleConfig, OracleSource, Protocol } from './types.js';
 
 const RPC_URL = process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com';
 const INTERVAL_SECONDS = Number(process.env.CHECK_INTERVAL_SECONDS ?? 60);
@@ -26,6 +28,9 @@ const CONFIRM_SECONDS = Number(process.env.ALERT_CONFIRM_SECONDS ?? 180);
 const RPC_TIMEOUT_MS = 60_000;
 
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not set (see .env.example)');
+
+// PRICE_DEVIATION names protocols' reserves one by one; it stays off until set to "on" (see health.ts).
+setPriceDeviationCheck(process.env.PRICE_DEVIATION_CHECK === 'on');
 
 const connection = new Connection(RPC_URL, {
   commitment: 'confirmed',
@@ -51,8 +56,23 @@ async function writeHeartbeat(): Promise<void> {
   }
 }
 
+/**
+ * Values reserves in unlisted markets at market prices (see valueUnlisted), falling back on their
+ * stored values for tokens whose price Jupiter did not return.
+ */
+async function withMarketValues(reserves: MarketOracleConfig[], market: MarketPrices): Promise<MarketOracleConfig[]> {
+  const unknown = reserves.filter((r) => !r.marketName && market.failed.has(r.mint)).map((r) => r.reserve);
+  const previous = await storedSupplyUsd(pool, unknown);
+  return reserves.map((r) => valueUnlisted(r, market, previous));
+}
+
 async function checkKamino(): Promise<ReserveHealthRow[]> {
-  const reserves = (await fetchKaminoReserves(connection)).filter((r) => r.status === 'active');
+  const all = await fetchKaminoReserves(connection);
+  const market = await fetchMarketPrices(all.map((r) => r.mint));
+  const valued = await withMarketValues(all, market);
+  // Hidden reserves are not checked, but curator vaults can still hold money in them.
+  await updateVaults(valued, market.prices);
+  const reserves = valued.filter((r) => r.status === 'active');
 
   const feeds = new Map<string, ScopeFeed>();
   for (const address of new Set(reserves.flatMap((r) => (r.feeds.scope ? [r.feeds.scope] : [])))) {
@@ -66,18 +86,31 @@ async function checkKamino(): Promise<ReserveHealthRow[]> {
   const now = nowSeconds();
   return reserves.map((reserve) => ({
     reserve,
-    health: evaluate(reserve, { scope: reserve.feeds.scope ? feeds.get(reserve.feeds.scope) : undefined }, now),
+    health: evaluate(reserve, { scope: reserve.feeds.scope ? feeds.get(reserve.feeds.scope) : undefined, market: market.prices.get(reserve.mint) }, now),
   }));
 }
 
+/** Values the curator vaults from the reserves just read. Optional: a failure never stops the reserve checks. */
+async function updateVaults(reserves: MarketOracleConfig[], prices: Map<string, MarketPrice>): Promise<void> {
+  try {
+    const listed = await fetchVaults();
+    const vaults = valueVaults(listed, new Map(reserves.map((r) => [r.reserve, r])), prices);
+    await saveVaults(pool, vaults, new Date(nowSeconds() * 1000));
+  } catch (e) {
+    console.warn(`Curator vaults not updated: ${(e as Error).message}`);
+  }
+}
+
 async function checkMarginfi(): Promise<ReserveHealthRow[]> {
-  const banks = (await fetchMarginfiBanks(connection)).filter((b) => b.status === 'active');
+  const fetched = (await fetchMarginfiBanks(connection)).filter((b) => b.status === 'active');
+  const market = await fetchMarketPrices(fetched.map((b) => b.mint));
+  const banks = await withMarketValues(fetched, market);
   const prices = await fetchPythPrices(connection, banks.flatMap((b) => (b.feeds.pyth ? [b.feeds.pyth] : [])));
 
   const now = nowSeconds();
   return banks.map((reserve) => ({
     reserve,
-    health: evaluate(reserve, { pyth: reserve.feeds.pyth ? prices.get(reserve.feeds.pyth) : undefined }, now),
+    health: evaluate(reserve, { pyth: reserve.feeds.pyth ? prices.get(reserve.feeds.pyth) : undefined, market: market.prices.get(reserve.mint) }, now),
   }));
 }
 

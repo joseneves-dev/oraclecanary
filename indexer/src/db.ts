@@ -1,5 +1,6 @@
 import pg from 'pg';
 
+import type { CuratorVault } from './adapters/kaminoVaults.js';
 import type { HealthResult } from './health.js';
 import { checkKeys, hourOf, planIncidents, trackChanges, type AlertState, type HealthTransition } from './history.js';
 import type { MarketOracleConfig, Protocol } from './types.js';
@@ -223,6 +224,55 @@ export async function saveReserveHealth(
     throw e;
   } finally {
     // Passing the error discards a possibly broken connection instead of returning it to the pool.
+    client.release(failure);
+  }
+}
+
+const VAULT_COLUMNS = ['address', 'name', 'curator', 'token_mint', 'token', 'total_usd', 'idle_usd', 'allocations', 'checked_at'] as const;
+// Column lengths from the CuratorVault entity.
+const VAULT_NAME_LENGTH = 80;
+
+/** Last stored supply in USD of the given reserves, to fall back on when a price is unknown. */
+export async function storedSupplyUsd(pool: pg.Pool, addresses: string[]): Promise<Map<string, number>> {
+  if (!addresses.length) return new Map();
+  const { rows } = await pool.query<{ address: string; total_supply_usd: number }>(
+    'SELECT address, total_supply_usd FROM lending_reserve WHERE address = ANY($1)',
+    [addresses],
+  );
+  return new Map(rows.map((r) => [r.address, Number(r.total_supply_usd)]));
+}
+
+/**
+ * Replaces the stored curator vaults with this run's: vaults Kamino no longer lists, or that are now
+ * worth nothing, are removed. Nothing is written when the list is empty, which more likely means the
+ * vault API failed than that every vault closed.
+ */
+export async function saveVaults(pool: pg.Pool, vaults: CuratorVault[], checkedAt: Date): Promise<void> {
+  if (!vaults.length) return;
+  const client = await pool.connect();
+  let failure: Error | undefined;
+  try {
+    await client.query('BEGIN');
+    const updates = VAULT_COLUMNS.filter((c) => c !== 'address').map((c) => `${c} = EXCLUDED.${c}`).join(', ');
+    await insertRows(
+      client,
+      'curator_vault',
+      VAULT_COLUMNS,
+      vaults.map((v) => [
+        v.address, v.name.slice(0, VAULT_NAME_LENGTH), v.curator, v.tokenMint, v.token?.slice(0, ASSET_LENGTH) ?? null,
+        finite(v.totalUsd), finite(v.idleUsd), JSON.stringify(v.allocations.map((a) => ({ reserve: a.reserve, usd: finite(a.usd) }))), utc(checkedAt),
+      ]),
+      `ON CONFLICT (address) DO UPDATE SET ${updates}`,
+    );
+    await client.query('DELETE FROM curator_vault WHERE NOT (address = ANY($1))', [vaults.map((v) => v.address)]);
+    await client.query('COMMIT');
+  } catch (e) {
+    failure = e as Error;
+    await client.query('ROLLBACK').catch(() => {
+      // The connection itself is broken; the original error is the one worth reporting.
+    });
+    throw e;
+  } finally {
     client.release(failure);
   }
 }

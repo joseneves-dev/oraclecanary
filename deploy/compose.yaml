@@ -52,6 +52,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-oraclecanary}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-oraclecanary}
       RPC_URL: ${RPC_URL:?Set RPC_URL in deploy/.env}
       CHECK_INTERVAL_SECONDS: ${CHECK_INTERVAL_SECONDS:-300}
+      # "on" publishes PRICE_DEVIATION (oracle price far from the market). It names reserves one by one,
+      # so it stays off until the findings have been shared with the protocols privately.
+      PRICE_DEVIATION_CHECK: ${PRICE_DEVIATION_CHECK:-off}
     healthcheck:
       test: ["CMD", "node", "--import", "tsx", "src/healthcheck.ts"]
       interval: 60s

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { evaluate } from '../src/health.js';
+import { evaluate, setPriceDeviationCheck } from '../src/health.js';
 import type { ScopeEntry, ScopeFeed } from '../src/oracles/scope.js';
 import type { MarketOracleConfig } from '../src/types.js';
 
@@ -100,6 +100,79 @@ describe('evaluate', () => {
     // A fixed value multiplied with a market price still ages with that price.
     const mixed = evaluateKamino(reserve({ scopeChain: [3, 4] }), feed(entry(3, 'FixedPrice', { unixTimestamp: NOW - 456 }), entry(4, 'PythLazer')), NOW);
     assert.ok(codes(mixed).includes('STALE:critical'));
+  });
+
+  describe('price against the market', () => {
+    const market = (usdPrice: number, liquidity = 5_000_000) => ({ usdPrice, liquidity });
+    const fresh = (index: number, price: number) => entry(index, 'PythLazer', { price });
+
+    it('multiplies the Scope chain and flags a price far from the market', () => {
+      // A staking rate times SOL: 1.1 × 100 = 110, against a market price of 95.
+      const f = feed(fresh(3, 1.1), fresh(4, 100));
+      const result = evaluate(reserve({ scopeChain: [3, 4] }), { scope: f, market: market(95) }, NOW);
+      const check = result.checks.find((c) => c.code === 'PRICE_DEVIATION');
+
+      assert.equal(check?.severity, 'critical');
+      assert.match(check!.message, /The oracle price \$110\.00 is 16% above the market price \(\$95\.00 on Jupiter\): collateral is overvalued/);
+      assert.equal(result.score, 100 - 50 - 15); // the deviation, and no fallback
+    });
+
+    it('reports a price below the market as a liquidation risk, never as critical', () => {
+      const result = evaluate(reserve(), { scope: feed(fresh(3, 96)), market: market(100) }, NOW);
+      const check = result.checks.find((c) => c.code === 'PRICE_DEVIATION');
+      assert.equal(check?.severity, 'warning');
+      assert.match(check!.message, /4\.0% below .*borrowers can be liquidated early/);
+
+      // A deliberate haircut far below the market (seen on banks being wound down) stays a warning.
+      const haircut = evaluate(reserve(), { scope: feed(fresh(3, 56)), market: market(100) }, NOW);
+      assert.equal(haircut.checks.find((c) => c.code === 'PRICE_DEVIATION')?.severity, 'warning');
+    });
+
+    it('ignores small gaps, thin markets and reserves with nothing in them', () => {
+      const codesWith = (price: number, m: ReturnType<typeof market>, supply = 1_000_000) =>
+        codes(evaluate(reserve({ totalSupplyUsd: supply }), { scope: feed(fresh(3, price)), market: m }, NOW));
+
+      assert.ok(!codesWith(102, market(100)).some((c) => c.startsWith('PRICE_DEVIATION')));
+      assert.ok(!codesWith(120, market(100, 100_000)).some((c) => c.startsWith('PRICE_DEVIATION')), 'thin market, only 20% off');
+      assert.ok(!codesWith(200, market(100, 500)).some((c) => c.startsWith('PRICE_DEVIATION')), 'next to no market');
+      assert.ok(!codesWith(0.000001, market(2), 0).some((c) => c.startsWith('PRICE_DEVIATION')));
+    });
+
+    it('flags a price far above even a thin market: a dead token left with a fixed price', () => {
+      const result = evaluate(reserve(), { scope: feed(entry(3, 'FixedPrice', { price: 0.0001 })), market: market(0.0000000286, 30_000) }, NOW);
+      const check = result.checks.find((c) => c.code === 'PRICE_DEVIATION');
+
+      assert.equal(check?.severity, 'critical');
+      assert.match(check!.message, /The fixed price \$0\.0001 is 3,497× the market price \(\$0\.0000000286 on Jupiter, a thin market\): collateral is overvalued/);
+    });
+
+    it('does not trust a market thin enough to be dumped on purpose', () => {
+      // An honest $1 price against a pool with a few thousand dollars someone pushed down to $0.30.
+      const result = evaluate(reserve(), { scope: feed(fresh(3, 1)), market: market(0.3, 5_000) }, NOW);
+      assert.ok(!codes(result).some((c) => c.startsWith('PRICE_DEVIATION')));
+    });
+
+    it('writes moderate multiples with one decimal', () => {
+      const result = evaluate(reserve(), { scope: feed(fresh(3, 2.4)), market: market(1) }, NOW);
+      assert.match(result.checks.find((c) => c.code === 'PRICE_DEVIATION')!.message, /\$2\.40 is 2\.4× the market price/);
+    });
+
+    it('treats a fixed price below the market as a likely deliberate haircut', () => {
+      const result = evaluate(reserve(), { scope: feed(entry(3, 'FixedPrice', { price: 80 })), market: market(145) }, NOW);
+      const check = result.checks.find((c) => c.code === 'PRICE_DEVIATION');
+      assert.equal(check?.severity, 'info');
+      assert.match(check!.message, /probably a deliberate haircut/);
+    });
+
+    it('is not computed while switched off', () => {
+      setPriceDeviationCheck(false);
+      try {
+        const result = evaluate(reserve(), { scope: feed(fresh(3, 200)), market: market(100) }, NOW);
+        assert.ok(!codes(result).some((c) => c.startsWith('PRICE_DEVIATION')));
+      } finally {
+        setPriceDeviationCheck(true);
+      }
+    });
   });
 
   it('warns when a price is close to the limit', () => {

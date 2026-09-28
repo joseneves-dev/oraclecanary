@@ -185,6 +185,7 @@ export async function fetchJupiterLendVaults(connection: Connection): Promise<Ma
       oracle: { account: config.oracle, sources },
       lastPriceUpdateTs: 0,
       totalSupplyUsd: collateral * (supply?.usdPrice ?? 0),
+      supplyTokens: collateral,
     };
   });
 }

@@ -98,6 +98,9 @@ function toMarketOracleConfig(address: string, data: Buffer, tickers: Map<string
     oracleSetup: setup,
     lastPriceUpdateTs: Number(bank.cache.last_oracle_price_timestamp.toString()),
     totalSupplyUsd: assets * price,
+    supplyTokens: assets,
+    // Only `Fixed` is the price itself; FixedKamino, FixedDrift... multiply it by an exchange rate.
+    ...(setup === 'Fixed' ? { fixedPrice: price } : {}),
   };
 }
 

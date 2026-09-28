@@ -64,6 +64,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reserves/{address}/attestation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Signed health attestation of a reserve
+         * @description Put `message`, `signature` and `publicKey` in an Ed25519 program instruction (e.g. Ed25519Program.createInstructionWithPublicKey) next to a call to oracle_guard. `issuedAt` is when the health was measured, not when it was signed, so a stopped indexer cannot produce fresh-looking attestations.
+         */
+        get: operations["api_reserves_addressattestation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events": {
         parameters: {
             query?: never;
@@ -164,6 +184,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/vaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieves the collection of Vault resources.
+         * @description Retrieves the collection of Vault resources.
+         */
+        get: operations["api_vaults_get_collection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/vaults/{address}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieves a Vault resource.
+         * @description Retrieves a Vault resource.
+         */
+        get: operations["api_vaults_address_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -232,14 +292,14 @@ export interface components {
             protocols?: components["schemas"]["ProtocolFreshness.jsonld"][];
         };
         HealthCheck: {
-            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE. */
+            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE, MARKET_CLOSED. */
             code?: string;
             /** @enum {string} */
             severity?: "ok" | "info" | "warning" | "critical";
             message?: string;
         };
         "HealthCheck.jsonld": {
-            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE. */
+            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE, MARKET_CLOSED. */
             code?: string;
             /** @enum {string} */
             severity?: "ok" | "info" | "warning" | "critical";
@@ -441,6 +501,56 @@ export interface components {
             /** Format: date-time */
             checkedAt?: string;
         };
+        /** @description The reserve's latest health, signed for the oracle_guard program. */
+        ReserveAttestation: {
+            /** @description Reserve / bank / vault address. */
+            address?: string;
+            /** @description 0 (broken) to 100 (healthy). */
+            score?: number;
+            /**
+             * @description Worst severity among the failed checks, or "ok"; signed as 0 ok, 1 info, 2 warning, 3 critical.
+             * @enum {string}
+             */
+            severity?: "ok" | "info" | "warning" | "critical";
+            /** @description Age of the oldest price at `issuedAt`; null if it could not be read (signed as 0xFFFFFFFF). */
+            priceAgeSeconds?: number | null;
+            /**
+             * Format: date-time
+             * @description When the health was measured.
+             */
+            issuedAt?: string;
+            /** @description The 54-byte attestation message, base64. */
+            message?: string;
+            /** @description Ed25519 signature of `message`, base64. */
+            signature?: string;
+            /** @description Signing key, Base58: must match the authority in oracle_guard's config. */
+            publicKey?: string;
+        };
+        /** @description The reserve's latest health, signed for the oracle_guard program. */
+        "ReserveAttestation.jsonld": components["schemas"]["HydraItemBaseSchema"] & {
+            /** @description Reserve / bank / vault address. */
+            address?: string;
+            /** @description 0 (broken) to 100 (healthy). */
+            score?: number;
+            /**
+             * @description Worst severity among the failed checks, or "ok"; signed as 0 ok, 1 info, 2 warning, 3 critical.
+             * @enum {string}
+             */
+            severity?: "ok" | "info" | "warning" | "critical";
+            /** @description Age of the oldest price at `issuedAt`; null if it could not be read (signed as 0xFFFFFFFF). */
+            priceAgeSeconds?: number | null;
+            /**
+             * Format: date-time
+             * @description When the health was measured.
+             */
+            issuedAt?: string;
+            /** @description The 54-byte attestation message, base64. */
+            message?: string;
+            /** @description Ed25519 signature of `message`, base64. */
+            signature?: string;
+            /** @description Signing key, Base58: must match the authority in oracle_guard's config. */
+            publicKey?: string;
+        };
         /** @description Health changes, newest first. */
         ReserveEvent: {
             id?: string;
@@ -527,7 +637,7 @@ export interface components {
             endedAt?: string | null;
             /** @description Length of the incident in seconds; null while it is ongoing. */
             durationSeconds?: number | null;
-            /** @description The critical checks when the incident started. */
+            /** @description The critical checks when the incident started, plus MARKET_CLOSED (info) if the stock market was closed. */
             checks?: components["schemas"]["CheckState"][];
             /** @description Largest supply exposed during the incident, in USD. */
             totalSupplyUsd?: number;
@@ -554,7 +664,7 @@ export interface components {
             endedAt?: string | null;
             /** @description Length of the incident in seconds; null while it is ongoing. */
             durationSeconds?: number | null;
-            /** @description The critical checks when the incident started. */
+            /** @description The critical checks when the incident started, plus MARKET_CLOSED (info) if the stock market was closed. */
             checks?: components["schemas"]["CheckState.jsonld"][];
             /** @description Largest supply exposed during the incident, in USD. */
             totalSupplyUsd?: number;
@@ -598,6 +708,116 @@ export interface components {
             priceAgeSeconds?: number | null;
             totalSupplyUsd?: number;
             checks?: components["schemas"]["CheckState.jsonld"][];
+        };
+        /** @description Kamino curator vaults, largest first. */
+        Vault: {
+            /** @description Vault state account address on Solana. */
+            address?: string;
+            /** @description Name shown by Kamino, e.g. "Steakhouse USDC". */
+            name?: string;
+            /** @description Curator recognised in the name, e.g. "Steakhouse", or null. */
+            curator?: string | null;
+            /** @description Deposit token symbol, e.g. "USDC". */
+            token?: string | null;
+            /** @description Deposits in USD: allocations plus idle funds. */
+            totalUsd?: number;
+            /** @description Deposits not lent to any reserve, in USD. */
+            idleUsd?: number;
+            /**
+             * @description USD lent into a reserve that has a critical check, or into a market where another asset
+             *     (the collateral borrowers post) has one: while its price is unusable or wrong, bad loans
+             *     cannot be liquidated and losses fall on lenders such as this vault.
+             */
+            atRiskUsd?: number;
+            /** @description USD in reserves whose own worst check is a warning (e.g. no fallback oracle). */
+            warningUsd?: number;
+            /**
+             * @description Worst severity among the reserves the vault lends to and their markets' collateral.
+             * @enum {string}
+             */
+            worstSeverity?: "ok" | "info" | "warning" | "critical";
+            /** @description Largest first. */
+            allocations?: components["schemas"]["VaultAllocation"][];
+            /** Format: date-time */
+            checkedAt?: string;
+        };
+        /** @description Kamino curator vaults, largest first. */
+        "Vault.jsonld": components["schemas"]["HydraItemBaseSchema"] & {
+            /** @description Vault state account address on Solana. */
+            address?: string;
+            /** @description Name shown by Kamino, e.g. "Steakhouse USDC". */
+            name?: string;
+            /** @description Curator recognised in the name, e.g. "Steakhouse", or null. */
+            curator?: string | null;
+            /** @description Deposit token symbol, e.g. "USDC". */
+            token?: string | null;
+            /** @description Deposits in USD: allocations plus idle funds. */
+            totalUsd?: number;
+            /** @description Deposits not lent to any reserve, in USD. */
+            idleUsd?: number;
+            /**
+             * @description USD lent into a reserve that has a critical check, or into a market where another asset
+             *     (the collateral borrowers post) has one: while its price is unusable or wrong, bad loans
+             *     cannot be liquidated and losses fall on lenders such as this vault.
+             */
+            atRiskUsd?: number;
+            /** @description USD in reserves whose own worst check is a warning (e.g. no fallback oracle). */
+            warningUsd?: number;
+            /**
+             * @description Worst severity among the reserves the vault lends to and their markets' collateral.
+             * @enum {string}
+             */
+            worstSeverity?: "ok" | "info" | "warning" | "critical";
+            /** @description Largest first. */
+            allocations?: components["schemas"]["VaultAllocation.jsonld"][];
+            /** Format: date-time */
+            checkedAt?: string;
+        };
+        VaultAllocation: {
+            /** @description Reserve address. */
+            reserve?: string;
+            asset?: string;
+            marketName?: string | null;
+            /** @description Value the vault has in this reserve, in USD. */
+            usd?: number;
+            /** @description Share of the vault, 0 to 1. */
+            share?: number;
+            /**
+             * @description The reserve's worst open check, or "ok".
+             * @enum {string}
+             */
+            severity?: "ok" | "info" | "warning" | "critical";
+            score?: number;
+            /** @description The reserve's most severe check message, or null when healthy. */
+            mainIssue?: string | null;
+            /**
+             * @description Other assets in the same market with a critical check, e.g. "FWDI: Price is 226140s old…":
+             *     collateral whose price cannot be used, so loans against it cannot be liquidated.
+             */
+            collateralIssues?: string[];
+        };
+        "VaultAllocation.jsonld": {
+            /** @description Reserve address. */
+            reserve?: string;
+            asset?: string;
+            marketName?: string | null;
+            /** @description Value the vault has in this reserve, in USD. */
+            usd?: number;
+            /** @description Share of the vault, 0 to 1. */
+            share?: number;
+            /**
+             * @description The reserve's worst open check, or "ok".
+             * @enum {string}
+             */
+            severity?: "ok" | "info" | "warning" | "critical";
+            score?: number;
+            /** @description The reserve's most severe check message, or null when healthy. */
+            mainIssue?: string | null;
+            /**
+             * @description Other assets in the same market with a critical check, e.g. "FWDI: Price is 226140s old…":
+             *     collateral whose price cannot be used, so loans against it cannot be liquidated.
+             */
+            collateralIssues?: string[];
         };
     };
     responses: never;
@@ -655,6 +875,10 @@ export interface operations {
                 asset?: string;
                 /** @description Reserve status */
                 status?: "active" | "obsolete" | "hidden" | "unknown";
+                /** @description Only reserves failing this check, e.g. DEPRECATED_PROVIDER (still depending on a shut-down oracle such as Switchboard), STALE or PRICE_DEVIATION */
+                check?: string;
+                /** @description Only reserves whose price depends on this source, as listed in `providers`, e.g. Pyth, PythLazer, Chainlink, ChainlinkDataStreams or SwitchboardOnDemand */
+                provider?: string;
                 /** @description Score greater than */
                 "score[gt]"?: number;
                 /** @description Score greater than or equal to */
@@ -732,6 +956,44 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Error"];
                     "application/json": components["schemas"]["Error"];
                 };
+            };
+        };
+    };
+    api_reserves_addressattestation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ReserveAttestation identifier */
+                address: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed attestation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["ReserveAttestation.jsonld"];
+                    "application/json": components["schemas"]["ReserveAttestation"];
+                };
+            };
+            /** @description No reserve with this address */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Signing is not configured on this server */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -922,6 +1184,64 @@ export interface operations {
                         member: components["schemas"]["ReserveSnapshot.jsonld"][];
                     };
                     "application/json": components["schemas"]["ReserveSnapshot"][];
+                };
+            };
+        };
+    };
+    api_vaults_get_collection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Vault collection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["HydraCollectionBaseSchemaNoPagination"] & {
+                        member: components["schemas"]["Vault.jsonld"][];
+                    };
+                    "application/json": components["schemas"]["Vault"][];
+                };
+            };
+        };
+    };
+    api_vaults_address_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Vault identifier */
+                address: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Vault resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["Vault.jsonld"];
+                    "application/json": components["schemas"]["Vault"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["Error.jsonld"];
+                    "application/problem+json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

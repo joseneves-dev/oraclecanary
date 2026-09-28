@@ -1,3 +1,4 @@
+import { reference, type MarketPrice } from './oracles/marketPrice.js';
 import type { PythPrice } from './oracles/pyth.js';
 import type { ScopeEntry, ScopeFeed } from './oracles/scope.js';
 import { resolveLeaves } from './oracles/scope.js';
@@ -17,7 +18,9 @@ export interface Check {
     | 'SOURCES_DIVERGE'
     | 'FIXED_PRICE'
     | 'UNREADABLE_ORACLE'
-    | 'MARKET_CLOSED';
+    | 'MARKET_CLOSED'
+    | 'PRICE_DEVIATION'
+    | 'WIDE_CONFIDENCE';
   severity: Severity;
   message: string;
 }
@@ -288,6 +291,13 @@ function evaluateMarginfi(reserve: MarketOracleConfig, pyth: PythPrice | undefin
   } else if (priceAgeSeconds > reserve.maxAgePriceSeconds * NEAR_STALE_RATIO) {
     checks.push({ code: 'NEAR_STALE', severity: 'warning', message: `Price is ${priceAgeSeconds}s old, close to the ${reserve.maxAgePriceSeconds}s limit.` });
   }
+  if (pyth.price > 0 && pyth.confidence / pyth.price > WIDE_CONFIDENCE_RATIO) {
+    checks.push({
+      code: 'WIDE_CONFIDENCE',
+      severity: 'warning',
+      message: `Pyth is unsure of this price: its confidence interval is ±${percent(pyth.confidence / pyth.price)} of it.`,
+    });
+  }
   checks.push({ code: 'NO_FALLBACK', severity: 'warning', message: 'Price has no fallback for Pyth: marginfi reads a single feed, so if it stops, the price stops.' });
 
   return { score: score(checks), checks, providers, priceAgeSeconds };
@@ -348,6 +358,8 @@ export interface OracleData {
   pyth?: PythPrice;
   /** Jupiter Lend: last update time of each oracle source account that could be read. */
   sourceTimes?: Map<string, number>;
+  /** An independent market price of the reserve's token, to check the oracle's price against. */
+  market?: MarketPrice;
 }
 
 export function evaluate(reserve: MarketOracleConfig, oracles: OracleData, now: number): HealthResult {
@@ -358,7 +370,103 @@ export function evaluate(reserve: MarketOracleConfig, oracles: OracleData, now: 
         ? evaluateJupiterLend(reserve, oracles.sourceTimes ?? new Map(), now)
         : evaluateKamino(reserve, oracles.scope, now);
   const closed = marketClosedCheck(reserve, result, now);
-  return closed ? { ...result, checks: [...result.checks, closed] } : result;
+  const deviation = priceDeviationCheck(reserve, oracles, result);
+  const extra = [closed, deviation].filter((c): c is Check => !!c);
+  if (!extra.length) return result;
+  const checks = [...result.checks, ...extra];
+  return { ...result, checks, score: score(checks) };
+}
+
+/** Pyth considers a price uncertain past this share of it; its usual interval is far below 0.1%. */
+const WIDE_CONFIDENCE_RATIO = 0.02;
+/** Gaps from the market price reported as a warning, and as critical (above the market only). */
+const DEVIATION_WARNING = 0.03;
+const DEVIATION_CRITICAL = 0.1;
+/**
+ * Far above the market, even a thin market's price is evidence enough: pushing a thin market up only
+ * shrinks the gap, so it cannot be used to raise a false alarm. This catches dead tokens left with a
+ * fixed price, the case that has caused bad debt elsewhere.
+ */
+const DEVIATION_THIN_MARKET_ABOVE = 0.5;
+/**
+ * Below this, a market is too easy to dump: a few hundred dollars could push its price down and make
+ * an honest oracle look far above it. Dead tokens still trade on pools this deep, the illiquid LP
+ * tokens that caused false alarms at $1K do not.
+ */
+const THIN_MARKET_MIN_LIQUIDITY_USD = 25_000;
+/** Below this, nothing depends on the price enough to be worth a check (e.g. reserves wound down). */
+const DEVIATION_MIN_SUPPLY_USD = 1_000;
+
+/**
+ * Whether PRICE_DEVIATION is computed. It names protocols' reserves one by one, so run.ts turns it off
+ * unless PRICE_DEVIATION_CHECK=on, until those findings have been shared with the protocols privately.
+ * On by default here so the tests exercise it.
+ */
+let priceDeviationEnabled = true;
+export function setPriceDeviationCheck(enabled: boolean): void {
+  priceDeviationEnabled = enabled;
+}
+
+const percent = (ratio: number) => `${(ratio * 100).toFixed(ratio < 0.1 ? 1 : 0)}%`;
+/** "$107.82", "$0.302", "$0.0000000288": three significant digits under $1, never in e-notation. */
+const usdPrice = (value: number) =>
+  `$${value >= 1 ? value.toFixed(2) : value.toLocaleString('en', { maximumSignificantDigits: 3, maximumFractionDigits: 20 })}`;
+/** "8.8% above" for gaps under 100%, then "2.4× the" and "3,474× the", which read better than 347,300%. */
+const gapText = (price: number, market: number) => {
+  const times = price / market;
+  if (times < 2) return `${percent(Math.abs(price - market) / market)} ${price > market ? 'above' : 'below'} the`;
+  return `${times < 10 ? times.toFixed(1) : Math.round(times).toLocaleString('en')}× the`;
+};
+
+/**
+ * The price the protocol would use for this reserve now, when it can be worked out from the oracle
+ * accounts alone: a Kamino Scope chain multiplies its entries, and a plain or fixed marginfi bank
+ * uses its Pyth feed or its fixed price. Setups that multiply in an exchange rate, and Jupiter Lend
+ * vaults (whose oracle prices collateral in the debt token), are left out.
+ */
+export function oraclePrice(reserve: MarketOracleConfig, oracles: OracleData): number | null {
+  if (reserve.protocol === 'kamino' && oracles.scope && reserve.scopeChain.length) {
+    const entries = reserve.scopeChain.map((i) => oracles.scope!.entries.get(i));
+    return entries.every((e) => e) ? entries.reduce((price, e) => price * e!.price, 1) : null;
+  }
+  if (reserve.protocol === 'marginfi') {
+    if (reserve.fixedPrice !== undefined) return reserve.fixedPrice;
+    if (reserve.oracleSetup && MARGINFI_PLAIN_PYTH.has(reserve.oracleSetup) && oracles.pyth) return oracles.pyth.price;
+  }
+  return null;
+}
+
+/** marginfi setups whose price is the Pyth price itself; every other one multiplies in a rate or a discount. */
+const MARGINFI_PLAIN_PYTH = new Set(['PythLegacy', 'PythPushOracle']);
+
+/**
+ * Compares the oracle's price with a liquid market price. Staleness says a price is late; this says
+ * it is wrong, which matters most for fixed prices: a fixed price is never stale, but it can be blind.
+ *
+ * An oracle above the market overvalues collateral, which is how depegged tokens priced at $1 have
+ * caused bad debt: critical when far off, and checked even against a thin market. Below the market
+ * can liquidate borrowers early (a warning); a fixed price below it is most likely a deliberate,
+ * conservative haircut on a bank being wound down (info).
+ */
+function priceDeviationCheck(reserve: MarketOracleConfig, oracles: OracleData, result: HealthResult): Check | null {
+  const price = oraclePrice(reserve, oracles);
+  const quote = oracles.market;
+  if (!priceDeviationEnabled || !quote || price === null || !(price > 0) || reserve.totalSupplyUsd < DEVIATION_MIN_SUPPLY_USD) return null;
+
+  const gap = (price - quote.usdPrice) / quote.usdPrice;
+  const liquid = !!reference(quote);
+  const thinButFarAbove = gap >= DEVIATION_THIN_MARKET_ABOVE && quote.liquidity >= THIN_MARKET_MIN_LIQUIDITY_USD;
+  if (Math.abs(gap) < DEVIATION_WARNING || !(liquid || thinButFarAbove)) return null;
+
+  const fixed = result.checks.some((c) => c.code === 'FIXED_PRICE');
+  const what = `${fixed ? 'The fixed price' : 'The oracle price'} ${usdPrice(price)} is ${gapText(price, quote.usdPrice)} market price`;
+  const where = `${usdPrice(quote.usdPrice)} on Jupiter${liquid ? '' : ', a thin market'}`;
+  if (gap > 0) {
+    return { code: 'PRICE_DEVIATION', severity: gap >= DEVIATION_CRITICAL ? 'critical' : 'warning', message: `${what} (${where}): collateral is overvalued.` };
+  }
+  return fixed
+    ? { code: 'PRICE_DEVIATION', severity: 'info', message: `${what} (${where}): probably a deliberate haircut, but it can liquidate borrowers early.` }
+    : { code: 'PRICE_DEVIATION', severity: 'warning', message: `${what} (${where}): borrowers can be liquidated early.` };
 }
 
 /**

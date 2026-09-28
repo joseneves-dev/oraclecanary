@@ -14,7 +14,7 @@ use Doctrine\ORM\Mapping as ORM;
  */
 #[ORM\Entity(repositoryClass: LendingReserveRepository::class)]
 #[ORM\Index(name: 'idx_lending_reserve_protocol', columns: ['protocol', 'checked_at'])]
-// Matches the API's default order (score, supply, then address as tiebreaker).
+// Serves sorting by score (order[score]), then supply and address as tiebreakers.
 #[ORM\Index(name: 'idx_lending_reserve_default_order', columns: ['score', 'total_supply_usd', 'address'])]
 #[ORM\Index(name: 'idx_lending_reserve_market', columns: ['market'])]
 class LendingReserve

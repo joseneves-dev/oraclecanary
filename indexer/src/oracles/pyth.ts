@@ -3,6 +3,8 @@ import { Connection, PublicKey } from '@solana/web3.js';
 /** Latest price stored in a Pyth `PriceUpdateV2` account. */
 export interface PythPrice {
   price: number;
+  /** Pyth's confidence interval: how far the true price may be from `price`, in the same unit. */
+  confidence: number;
   publishTime: number;
 }
 
@@ -25,11 +27,12 @@ export function decodePriceUpdate(data: Buffer): PythPrice | null {
 
   let offset = 40 + (level === VERIFICATION_PARTIAL ? 2 : 1) + 32;
   const price = data.readBigInt64LE(offset);
-  offset += 8 + 8; // price, confidence
+  const confidence = data.readBigUInt64LE(offset + 8);
+  offset += 8 + 8;
   const exponent = data.readInt32LE(offset);
   offset += 4;
   const publishTime = Number(data.readBigInt64LE(offset));
-  return { price: Number(price) * 10 ** exponent, publishTime };
+  return { price: Number(price) * 10 ** exponent, confidence: Number(confidence) * 10 ** exponent, publishTime };
 }
 
 const BATCH = 100; // getMultipleAccounts limit

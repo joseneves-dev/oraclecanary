@@ -93,6 +93,25 @@ export async function fetchReserveHistory(address: string, after: Date, signal?:
 export type ReserveIncident = Complete<components['schemas']['ReserveIncident']>
 export type IncidentQuery = NonNullable<paths['/api/incidents']['get']['parameters']['query']>
 
+export type Vault = Complete<components['schemas']['Vault']>
+export type VaultAllocation = Vault['allocations'][number]
+
+/** Kamino curator vaults, largest first. */
+export async function fetchVaults(signal?: AbortSignal): Promise<Vault[]> {
+  const { data, response } = await api.GET('/api/vaults', { signal })
+  const status: number = response.status
+  if (!data) throw new ApiError(`Could not load vaults (HTTP ${status})`)
+  return data as Vault[]
+}
+
+export async function fetchVault(address: string, signal?: AbortSignal): Promise<Vault | null> {
+  const { data, response } = await api.GET('/api/vaults/{address}', { params: { path: { address } }, signal })
+  const status: number = response.status
+  if (status === 404) return null
+  if (!data) throw new ApiError(`Could not load vault (HTTP ${status})`)
+  return data as Vault
+}
+
 export async function fetchIncidents(query: IncidentQuery, signal?: AbortSignal): Promise<ReserveIncident[]> {
   const { data, response } = await api.GET('/api/incidents', { params: { query }, signal })
   const status: number = response.status

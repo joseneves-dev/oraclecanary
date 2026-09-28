@@ -11,10 +11,45 @@ type ProtocolFilter = 'all' | 'kamino' | 'jupiter-lend' | 'marginfi'
 
 const PROTOCOL_LABEL: Record<ProtocolFilter, string> = { all: 'All protocols', kamino: 'Kamino', 'jupiter-lend': 'Jupiter Lend', marginfi: 'marginfi' }
 
+/** Checks a reserve can fail, as the API's `check` filter takes them. */
+const ISSUES: Record<string, string> = {
+  STALE: 'Stale price',
+  NEAR_STALE: 'Close to stale',
+  DEPRECATED_PROVIDER: 'Shut-down provider',
+  SOURCES_DIVERGE: 'Sources disagree',
+  WIDE_CONFIDENCE: 'Pyth unsure of the price',
+  NO_ORACLE: 'No oracle',
+  EMPTY_PRICE_ENTRY: 'Empty price entry',
+  UNREADABLE_ORACLE: 'Oracle not readable',
+  NO_FALLBACK: 'No fallback oracle',
+  MARKET_CLOSED: 'Market closed',
+  FIXED_PRICE: 'Fixed price',
+}
+
+/** Price sources, as the API's `provider` filter takes them (the names in each reserve's `providers`). */
+const PROVIDERS: Record<string, string> = {
+  PythLazer: 'Pyth Lazer',
+  Pyth: 'Pyth',
+  Chainlink: 'Chainlink',
+  ChainlinkDataStreams: 'Chainlink Data Streams',
+  ChainlinkX: 'Chainlink (xStocks)',
+  ChainlinkExchangeRate: 'Chainlink exchange rate',
+  ChainlinkNAV: 'Chainlink NAV',
+  SwitchboardOnDemand: 'Switchboard (shut down)',
+  StakePool: 'Stake pool rate',
+  FixedPrice: 'Fixed price',
+}
+
+/** Minimum supply thresholds, in USD. */
+const MIN_SUPPLY: Record<string, string> = { '10000': '≥ $10K', '100000': '≥ $100K', '1000000': '≥ $1M', '10000000': '≥ $10M' }
+
 interface ListState {
   search: string
   health: Health
   protocol: ProtocolFilter
+  issue: string
+  provider: string
+  minSupply: string
   listedOnly: boolean
   sortKey: SortKey
   sortDir: 'asc' | 'desc'
@@ -35,6 +70,10 @@ function readState(q: LocationQuery): ListState {
     search: one('q'),
     health: (['issues', 'critical'] as const).find((h) => h === one('health')) ?? 'all',
     protocol: (['kamino', 'jupiter-lend', 'marginfi'] as const).find((p) => p === one('protocol')) ?? 'all',
+    // Own keys only: `in` would also accept inherited names such as "toString".
+    issue: Object.hasOwn(ISSUES, one('issue')) ? one('issue') : '',
+    provider: Object.hasOwn(PROVIDERS, one('provider')) ? one('provider') : '',
+    minSupply: Object.hasOwn(MIN_SUPPLY, one('min')) ? one('min') : '',
     listedOnly: one('listed') !== 'all',
     sortKey: SORT_KEYS.find((k) => k === one('sort')) ?? 'score',
     sortDir: one('dir') === 'desc' ? 'desc' : 'asc',
@@ -48,6 +87,9 @@ function writeState(next: Partial<ListState>) {
   if (s.search) query.q = s.search
   if (s.health !== 'all') query.health = s.health
   if (s.protocol !== 'all') query.protocol = s.protocol
+  if (s.issue) query.issue = s.issue
+  if (s.provider) query.provider = s.provider
+  if (s.minSupply) query.min = s.minSupply
   if (!s.listedOnly) query.listed = 'all'
   if (s.sortKey !== 'score') query.sort = s.sortKey
   if (s.sortDir !== 'asc') query.dir = s.sortDir
@@ -74,8 +116,24 @@ function buildQuery(s: ListState): ReserveQuery {
   if (s.search.trim()) query.asset = s.search.trim()
   if (s.health === 'issues') query['score[lt]'] = 100
   if (s.health === 'critical') query['score[lte]'] = 50
+  if (s.issue) query.check = s.issue
+  if (s.provider) query.provider = s.provider
+  if (s.minSupply) query['totalSupplyUsd[gte]'] = Number(s.minSupply)
   return query
 }
+
+/** Whether any filter narrows the list, so "Clear filters" is worth showing. */
+const filtered = computed(() => {
+  const s = state.value
+  return !!(s.search || s.health !== 'all' || s.protocol !== 'all' || s.issue || s.provider || s.minSupply || !s.listedOnly)
+})
+
+function clearFilters() {
+  search.value = ''
+  writeState({ search: '', health: 'all', protocol: 'all', issue: '', provider: '', minSupply: '', listedOnly: true, page: 1 })
+}
+
+const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
 
 let inFlight: AbortController | null = null
 async function load(s: ListState) {
@@ -159,6 +217,28 @@ function sortBy(key: SortKey) {
             <option value="issues">With issues (score &lt; 100)</option>
             <option value="critical">Serious (score ≤ 50)</option>
           </select>
+          <select class="ax-select ax-select--sm" aria-label="Filter by issue" :value="state.issue" @change="writeState({ issue: selectValue($event), page: 1 })">
+            <option value="">Any issue</option>
+            <option v-for="(label, code) in ISSUES" :key="code" :value="code">{{ label }}</option>
+          </select>
+          <select
+            class="ax-select ax-select--sm"
+            aria-label="Filter by oracle provider"
+            :value="state.provider"
+            @change="writeState({ provider: selectValue($event), page: 1 })"
+          >
+            <option value="">Any oracle</option>
+            <option v-for="(label, name) in PROVIDERS" :key="name" :value="name">{{ label }}</option>
+          </select>
+          <select
+            class="ax-select ax-select--sm"
+            aria-label="Filter by minimum supply"
+            :value="state.minSupply"
+            @change="writeState({ minSupply: selectValue($event), page: 1 })"
+          >
+            <option value="">Any supply</option>
+            <option v-for="(label, value) in MIN_SUPPLY" :key="value" :value="value">{{ label }}</option>
+          </select>
           <label class="toolbar__check">
             <input
               type="checkbox"
@@ -168,6 +248,7 @@ function sortBy(key: SortKey) {
             />
             Listed markets only
           </label>
+          <button v-if="filtered" type="button" class="ax-btn ax-btn--ghost ax-btn--sm" @click="clearFilters">Clear filters</button>
         </div>
       </div>
 
@@ -209,9 +290,17 @@ function sortBy(key: SortKey) {
   flex-wrap: wrap;
   gap: var(--ax-space-3);
 }
+/* The filters take the full width under the title and wrap, so each control keeps its own size. */
 .toolbar__controls {
+  flex: 1 1 100%;
+  display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--ax-space-2);
+}
+.toolbar__controls .ax-select {
+  width: auto;
+  min-width: 0;
 }
 .toolbar__controls .ax-input {
   width: 220px;

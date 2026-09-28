@@ -21,12 +21,12 @@ final class ReserveApiTest extends ApiTestCase
         $this->insertReserve('reserve-alp', 'ALP', score: 45, supplyUsd: 30_000);
     }
 
-    public function testListsReservesWorstScoreFirst(): void
+    public function testListsLargestReservesFirst(): void
     {
         $response = static::createClient()->request('GET', '/api/reserves', ['headers' => ['Accept' => 'application/json']]);
 
         self::assertResponseIsSuccessful();
-        self::assertSame(['FWDI', 'ALP', 'SOL'], array_column($response->toArray(), 'asset'));
+        self::assertSame(['SOL', 'FWDI', 'ALP'], array_column($response->toArray(), 'asset'));
     }
 
     public function testFiltersByScoreAndSortsBySupply(): void
@@ -68,6 +68,48 @@ final class ReserveApiTest extends ApiTestCase
 
         self::assertCount(10, $seen);
         self::assertCount(10, array_unique($seen), 'a reserve appeared on two pages');
+    }
+
+    public function testFiltersReservesFailingACheck(): void
+    {
+        $this->insertReserve('reserve-sb', 'SBONLY', score: 50, supplyUsd: 5_000, checks: [
+            ['code' => 'DEPRECATED_PROVIDER', 'severity' => 'critical', 'message' => 'Price comes only from a Switchboard feed, which has shut down.'],
+        ], marketName: null);
+        $headers = ['headers' => ['Accept' => 'application/json']];
+        $client = static::createClient();
+
+        $switchboard = $client->request('GET', '/api/reserves?check=DEPRECATED_PROVIDER', $headers)->toArray();
+        self::assertSame(['SBONLY'], array_column($switchboard, 'asset'));
+
+        $stale = $client->request('GET', '/api/reserves?check=STALE', $headers)->toArray();
+        self::assertSame(['FWDI'], array_column($stale, 'asset'));
+
+        self::assertSame([], $client->request('GET', '/api/reserves?check=NO_ORACLE', $headers)->toArray());
+
+        $client->request('GET', '/api/reserves?check=stale%27%20OR%201=1', $headers);
+        self::assertResponseStatusCodeSame(422);
+    }
+
+    public function testFiltersReservesByOracleProvider(): void
+    {
+        $this->insertReserve('reserve-cl', 'CLONLY', score: 85, supplyUsd: 5_000, providers: ['Chainlink']);
+        $headers = ['headers' => ['Accept' => 'application/json']];
+        $client = static::createClient();
+
+        $chainlink = $client->request('GET', '/api/reserves?provider=Chainlink', $headers)->toArray();
+        self::assertSame(['CLONLY'], array_column($chainlink, 'asset'));
+
+        $lazer = $client->request('GET', '/api/reserves?provider=PythLazer&order[asset]=asc', $headers)->toArray();
+        self::assertSame(['ALP', 'FWDI', 'SOL'], array_column($lazer, 'asset'));
+
+        $client->request('GET', '/api/reserves?provider=%22%5D', $headers);
+        self::assertResponseStatusCodeSame(422);
+
+        // A trailing newline is not a valid name either.
+        $client->request('GET', '/api/reserves?provider=Pyth%0A', $headers);
+        self::assertResponseStatusCodeSame(422);
+        $client->request('GET', '/api/reserves?check=STALE%0A', $headers);
+        self::assertResponseStatusCodeSame(422);
     }
 
     public function testFiltersListedMarkets(): void
@@ -223,7 +265,7 @@ final class ReserveApiTest extends ApiTestCase
         self::assertArrayHasKey('/api/reserves', $response->toArray()['paths']);
     }
 
-    private function insertReserve(string $address, string $asset, int $score, float $supplyUsd, int $priceAgeSeconds = 10, array $checks = [], ?string $marketName = 'Main Market'): void
+    private function insertReserve(string $address, string $asset, int $score, float $supplyUsd, int $priceAgeSeconds = 10, array $checks = [], ?string $marketName = 'Main Market', array $providers = ['PythLazer']): void
     {
         self::getContainer()->get(Connection::class)->insert('lending_reserve', [
             'address' => $address,
@@ -237,7 +279,7 @@ final class ReserveApiTest extends ApiTestCase
             'max_age_price_seconds' => 120,
             'price_age_seconds' => $priceAgeSeconds,
             'score' => $score,
-            'providers' => json_encode(['PythLazer']),
+            'providers' => json_encode($providers),
             'checks' => json_encode($checks),
             'feeds' => json_encode(['scope' => 'prices', 'scopeChain' => [3]]),
             'checked_at' => '2026-09-27 16:00:00',

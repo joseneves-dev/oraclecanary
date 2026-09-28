@@ -37,24 +37,24 @@ const codes = (r: ReturnType<typeof evaluate>) => r.checks.map((c) => `${c.code}
 
 describe('evaluate marginfi banks', () => {
   it('reports a fresh single Pyth feed as having no fallback', () => {
-    const result = evaluate(bank('PythPushOracle'), { pyth: { price: 122, publishTime: NOW - 5 } }, NOW);
+    const result = evaluate(bank('PythPushOracle'), { pyth: { price: 122, confidence: 0, publishTime: NOW - 5 } }, NOW);
     assert.deepEqual(codes(result), ['NO_FALLBACK:warning']);
     assert.deepEqual(result.providers, ['Pyth']);
     assert.equal(result.priceAgeSeconds, 5);
   });
 
   it('names the exchange rate a setup multiplies the price by', () => {
-    const result = evaluate(bank('KaminoPythPush'), { pyth: { price: 1, publishTime: NOW - 5 } }, NOW);
+    const result = evaluate(bank('KaminoPythPush'), { pyth: { price: 1, confidence: 0, publishTime: NOW - 5 } }, NOW);
     assert.deepEqual(result.providers, ['Pyth', 'Kamino exchange rate']);
   });
 
   it('flags a Pyth price older than the bank allows', () => {
-    const result = evaluate(bank('PythPushOracle'), { pyth: { price: 122, publishTime: NOW - 200 } }, NOW);
+    const result = evaluate(bank('PythPushOracle'), { pyth: { price: 122, confidence: 0, publishTime: NOW - 200 } }, NOW);
     assert.ok(codes(result).includes('STALE:critical'));
   });
 
   it('warns when the price is close to the limit', () => {
-    const result = evaluate(bank('PythPushOracle', { maxAgePriceSeconds: 300 }), { pyth: { price: 1, publishTime: NOW - 271 } }, NOW);
+    const result = evaluate(bank('PythPushOracle', { maxAgePriceSeconds: 300 }), { pyth: { price: 1, confidence: 0, publishTime: NOW - 271 } }, NOW);
     assert.ok(codes(result).includes('NEAR_STALE:warning'));
   });
 
@@ -72,14 +72,38 @@ describe('evaluate marginfi banks', () => {
   it('does not guess when the Pyth account cannot be read', () => {
     assert.deepEqual(codes(evaluate(bank('PythPushOracle'), {}, NOW)), ['UNREADABLE_ORACLE:warning']);
   });
+
+  it('warns when Pyth is unsure of the price', () => {
+    const sure = evaluate(bank('PythPushOracle'), { pyth: { price: 100, confidence: 0.05, publishTime: NOW - 5 } }, NOW);
+    const unsure = evaluate(bank('PythPushOracle'), { pyth: { price: 100, confidence: 3, publishTime: NOW - 5 } }, NOW);
+
+    assert.ok(!codes(sure).includes('WIDE_CONFIDENCE:warning'));
+    assert.ok(codes(unsure).includes('WIDE_CONFIDENCE:warning'));
+    assert.match(unsure.checks.find((c) => c.code === 'WIDE_CONFIDENCE')!.message, /±3\.0%/);
+  });
+
+  it('checks a fixed price against the market, since it can never go stale', () => {
+    const market = { usdPrice: 0.93, liquidity: 5_000_000 };
+    const result = evaluate(bank('Fixed', { fixedPrice: 1 }), { market }, NOW);
+
+    assert.deepEqual(codes(result), ['FIXED_PRICE:info', 'PRICE_DEVIATION:warning']);
+    assert.match(result.checks[1].message, /The fixed price \$1\.00 is 7\.5% above the market price \(\$0\.93 on Jupiter\): collateral is overvalued/);
+  });
+
+  it('does not check a price that includes an exchange rate it cannot see', () => {
+    const market = { usdPrice: 50, liquidity: 5_000_000 };
+    const result = evaluate(bank('KaminoPythPush'), { pyth: { price: 100, confidence: 0, publishTime: NOW - 5 }, market }, NOW);
+    assert.ok(!codes(result).some((c) => c.startsWith('PRICE_DEVIATION')));
+  });
 });
 
 describe('decodePriceUpdate', () => {
-  function priceUpdate(level: 0 | 1, price: bigint, exponent: number, publishTime: number): Buffer {
+  function priceUpdate(level: 0 | 1, price: bigint, exponent: number, publishTime: number, confidence = 0n): Buffer {
     const data = Buffer.alloc(134);
     data[40] = level;
     let offset = 40 + (level === 0 ? 2 : 1) + 32;
     data.writeBigInt64LE(price, offset);
+    data.writeBigUInt64LE(confidence, offset + 8);
     offset += 16;
     data.writeInt32LE(exponent, offset);
     offset += 4;
@@ -95,6 +119,11 @@ describe('decodePriceUpdate', () => {
     const partial = decodePriceUpdate(priceUpdate(0, 100_000_000n, -8, NOW - 3));
     assert.ok(partial && Math.abs(partial.price - 1) < 1e-9);
     assert.equal(partial?.publishTime, NOW - 3);
+  });
+
+  it('reads the confidence interval in the price unit', () => {
+    const decoded = decodePriceUpdate(priceUpdate(1, 12_273_400_000n, -8, NOW, 6_000_000n));
+    assert.ok(decoded && Math.abs(decoded.confidence - 0.06) < 1e-9);
   });
 
   it('rejects data that is not a price update', () => {

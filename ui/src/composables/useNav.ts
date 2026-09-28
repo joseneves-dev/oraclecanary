@@ -42,6 +42,7 @@ export function isGroup(item: NavItem): item is NavGroup {
 /** SPA href for a slug: the overview is the home page, every other slug maps to its path. */
 export function slugToHref(slug: string): string {
   if (slug === 'overview') return '/'
+  if (/^https?:\/\//.test(slug)) return slug
   return '/' + slug
 }
 

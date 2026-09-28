@@ -70,13 +70,72 @@
       "alias": null
     },
     {
+      "id": "vaults",
+      "title": "Curator vaults",
+      "slug": "vaults",
+      "icon": "users-group",
+      "parent": null,
+      "section": "MONITOR",
+      "order": 3.5,
+      "badge": null,
+      "keywords": [
+        "vaults",
+        "curators",
+        "kamino",
+        "steakhouse",
+        "sentora",
+        "allez",
+        "exposure"
+      ],
+      "inMenu": true,
+      "alias": null
+    },
+    {
+      "id": "switchboard",
+      "title": "Switchboard exposure",
+      "slug": "switchboard",
+      "icon": "life-buoy",
+      "parent": null,
+      "section": "MONITOR",
+      "order": 4,
+      "badge": null,
+      "keywords": [
+        "switchboard",
+        "shutdown",
+        "deprecated",
+        "migration",
+        "oracle"
+      ],
+      "inMenu": false,
+      "alias": null
+    },
+    {
+      "id": "telegram",
+      "title": "Telegram alerts",
+      "slug": "https://t.me/OracleCanaryAlerts",
+      "icon": "brand-telegram",
+      "parent": null,
+      "section": "MONITOR",
+      "order": 5,
+      "badge": null,
+      "keywords": [
+        "telegram",
+        "alerts",
+        "notifications",
+        "subscribe"
+      ],
+      "inMenu": true,
+      "alias": null,
+      "external": true
+    },
+    {
       "id": "api-docs",
       "title": "API docs",
       "slug": "api/docs",
       "icon": "book",
       "parent": null,
       "section": "DEVELOPERS",
-      "order": 4,
+      "order": 6,
       "badge": null,
       "keywords": [
         "api",

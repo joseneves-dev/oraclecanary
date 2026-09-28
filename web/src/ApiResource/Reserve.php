@@ -19,6 +19,7 @@ use App\ApiResource\Model\OracleAccounts;
 use App\ApiResource\Model\PriceStatus;
 use App\ApiResource\Model\Severity;
 use App\Entity\LendingReserve;
+use App\Filter\JsonContainsFilter;
 use App\Filter\NotNullFilter;
 use Symfony\Component\ObjectMapper\Attribute\Map;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -69,6 +70,16 @@ use Symfony\Component\Validator\Constraints as Assert;
                     constraints: [new Assert\Choice(choices: ['active', 'obsolete', 'hidden', 'unknown'])],
                     openApi: new Parameter('status', 'query', 'Reserve status', schema: ['type' => 'string', 'enum' => ['active', 'obsolete', 'hidden', 'unknown']]),
                 ),
+                'check' => new QueryParameter(
+                    filter: new JsonContainsFilter('checks', 'code'),
+                    constraints: [new Assert\Type('string'), new Assert\Regex(JsonContainsFilter::CHECK_PATTERN)],
+                    openApi: new Parameter('check', 'query', 'Only reserves failing this check, e.g. DEPRECATED_PROVIDER (still depending on a shut-down oracle such as Switchboard), STALE or NO_FALLBACK', schema: ['type' => 'string', 'pattern' => '^[A-Z][A-Z_]{1,39}$', 'example' => 'DEPRECATED_PROVIDER']),
+                ),
+                'provider' => new QueryParameter(
+                    filter: new JsonContainsFilter('providers'),
+                    constraints: [new Assert\Type('string'), new Assert\Regex(JsonContainsFilter::PROVIDER_PATTERN)],
+                    openApi: new Parameter('provider', 'query', 'Only reserves whose price depends on this source, as listed in `providers`, e.g. Pyth, PythLazer, Chainlink, ChainlinkDataStreams or SwitchboardOnDemand', schema: ['type' => 'string', 'pattern' => '^[A-Za-z0-9][A-Za-z0-9 ]{1,39}$', 'example' => 'Chainlink']),
+                ),
                 'score' => new QueryParameter(
                     filter: new ComparisonFilter(new ExactFilter()),
                     constraints: [new Assert\Collection(
@@ -111,7 +122,8 @@ use Symfony\Component\Validator\Constraints as Assert;
         ),
         new Get(),
     ],
-    order: ['score' => 'ASC', 'totalSupplyUsd' => 'DESC'],
+    // Largest first: what a visitor or integrator most needs to see; order[score]=asc lists the worst first.
+    order: ['totalSupplyUsd' => 'DESC', 'score' => 'ASC'],
     // Every field is always present (null when unknown) so clients can rely on the shape.
     normalizationContext: ['skip_null_values' => false],
     // The indexer refreshes the data about once a minute, so caches may reuse a response briefly.
