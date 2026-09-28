@@ -39,6 +39,7 @@ GET /api/reserves/{address}
 GET /api/reserves/{address}/history      hourly health, for charts
 GET /api/events?id[gt]=123               changes in failed checks, for alerts
 GET /api/incidents?resolved=false        periods a reserve's price could not be used, with duration
+GET /api/reserves/{address}/attestation  the latest health, signed for the on-chain oracle_guard
 ```
 
 `listed=true` keeps markets listed in the protocol's own app (Kamino's listed markets, marginfi's main

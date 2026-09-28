@@ -18,7 +18,7 @@ Program IDs (the keypairs live in `target/deploy/` and are gitignored):
 | oracle_guard | `444eBJsPgQGT6QfKtESvd21vZQa4YFsuKTodCokTasTT` |
 | demo_vault | `HGjvgPmovhBCeXVUrtNkrdQn1LadW6dyKo52A6MnhMi4` |
 
-Nothing is deployed yet, on any cluster.
+Devnet deployment: see "Deploy" below. Nothing is on mainnet.
 
 ## Attestation message
 
@@ -97,7 +97,7 @@ pass the config PDA, the Instructions sysvar and the oracle_guard program, then:
 ```rust
 let attestation = oracle_guard::cpi::assert_oracle_healthy(
     CpiContext::new(guard_program, AssertOracleHealthy { config, instructions }),
-    reserve_key, oracle_guard::SEVERITY_WARNING, 120,
+    reserve_key, oracle_guard::SEVERITY_WARNING, 600,
 )?.get();
 ```
 
@@ -105,12 +105,16 @@ let attestation = oracle_guard::cpi::assert_oracle_healthy(
 
 `ts/attestation.ts` provides `encodeAttestation`, `decodeAttestation`, `attestationFromHealth` (maps the
 indexer's `HealthResult`, with severity = worst check), `signAttestation` (tweetnacl, 64-byte secret
-key), `ed25519Instruction` and `assertOracleHealthyInstruction`. It is not wired into the indexer or the
-API yet.
+key), `ed25519Instruction` and `assertOracleHealthyInstruction`.
+
+In production nobody needs to sign: `GET /api/reserves/{address}/attestation` returns the reserve's latest
+health already signed (`message`, `signature`, `publicKey`; see `web/src/Attestation/`). Its `issued_at`
+is when the indexer measured the health, not when it was signed, so a stopped indexer cannot produce
+fresh-looking attestations; with a check every 5 minutes, callers need a max age of at least that.
 
 ```ts
 const signed = signAttestation(attestationFromHealth(reserve, health, Math.floor(Date.now() / 1000)), key.secretKey);
-tx.add(ed25519Instruction(signed), assertOracleHealthyInstruction({ reserve, maxSeverity: 'warning', maxAttestationAgeSeconds: 120 }));
+tx.add(ed25519Instruction(signed), assertOracleHealthyInstruction({ reserve, maxSeverity: 'warning', maxAttestationAgeSeconds: 600 }));
 ```
 
 ## Build and test
@@ -144,20 +148,28 @@ instead, restore the original keypair files.
 1.8.2 because newer versions pull a crate that needs edition 2024. After `cargo update`, reapply:
 `cargo update -p blake3 --precise 1.8.2`.
 
-## Deploy (not done yet)
+## Deploy
 
-Devnet first, with a funded wallet mounted into the container:
+Devnet, from a dedicated wallet (`~/.config/solana/oraclecanary-devnet.json`, funded from
+faucet.solana.com) that becomes the upgrade authority. `--max-len` is the program size, which halves
+the rent; `solana program extend` makes room for a bigger upgrade.
 
 ```bash
-MSYS_NO_PATHCONV=1 docker run --rm -it -v "$PWD/onchain:/work" -v oc-cargo-registry:/root/.cargo/registry \
-  -v "$HOME/.config/solana:/root/.config/solana" -w /work solanafoundation/anchor:v0.31.1 \
-  anchor deploy --provider.cluster devnet --program-name oracle_guard
+K=~/.config/solana/oraclecanary-devnet.json
+solana program deploy -u devnet -k $K --program-id target/deploy/oracle_guard-keypair.json --max-len 288888 target/deploy/oracle_guard.so
+solana program deploy -u devnet -k $K --program-id target/deploy/demo_vault-keypair.json --max-len 209408 target/deploy/demo_vault.so
 ```
 
-Then, from the upgrade-authority wallet, call `initialize(<attestation public key>)` with accounts
-`config = PDA(["config"])`, `admin = wallet`, `program = oracle_guard ID`,
-`program_data = PDA([program ID], BPFLoaderUpgradab1e11111111111111111111111)`, `system_program`. Use
-`target/idl/oracle_guard.json` with `@coral-xyz/anchor`. Do the same on mainnet only after a review.
+Then point the guard at the API's signing key (the `publicKey` of any attestation from the API) and
+try the demo vault with a reserve's live attestation:
+
+```bash
+npx tsx ts/devnet.ts init <attestation public key>
+npx tsx ts/devnet.ts demo <reserve address>
+```
+
+`initialize` must be signed by the upgrade authority; `set_authority` rotates the key later. Deploy to
+mainnet only after a review. `demo_vault` is a demo and should not go to mainnet.
 `demo_vault` is a demo and should not go to mainnet.
 
 ## Limitations

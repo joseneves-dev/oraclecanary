@@ -425,7 +425,7 @@ fn demo_vault_deposits_only_when_oracle_is_healthy() {
     let e = env.healthy(CRITICAL, NOW);
     expect_custom(env.send(&[ed25519_ix(&[e]), deposit_ix(&user, &reserve, 700)], &[]), 1, UNHEALTHY);
     expect_custom(env.send(&[deposit_ix(&user, &reserve, 700)], &[]), 0, MISSING_SIGNATURE);
-    let e = env.healthy(OK, NOW - 121);
+    let e = env.healthy(OK, NOW - 601);
     expect_custom(env.send(&[ed25519_ix(&[e]), deposit_ix(&user, &reserve, 700)], &[]), 1, STALE_ATTESTATION);
 
     let position = env.svm.get_account(&position_pda(&reserve, &user)).unwrap();

@@ -9,8 +9,9 @@ declare_id!("HGjvgPmovhBCeXVUrtNkrdQn1LadW6dyKo52A6MnhMi4");
 
 /// This vault accepts reserves whose worst open check is at most a warning.
 pub const MAX_SEVERITY: u8 = oracle_guard::SEVERITY_WARNING;
-/// This vault accepts attestations signed at most two minutes ago.
-pub const MAX_ATTESTATION_AGE_SECONDS: u32 = 120;
+/// This vault accepts attestations of health measured at most ten minutes ago: OracleCanary's API
+/// stamps an attestation with when the indexer checked the reserve, every five minutes in production.
+pub const MAX_ATTESTATION_AGE_SECONDS: u32 = 600;
 
 #[program]
 pub mod demo_vault {
