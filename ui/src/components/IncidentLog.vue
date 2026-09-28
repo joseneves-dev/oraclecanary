@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { RouterLink, useRouter } from 'vue-router'
 import type { ReserveIncident } from '@/api/client'
-import MarketClosedBadge from '@/components/MarketClosedBadge.vue'
+import ReserveTags from '@/components/ReserveTags.vue'
 import { dateTime, duration, usd } from '@/lib/format'
 
 defineProps<{ incidents: ReserveIncident[] }>()
@@ -20,6 +20,7 @@ const elapsed = (i: ReserveIncident) =>
         <tr>
           <th scope="col">Reserve</th>
           <th scope="col">Cause</th>
+          <th scope="col">Tags</th>
           <th scope="col">Started</th>
           <th scope="col">Ended</th>
           <th scope="col" class="num">Duration</th>
@@ -33,10 +34,8 @@ const elapsed = (i: ReserveIncident) =>
             <RouterLink :to="{ name: 'reserve', params: { address: i.reserve } }">{{ i.asset }}</RouterLink>
             <div class="muted">{{ i.protocol }} · {{ i.marketName }}</div>
           </td>
-          <td>
-            <span class="codes">{{ i.checks.filter((c) => c.code !== 'MARKET_CLOSED').map((c) => c.code).join(', ') }}</span>
-            <MarketClosedBadge :checks="i.checks" />
-          </td>
+          <td class="codes">{{ i.checks.filter((c) => c.severity === 'critical').map((c) => c.code).join(', ') }}</td>
+          <td><ReserveTags :checks="i.checks" /></td>
           <td class="nowrap">
             <span v-if="i.startEstimated" title="Already failing when tracking started: worked out from the age of its price">≈ </span>{{ dateTime(i.startedAt) }}
           </td>

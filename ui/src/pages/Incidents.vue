@@ -4,7 +4,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import { fetchAllReserves, fetchIncidents, type Reserve, type ReserveIncident } from '@/api/client'
 import IncidentLog from '@/components/IncidentLog.vue'
 import KpiCard from '@/components/KpiCard.vue'
-import MarketClosedBadge from '@/components/MarketClosedBadge.vue'
+import ReserveTags from '@/components/ReserveTags.vue'
 import { duration, usd } from '@/lib/format'
 
 const router = useRouter()
@@ -95,6 +95,7 @@ watch(
               <tr>
                 <th scope="col">Reserve</th>
                 <th scope="col">Issue</th>
+                <th scope="col">Tags</th>
                 <th scope="col" class="num">Price age</th>
                 <th scope="col" class="num">Supply</th>
               </tr>
@@ -106,7 +107,8 @@ watch(
                   <RouterLink :to="{ name: 'reserve', params: { address: r.address } }">{{ r.asset }}</RouterLink>
                   <div class="muted">{{ r.protocol }} · {{ r.market.name }}</div>
                 </td>
-                <td class="issue"><MarketClosedBadge :checks="r.checks" /> {{ mainIssue(r) }}</td>
+                <td class="issue">{{ mainIssue(r) }}</td>
+                <td><ReserveTags :checks="r.checks" /></td>
                 <td class="num ax-num">{{ duration(r.price.ageSeconds) }}</td>
                 <td class="num ax-num">{{ usd(r.totalSupplyUsd) }}</td>
               </tr>

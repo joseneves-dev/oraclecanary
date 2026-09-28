@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import type { Reserve, Severity } from '@/api/client'
-import MarketClosedBadge from '@/components/MarketClosedBadge.vue'
+import ReserveTags from '@/components/ReserveTags.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
 import { duration, shortAddress, usd } from '@/lib/format'
 
@@ -22,6 +22,7 @@ const COLUMNS: { key: SortKey | null; label: string; num?: boolean }[] = [
   { key: null, label: 'Protocol' },
   { key: 'score', label: 'Health' },
   { key: null, label: 'Main issue' },
+  { key: null, label: 'Tags' },
   { key: null, label: 'Oracles' },
   { key: 'priceAgeSeconds', label: 'Price age' },
   { key: 'totalSupplyUsd', label: 'Supply', num: true },
@@ -46,7 +47,7 @@ function mainIssue(r: Reserve): string {
 
 <template>
   <div class="ax-table-wrap">
-    <table class="ax-table ax-table--hover" style="min-width: 860px">
+    <table class="ax-table ax-table--hover" style="min-width: 960px">
       <caption class="ax-visually-hidden">Lending reserves and the health of their oracle feeds</caption>
       <thead class="ax-table__head">
         <tr>
@@ -79,10 +80,10 @@ function mainIssue(r: Reserve): string {
             <span class="health">
               <SeverityBadge :severity="r.severity" />
               <span class="ax-num score">{{ r.score }}</span>
-              <MarketClosedBadge :checks="r.checks" />
             </span>
           </td>
           <td class="ax-table__td issue">{{ mainIssue(r) }}</td>
+          <td class="ax-table__td"><ReserveTags :checks="r.checks" /></td>
           <td class="ax-table__td muted">{{ r.providers.join(', ') || '—' }}</td>
           <td class="ax-table__td ax-num" :class="{ stale: r.price.isStale === true }">
             {{ duration(r.price.ageSeconds) }}<span class="muted"> / {{ duration(r.price.maxAgeSeconds) }}</span>

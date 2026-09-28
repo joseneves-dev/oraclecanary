@@ -5,7 +5,7 @@ import { fetchEvents, fetchReserve, fetchReserveHistory, type Reserve, type Rese
 import EventList from '@/components/EventList.vue'
 import HealthHistoryChart from '@/components/HealthHistoryChart.vue'
 import KpiCard from '@/components/KpiCard.vue'
-import MarketClosedBadge from '@/components/MarketClosedBadge.vue'
+import ReserveTags from '@/components/ReserveTags.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
 import { dateTime, duration, shortAddress, solscanAccount, usd } from '@/lib/format'
 
@@ -101,7 +101,7 @@ const accountRows = (r: Reserve) =>
           <h1 class="ax-page-head__title title">
             {{ reserve.asset || shortAddress(reserve.mint) }}
             <SeverityBadge :severity="reserve.severity" />
-            <MarketClosedBadge :checks="reserve.checks" />
+            <ReserveTags :checks="reserve.checks" hide-empty />
           </h1>
           <p class="ax-page-head__subtitle">
             {{ reserve.protocol }} · {{ reserve.market.name ?? 'Unlisted market' }} · checked {{ dateTime(reserve.checkedAt) }}
