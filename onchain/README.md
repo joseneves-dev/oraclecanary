@@ -18,7 +18,8 @@ Program IDs (the keypairs live in `target/deploy/` and are gitignored):
 | oracle_guard | `444eBJsPgQGT6QfKtESvd21vZQa4YFsuKTodCokTasTT` |
 | demo_vault | `HGjvgPmovhBCeXVUrtNkrdQn1LadW6dyKo52A6MnhMi4` |
 
-Devnet deployment: see "Deploy" below. Nothing is on mainnet.
+Both are deployed on **devnet** (28 Sep 2026; upgrade authority `14cWJqVzuy4yzhX1ST7C679H85mEFanZW2fptGxJ18pc`), and the guard
+accepts attestations signed by the API's key `3MB4DxhySyKrywoNZfvLZeUPqkUpFCmDBmLRgnTjxAaH`. Nothing is on mainnet.
 
 ## Attestation message
 
