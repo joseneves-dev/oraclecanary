@@ -1,5 +1,5 @@
 /*
- * HTML reference edition · base.css
+ * Vireo — HTML reference edition · base.css
  * ────────────────────────────────────────────────────────────────────────
  * Reset/normalize · root typography · global element defaults · scrollbars
  * AND the Aurora app-shell layout (.ax-layout / .ax-sidebar / .ax-shell /
@@ -28,7 +28,7 @@
   --ax-drawer-w: 288px; /* mobile offcanvas width */
   --ax-backdrop: rgba(20, 17, 13, 0.5); /* overlay scrim (mode-agnostic dim) */
 }
-[data-ax-theme="dark"] {
+[data-ax-theme='dark'] {
   --ax-backdrop: rgba(0, 0, 0, 0.6);
 }
 
@@ -64,7 +64,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  font-feature-settings: "cv05", "ss01"; /* Inter stylistic sets */
+  font-feature-settings: 'cv05', 'ss01'; /* Inter stylistic sets */
   letter-spacing: -0.006em;
   /* color/background follow theme-token transitions, not element fades */
   transition:
@@ -132,9 +132,9 @@ h6 {
 }
 
 /* lists used as nav/menus reset their list affordances */
-:where(ul, ol)[role="list"],
-:where(ul, ol)[role="tree"],
-:where(ul, ol)[role="menu"] {
+:where(ul, ol)[role='list'],
+:where(ul, ol)[role='tree'],
+:where(ul, ol)[role='menu'] {
   list-style: none;
   padding: 0;
 }
@@ -300,7 +300,7 @@ hr {
 }
 
 /* directional icons flip in RTL; non-directional never flip (shell brief §12) */
-[dir="rtl"] .ax-icon--directional {
+[dir='rtl'] .ax-icon--directional {
   transform: scaleX(-1);
 }
 /* keep numeric / mono runs LTR even in RTL context */
@@ -438,7 +438,7 @@ hr {
    5 · WIDTH MODES  [data-ax-width="fluid|full"]
    fluid = padded (default) · full = edge-to-edge
    ════════════════════════════════════════════════════════════════════════ */
-[data-ax-width="full"] .ax-main > :not(.ax-footer) {
+[data-ax-width='full'] .ax-main > :not(.ax-footer) {
   --ax-page-pad: var(--ax-space-4);
   padding-inline: var(--ax-page-pad);
 }
@@ -447,14 +447,14 @@ hr {
    6 · HEADER POSITION  [data-ax-header-position="fixed|static"]
    fixed (default) = chrome pinned · static = scrolls away with content
    ════════════════════════════════════════════════════════════════════════ */
-[data-ax-header-position="static"] .ax-header {
+[data-ax-header-position='static'] .ax-header {
   /* static = scroll away with content. Must be `static` (not sticky): the base
      rule leaves inset-block-start:0, which would keep a sticky header pinned. */
   position: static;
   inset-inline-start: auto;
   inset-inline-end: auto;
 }
-[data-ax-header-position="static"] .ax-main {
+[data-ax-header-position='static'] .ax-main {
   padding-block-start: 0; /* header is in flow, no offset needed */
 }
 
@@ -463,7 +463,7 @@ hr {
    `position:relative` .ax-layout keeps it a 264px left column out of flow, so
    .ax-shell's existing margin-inline-start and the fixed-header offset stay valid
    (a sticky rail in the non-flex .ax-layout would stack ABOVE the shell). */
-[data-ax-sidebar-position="static"] .ax-sidebar {
+[data-ax-sidebar-position='static'] .ax-sidebar {
   position: absolute;
   inset-block-start: 0;
   inset-inline-start: 0;
@@ -478,30 +478,27 @@ hr {
    ════════════════════════════════════════════════════════════════════════ */
 
 /* width re-bind: compact-family rails collapse to the 76px icon token */
-[data-ax-sidebar-style="compact"],
-[data-ax-sidebar-style="icon-text"],
-[data-ax-sidebar-style="icon-overlay"] {
+[data-ax-sidebar-style='compact'],
+[data-ax-sidebar-style='icon-text'],
+[data-ax-sidebar-style='icon-overlay'] {
   --ax-sidebar-w: var(--ax-sidebar-w-compact);
 }
-[data-ax-sidebar-style="double"] {
+[data-ax-sidebar-style='double'] {
   --ax-sidebar-w: var(--ax-sidebar-w-double);
 }
 /* JS-driven temporary collapse via the header toggle (no style chosen) OR the
    'compact' BEHAVIOR (locked icon rail, any style). The §7b icon-rail treatment
    below shares the same :is() prefix so both look identical. Mobile-safe: the
    drawer hard-sets .ax-sidebar inline-size + zeroes the shell offset. */
-:is(
-  [data-ax-collapsed]:not([data-ax-sidebar-style]),
-  [data-ax-sidebar-behavior="compact"]
-) {
+:is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) {
   --ax-sidebar-w: var(--ax-sidebar-w-compact);
 }
 
 /* ── SIDEBAR BEHAVIOR  [data-ax-sidebar-behavior="collapsible|expanded|compact"]
    collapsible (default) keeps the header collapse toggle. expanded & compact
    LOCK the rail, so the toggle button is removed (JS also no-ops it). ── */
-[data-ax-sidebar-behavior="expanded"] .ax-nav-toggle,
-[data-ax-sidebar-behavior="compact"] .ax-nav-toggle {
+[data-ax-sidebar-behavior='expanded'] .ax-nav-toggle,
+[data-ax-sidebar-behavior='compact'] .ax-nav-toggle {
   display: none;
 }
 
@@ -512,32 +509,32 @@ hr {
 
 /* ── COMPACT (76px, icons only) ─────────────────────────────────────────
    Hide labels/wordmark/section eyebrows/foot meta; reveal flyout on hover. */
-[data-ax-sidebar-style="compact"] .ax-sidebar__wordmark,
-[data-ax-sidebar-style="compact"] .ax-nav__label,
-[data-ax-sidebar-style="compact"] .ax-nav__badge,
-[data-ax-sidebar-style="compact"] .ax-nav__caret,
-[data-ax-sidebar-style="compact"] .ax-sidebar__section,
-[data-ax-sidebar-style="compact"] .ax-sidebar__search,
-[data-ax-sidebar-style="compact"] .ax-sidebar__promo,
-[data-ax-sidebar-style="compact"] .ax-sidebar__user-meta,
-[data-ax-sidebar-style="icon-overlay"] .ax-sidebar__wordmark,
-[data-ax-sidebar-style="icon-overlay"] .ax-nav__label,
-[data-ax-sidebar-style="icon-overlay"] .ax-nav__badge,
-[data-ax-sidebar-style="icon-overlay"] .ax-nav__caret,
-[data-ax-sidebar-style="icon-overlay"] .ax-sidebar__section,
-[data-ax-sidebar-style="icon-overlay"] .ax-sidebar__search,
-[data-ax-sidebar-style="icon-overlay"] .ax-sidebar__promo,
-[data-ax-sidebar-style="icon-overlay"] .ax-sidebar__user-meta {
+[data-ax-sidebar-style='compact'] .ax-sidebar__wordmark,
+[data-ax-sidebar-style='compact'] .ax-nav__label,
+[data-ax-sidebar-style='compact'] .ax-nav__badge,
+[data-ax-sidebar-style='compact'] .ax-nav__caret,
+[data-ax-sidebar-style='compact'] .ax-sidebar__section,
+[data-ax-sidebar-style='compact'] .ax-sidebar__search,
+[data-ax-sidebar-style='compact'] .ax-sidebar__promo,
+[data-ax-sidebar-style='compact'] .ax-sidebar__user-meta,
+[data-ax-sidebar-style='icon-overlay'] .ax-sidebar__wordmark,
+[data-ax-sidebar-style='icon-overlay'] .ax-nav__label,
+[data-ax-sidebar-style='icon-overlay'] .ax-nav__badge,
+[data-ax-sidebar-style='icon-overlay'] .ax-nav__caret,
+[data-ax-sidebar-style='icon-overlay'] .ax-sidebar__section,
+[data-ax-sidebar-style='icon-overlay'] .ax-sidebar__search,
+[data-ax-sidebar-style='icon-overlay'] .ax-sidebar__promo,
+[data-ax-sidebar-style='icon-overlay'] .ax-sidebar__user-meta {
   display: none;
 }
 /* compact nav items center their icon; section becomes a hairline divider */
-[data-ax-sidebar-style="compact"] .ax-nav__item,
-[data-ax-sidebar-style="icon-overlay"] .ax-nav__item {
+[data-ax-sidebar-style='compact'] .ax-nav__item,
+[data-ax-sidebar-style='icon-overlay'] .ax-nav__item {
   justify-content: center;
   padding-inline: 0;
 }
-[data-ax-sidebar-style="compact"] .ax-sidebar__section,
-[data-ax-sidebar-style="icon-overlay"] .ax-sidebar__section {
+[data-ax-sidebar-style='compact'] .ax-sidebar__section,
+[data-ax-sidebar-style='icon-overlay'] .ax-sidebar__section {
   display: block;
   block-size: 1px;
   margin: var(--ax-space-2) var(--ax-space-4);
@@ -547,16 +544,10 @@ hr {
   text-indent: -999px;
 }
 /* compact flyout (label tooltip / submenu panel) floats out on hover/focus */
-[data-ax-sidebar-style="compact"] .ax-nav__item:hover > .ax-sidebar__flyout,
-[data-ax-sidebar-style="compact"]
-  .ax-nav__item:focus-visible
-  > .ax-sidebar__flyout,
-[data-ax-sidebar-style="icon-overlay"]
-  .ax-nav__item:hover
-  > .ax-sidebar__flyout,
-[data-ax-sidebar-style="icon-overlay"]
-  .ax-nav__item:focus-visible
-  > .ax-sidebar__flyout {
+[data-ax-sidebar-style='compact'] .ax-nav__item:hover > .ax-sidebar__flyout,
+[data-ax-sidebar-style='compact'] .ax-nav__item:focus-visible > .ax-sidebar__flyout,
+[data-ax-sidebar-style='icon-overlay'] .ax-nav__item:hover > .ax-sidebar__flyout,
+[data-ax-sidebar-style='icon-overlay'] .ax-nav__item:focus-visible > .ax-sidebar__flyout {
   display: block;
   position: absolute;
   inset-inline-start: calc(100% + var(--ax-space-2));
@@ -574,8 +565,8 @@ hr {
   -webkit-backdrop-filter: blur(18px) saturate(1.1);
   backdrop-filter: blur(18px) saturate(1.1);
 }
-[data-ax-sidebar-style="compact"] .ax-nav__item,
-[data-ax-sidebar-style="icon-overlay"] .ax-nav__item {
+[data-ax-sidebar-style='compact'] .ax-nav__item,
+[data-ax-sidebar-style='icon-overlay'] .ax-nav__item {
   position: relative;
 }
 
@@ -590,75 +581,27 @@ hr {
    hover flyout to reveal them). Desktop only — under md the rail is an offcanvas
    drawer that must keep its full labels. */
 @media (min-width: 768px) {
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-sidebar__wordmark,
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-nav__label,
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-nav__badge,
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-nav__caret,
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-sidebar__search,
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-sidebar__promo,
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-sidebar__user-meta,
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-sidebar__user-avatar,
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-nav__children {
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-sidebar__wordmark,
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-nav__label,
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-nav__badge,
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-nav__caret,
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-sidebar__search,
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-sidebar__promo,
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-sidebar__user-meta,
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-sidebar__user-avatar,
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-nav__children {
     display: none;
   }
   /* brand → centred logo mark (drop the wordmark gutter) */
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-sidebar__brand {
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-sidebar__brand {
     justify-content: center;
     padding-inline: 0;
   }
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-sidebar__logo {
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-sidebar__logo {
     gap: 0;
   }
   /* nav rows → centred icon, no label gutter */
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-nav__item {
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-nav__item {
     justify-content: center;
     gap: 0;
     padding-inline: 0;
@@ -666,34 +609,17 @@ hr {
   /* active-section indicator: when the active leaf lives in a now-hidden child
      panel, surface its trail PARENT as active so the rail still shows where you
      are (mirrors the .is-active recipe, minus the off-rail leading glow bar). */
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-nav__item--trail {
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-nav__item--trail {
     color: var(--ax-text-strong);
-    background: linear-gradient(
-      90deg,
-      rgba(var(--ax-accent-rgb), 0.16),
-      rgba(var(--ax-accent-rgb), 0.04)
-    );
+    background: linear-gradient(90deg, rgba(var(--ax-accent-rgb), 0.16), rgba(var(--ax-accent-rgb), 0.04));
     box-shadow: inset 0 0 0 1px rgba(var(--ax-accent-rgb), 0.18);
   }
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-nav__item--trail
-    .ax-nav__icon {
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-nav__item--trail .ax-nav__icon {
     color: var(--ax-accent);
     opacity: 1;
   }
   /* section eyebrow → hairline divider (label text clipped away) */
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-sidebar__section {
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-sidebar__section {
     block-size: 1px;
     margin: var(--ax-space-2) var(--ax-space-4);
     padding: 0;
@@ -703,18 +629,10 @@ hr {
     background: var(--ax-border);
   }
   /* foot → keep ONLY the logout icon, centred (avatar + meta both hidden) */
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-sidebar__user {
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-sidebar__user {
     justify-content: center;
   }
-  :is(
-      [data-ax-collapsed]:not([data-ax-sidebar-style]),
-      [data-ax-sidebar-behavior="compact"]
-    )
-    .ax-sidebar__foot {
+  :is([data-ax-collapsed]:not([data-ax-sidebar-style]), [data-ax-sidebar-behavior='compact']) .ax-sidebar__foot {
     padding-inline: var(--ax-space-3);
   }
 }
@@ -723,45 +641,39 @@ hr {
    The rail keeps the shell offset at 76px; hovering expands the rail itself
    as a floating overlay. We expand inline-size only on the rail, not the
    shell margin, so content never reflows. */
-[data-ax-sidebar-style="icon-text"] .ax-sidebar__wordmark,
-[data-ax-sidebar-style="icon-text"] .ax-nav__label,
-[data-ax-sidebar-style="icon-text"] .ax-nav__badge,
-[data-ax-sidebar-style="icon-text"] .ax-nav__caret,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar__section,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar__promo,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar__user-meta {
+[data-ax-sidebar-style='icon-text'] .ax-sidebar__wordmark,
+[data-ax-sidebar-style='icon-text'] .ax-nav__label,
+[data-ax-sidebar-style='icon-text'] .ax-nav__badge,
+[data-ax-sidebar-style='icon-text'] .ax-nav__caret,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar__section,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar__promo,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar__user-meta {
   opacity: 0;
   transition: opacity var(--ax-motion-fast) var(--ax-ease-standard);
 }
-[data-ax-sidebar-style="icon-text"] .ax-sidebar {
+[data-ax-sidebar-style='icon-text'] .ax-sidebar {
   overflow: visible;
 }
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:hover,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:focus-within {
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:hover,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:focus-within {
   inline-size: var(--ax-sidebar-w-expanded, 264px);
   box-shadow: var(--ax-shadow-md);
   overflow: hidden;
 }
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:hover .ax-sidebar__wordmark,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:hover .ax-nav__label,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:hover .ax-nav__badge,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:hover .ax-nav__caret,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:hover .ax-sidebar__section,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:hover .ax-sidebar__promo,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:hover .ax-sidebar__user-meta,
-[data-ax-sidebar-style="icon-text"]
-  .ax-sidebar:focus-within
-  .ax-sidebar__wordmark,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:focus-within .ax-nav__label,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:focus-within .ax-nav__badge,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:focus-within .ax-nav__caret,
-[data-ax-sidebar-style="icon-text"]
-  .ax-sidebar:focus-within
-  .ax-sidebar__section,
-[data-ax-sidebar-style="icon-text"] .ax-sidebar:focus-within .ax-sidebar__promo,
-[data-ax-sidebar-style="icon-text"]
-  .ax-sidebar:focus-within
-  .ax-sidebar__user-meta {
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:hover .ax-sidebar__wordmark,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:hover .ax-nav__label,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:hover .ax-nav__badge,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:hover .ax-nav__caret,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:hover .ax-sidebar__section,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:hover .ax-sidebar__promo,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:hover .ax-sidebar__user-meta,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:focus-within .ax-sidebar__wordmark,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:focus-within .ax-nav__label,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:focus-within .ax-nav__badge,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:focus-within .ax-nav__caret,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:focus-within .ax-sidebar__section,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:focus-within .ax-sidebar__promo,
+[data-ax-sidebar-style='icon-text'] .ax-sidebar:focus-within .ax-sidebar__user-meta {
   opacity: 1;
 }
 
@@ -789,7 +701,7 @@ hr {
    gutter. The header float is desktop-only (min-width:768px) so the mobile
    drawer/header are untouched; with a top menu bar it docks (Horizontal/Hybrid
    override below) so it never floats over the bar. */
-[data-ax-shell-style="detached"] .ax-sidebar {
+[data-ax-shell-style='detached'] .ax-sidebar {
   inset-block: var(--ax-detached-inset);
   inset-inline-start: var(--ax-detached-inset);
   block-size: auto;
@@ -797,30 +709,26 @@ hr {
   border-radius: var(--ax-radius-lg);
   box-shadow: var(--ax-shadow-sm);
 }
-[data-ax-shell-style="detached"] .ax-shell {
+[data-ax-shell-style='detached'] .ax-shell {
   margin-inline-start: calc(var(--ax-sidebar-w) + var(--ax-detached-inset) * 2);
 }
 @media (min-width: 768px) {
   /* header floats to the right of the rail, aligned to the content column,
      tops level with the sidebar card (both start at --ax-detached-inset) */
-  [data-ax-shell-style="detached"] .ax-header {
+  [data-ax-shell-style='detached'] .ax-header {
     inset-block-start: var(--ax-detached-inset);
-    inset-inline-start: calc(
-      var(--ax-sidebar-w) + var(--ax-detached-inset) * 2
-    );
+    inset-inline-start: calc(var(--ax-sidebar-w) + var(--ax-detached-inset) * 2);
     inset-inline-end: var(--ax-detached-inset);
     border: 1px solid var(--ax-header-border, var(--ax-border));
     border-radius: var(--ax-radius-lg);
     box-shadow: var(--ax-shadow-sm);
   }
   /* clear the floated header: its height + the top inset + the gap below it */
-  [data-ax-shell-style="detached"] .ax-main {
-    padding-block-start: calc(
-      var(--ax-header-h) + var(--ax-detached-inset) * 2
-    );
+  [data-ax-shell-style='detached'] .ax-main {
+    padding-block-start: calc(var(--ax-header-h) + var(--ax-detached-inset) * 2);
   }
   /* static header is in flow (takes its own space) — no extra top padding */
-  [data-ax-header-position="static"][data-ax-shell-style="detached"] .ax-main {
+  [data-ax-header-position='static'][data-ax-shell-style='detached'] .ax-main {
     padding-block-start: 0;
   }
   /* …but `position:static` ignores the float's inset-* offsets, so the card would
@@ -828,31 +736,26 @@ hr {
      intact, misaligned with the floated sidebar. Recreate the gutters with margins
      instead. Vertical nav only — Horizontal/Hybrid dock the header to a flush band
      (no float), so they must keep their full-bleed edges. */
-  [data-ax-header-position="static"][data-ax-shell-style="detached"]:not(
-      [data-ax-nav="horizontal"]
-    ):not([data-ax-nav="hybrid"])
-    .ax-header {
+  [data-ax-header-position='static'][data-ax-shell-style='detached']:not([data-ax-nav='horizontal']):not([data-ax-nav='hybrid']) .ax-header {
     margin-block: var(--ax-detached-inset);
     margin-inline-end: var(--ax-detached-inset);
   }
   /* With a top menu bar (Horizontal/Hybrid) the header can't float over the bar —
      dock it (flush band) there; only the sidebar detaches. */
-  [data-ax-nav="horizontal"][data-ax-shell-style="detached"] .ax-header,
-  [data-ax-nav="hybrid"][data-ax-shell-style="detached"] .ax-header {
+  [data-ax-nav='horizontal'][data-ax-shell-style='detached'] .ax-header,
+  [data-ax-nav='hybrid'][data-ax-shell-style='detached'] .ax-header {
     inset-block-start: 0;
     border: 0;
     border-block-end: 1px solid var(--ax-header-border, var(--ax-border));
     border-radius: 0;
     box-shadow: none;
   }
-  [data-ax-nav="horizontal"][data-ax-shell-style="detached"] .ax-header {
+  [data-ax-nav='horizontal'][data-ax-shell-style='detached'] .ax-header {
     inset-inline-start: 0;
     inset-inline-end: 0;
   }
-  [data-ax-nav="hybrid"][data-ax-shell-style="detached"] .ax-header {
-    inset-inline-start: calc(
-      var(--ax-sidebar-w) + var(--ax-detached-inset) * 2
-    );
+  [data-ax-nav='hybrid'][data-ax-shell-style='detached'] .ax-header {
+    inset-inline-start: calc(var(--ax-sidebar-w) + var(--ax-detached-inset) * 2);
     inset-inline-end: 0;
   }
 }
@@ -871,19 +774,19 @@ hr {
    is built from the sidebar tree by core/topnav.js and lives as a direct child
    of `.ax-shell`; CSS here only gates its visibility + skins the dropdowns.
    ════════════════════════════════════════════════════════════════════════ */
-[data-ax-nav="horizontal"] .ax-sidebar {
+[data-ax-nav='horizontal'] .ax-sidebar {
   display: none;
 }
-[data-ax-nav="horizontal"] .ax-shell {
+[data-ax-nav='horizontal'] .ax-shell {
   margin-inline-start: 0;
 }
-[data-ax-nav="horizontal"] .ax-header {
+[data-ax-nav='horizontal'] .ax-header {
   inset-inline-start: 0;
 }
 /* No rail in Horizontal mode (the sidebar is display:none at every width), so
    the header's collapse toggle has nothing to act on — hide it. Hybrid keeps
    the rail, so its toggle stays. */
-[data-ax-nav="horizontal"] .ax-nav-toggle {
+[data-ax-nav='horizontal'] .ax-nav-toggle {
   display: none;
 }
 
@@ -911,8 +814,8 @@ hr {
 .ax-shell > .ax-topnav {
   display: none;
 }
-[data-ax-nav="horizontal"] .ax-shell > .ax-topnav,
-[data-ax-nav="hybrid"] .ax-shell > .ax-topnav {
+[data-ax-nav='horizontal'] .ax-shell > .ax-topnav,
+[data-ax-nav='hybrid'] .ax-shell > .ax-topnav {
   display: flex;
   align-items: stretch;
   position: fixed;
@@ -927,30 +830,26 @@ hr {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-[data-ax-nav="hybrid"] .ax-shell > .ax-topnav {
+[data-ax-nav='hybrid'] .ax-shell > .ax-topnav {
   inset-inline-start: var(--ax-sidebar-w);
 }
 /* clear the fixed header + the fixed top bar */
-[data-ax-nav="horizontal"] .ax-main,
-[data-ax-nav="hybrid"] .ax-main {
+[data-ax-nav='horizontal'] .ax-main,
+[data-ax-nav='hybrid'] .ax-main {
   padding-block-start: calc(var(--ax-header-h) + 48px);
 }
 
 /* HEADER POSITION = STATIC → the header scrolls away with content, so the bar
    must too: ride in normal flow directly under the (now in-flow) header and
    STICK to the top once the header clears, leaving no empty gap above it. */
-[data-ax-header-position="static"][data-ax-nav="horizontal"]
-  .ax-shell
-  > .ax-topnav,
-[data-ax-header-position="static"][data-ax-nav="hybrid"]
-  .ax-shell
-  > .ax-topnav {
+[data-ax-header-position='static'][data-ax-nav='horizontal'] .ax-shell > .ax-topnav,
+[data-ax-header-position='static'][data-ax-nav='hybrid'] .ax-shell > .ax-topnav {
   position: sticky;
   inset-block-start: 0;
   inset-inline: auto;
 }
-[data-ax-header-position="static"][data-ax-nav="horizontal"] .ax-main,
-[data-ax-header-position="static"][data-ax-nav="hybrid"] .ax-main {
+[data-ax-header-position='static'][data-ax-nav='horizontal'] .ax-main,
+[data-ax-header-position='static'][data-ax-nav='hybrid'] .ax-main {
   padding-block-start: 0;
 }
 
@@ -996,7 +895,7 @@ hr {
 }
 /* the fade that bleeds the scrolling track under the chevron */
 .ax-topnav__edge::before {
-  content: "";
+  content: '';
   position: absolute;
   inset-block: 0;
   inline-size: 28px;
@@ -1010,10 +909,10 @@ hr {
   inset-inline-end: 100%;
   background: linear-gradient(to left, var(--ax-surface-overlay), transparent);
 }
-[dir="rtl"] .ax-topnav__edge--prev::before {
+[dir='rtl'] .ax-topnav__edge--prev::before {
   background: linear-gradient(to left, var(--ax-surface-overlay), transparent);
 }
-[dir="rtl"] .ax-topnav__edge--next::before {
+[dir='rtl'] .ax-topnav__edge--next::before {
   background: linear-gradient(to right, var(--ax-surface-overlay), transparent);
 }
 
@@ -1173,7 +1072,7 @@ hr {
 
 /* 768–992: force compact rail unless the user explicitly chose a wider style */
 @media (min-width: 768px) and (max-width: 991.98px) {
-  :where(html):not([data-ax-shell-style="detached"]) {
+  :where(html):not([data-ax-shell-style='detached']) {
     --ax-sidebar-w: var(--ax-sidebar-w-compact);
   }
   /* The width rebind alone squeezes the full 264px rail into 76px — clipping the
@@ -1182,67 +1081,34 @@ hr {
      centre the brand + icons + avatar, eyebrow → hairline). Explicit styles
      (icon-text / icon-overlay / compact / double) keep their own width + label
      handling, so we exclude [data-ax-sidebar-style]. Keep in sync with §7b. */
-  :where(html):not([data-ax-shell-style="detached"]):not(
-      [data-ax-sidebar-style]
-    )
-    :is(
-      .ax-sidebar__wordmark,
-      .ax-nav__label,
-      .ax-nav__badge,
-      .ax-nav__caret,
-      .ax-sidebar__search,
-      .ax-sidebar__promo,
-      .ax-sidebar__user-meta,
-      .ax-sidebar__user-avatar,
-      .ax-nav__children
-    ) {
+  :where(html):not([data-ax-shell-style='detached']):not([data-ax-sidebar-style]) :is(
+      .ax-sidebar__wordmark, .ax-nav__label, .ax-nav__badge, .ax-nav__caret,
+      .ax-sidebar__search, .ax-sidebar__promo, .ax-sidebar__user-meta,
+      .ax-sidebar__user-avatar, .ax-nav__children) {
     display: none;
   }
-  :where(html):not([data-ax-shell-style="detached"]):not(
-      [data-ax-sidebar-style]
-    )
-    .ax-sidebar__brand {
+  :where(html):not([data-ax-shell-style='detached']):not([data-ax-sidebar-style]) .ax-sidebar__brand {
     justify-content: center;
     padding-inline: 0;
   }
-  :where(html):not([data-ax-shell-style="detached"]):not(
-      [data-ax-sidebar-style]
-    )
-    .ax-sidebar__logo {
+  :where(html):not([data-ax-shell-style='detached']):not([data-ax-sidebar-style]) .ax-sidebar__logo {
     gap: 0;
   }
-  :where(html):not([data-ax-shell-style="detached"]):not(
-      [data-ax-sidebar-style]
-    )
-    .ax-nav__item {
+  :where(html):not([data-ax-shell-style='detached']):not([data-ax-sidebar-style]) .ax-nav__item {
     justify-content: center;
     gap: 0;
     padding-inline: 0;
   }
-  :where(html):not([data-ax-shell-style="detached"]):not(
-      [data-ax-sidebar-style]
-    )
-    .ax-nav__item--trail {
+  :where(html):not([data-ax-shell-style='detached']):not([data-ax-sidebar-style]) .ax-nav__item--trail {
     color: var(--ax-text-strong);
-    background: linear-gradient(
-      90deg,
-      rgba(var(--ax-accent-rgb), 0.16),
-      rgba(var(--ax-accent-rgb), 0.04)
-    );
+    background: linear-gradient(90deg, rgba(var(--ax-accent-rgb), 0.16), rgba(var(--ax-accent-rgb), 0.04));
     box-shadow: inset 0 0 0 1px rgba(var(--ax-accent-rgb), 0.18);
   }
-  :where(html):not([data-ax-shell-style="detached"]):not(
-      [data-ax-sidebar-style]
-    )
-    .ax-nav__item--trail
-    .ax-nav__icon {
+  :where(html):not([data-ax-shell-style='detached']):not([data-ax-sidebar-style]) .ax-nav__item--trail .ax-nav__icon {
     color: var(--ax-accent);
     opacity: 1;
   }
-  :where(html):not([data-ax-shell-style="detached"]):not(
-      [data-ax-sidebar-style]
-    )
-    .ax-sidebar__section {
+  :where(html):not([data-ax-shell-style='detached']):not([data-ax-sidebar-style]) .ax-sidebar__section {
     block-size: 1px;
     margin: var(--ax-space-2) var(--ax-space-4);
     padding: 0;
@@ -1251,25 +1117,16 @@ hr {
     white-space: nowrap;
     background: var(--ax-border);
   }
-  :where(html):not([data-ax-shell-style="detached"]):not(
-      [data-ax-sidebar-style]
-    )
-    .ax-sidebar__user {
+  :where(html):not([data-ax-shell-style='detached']):not([data-ax-sidebar-style]) .ax-sidebar__user {
     justify-content: center;
   }
-  :where(html):not([data-ax-shell-style="detached"]):not(
-      [data-ax-sidebar-style]
-    )
-    .ax-sidebar__foot {
+  :where(html):not([data-ax-shell-style='detached']):not([data-ax-sidebar-style]) .ax-sidebar__foot {
     padding-inline: var(--ax-space-3);
   }
   /* The rail is locked to the icon width here, so the header toggle has no work
      to do (same as the expanded / compact behavior locks above). Remove it —
      the JS toggleSidebar() also no-ops via isAutoRail(). */
-  :where(html):not([data-ax-shell-style="detached"]):not(
-      [data-ax-sidebar-style]
-    )
-    .ax-nav-toggle {
+  :where(html):not([data-ax-shell-style='detached']):not([data-ax-sidebar-style]) .ax-nav-toggle {
     display: none;
   }
 }
@@ -1277,7 +1134,7 @@ hr {
 /* < md: sidebar becomes an offcanvas drawer; shell reclaims full width */
 @media (max-width: 767.98px) {
   .ax-shell,
-  [data-ax-shell-style="detached"] .ax-shell {
+  [data-ax-shell-style='detached'] .ax-shell {
     margin-inline-start: 0;
   }
   .ax-header {
@@ -1294,11 +1151,11 @@ hr {
     inset-inline-start: 0;
     z-index: var(--ax-z-drawer);
   }
-  [dir="rtl"] .ax-sidebar {
+  [dir='rtl'] .ax-sidebar {
     transform: translateX(100%);
   }
   /* drawer open state (core/sidebar.js sets data-ax-drawer="open" on <html>) */
-  [data-ax-drawer="open"] .ax-sidebar {
+  [data-ax-drawer='open'] .ax-sidebar {
     transform: translateX(0);
   }
   /* labels/sections always visible inside the drawer regardless of style */
@@ -1406,31 +1263,31 @@ body.is-locked {
    Regular = glass canvas (default). Classic = solid surface canvas.
    Compact = tighter gutters + smaller page-head spacing (denser layout).
    ════════════════════════════════════════════════════════════════════════ */
-[data-ax-page="classic"] {
+[data-ax-page='classic'] {
   --ax-canvas: var(--ax-surface-subtle);
 }
 /* classic = flat/opaque cards (kill the glass): the actual "classic" tell, so it
    reads distinct from regular beyond the one-step canvas shift. */
-[data-ax-page="classic"] .ax-card {
+[data-ax-page='classic'] .ax-card {
   background: var(--ax-surface-solid);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: var(--ax-shadow-sm);
 }
-[data-ax-page="classic"] .ax-page-head {
+[data-ax-page='classic'] .ax-page-head {
   border-block-end: 1px solid var(--ax-border);
   padding-block-end: var(--ax-space-4);
 }
-[data-ax-page="compact"] .ax-main > :not(.ax-footer) {
+[data-ax-page='compact'] .ax-main > :not(.ax-footer) {
   --ax-page-pad: var(--ax-space-4);
   padding-inline: var(--ax-page-pad);
   padding-block: var(--ax-space-4);
 }
-[data-ax-page="compact"] .ax-page-head {
+[data-ax-page='compact'] .ax-page-head {
   margin-block-end: var(--ax-space-4);
 }
 /* …and tighten the gutter between cards on the page grid (space-6 → space-4). */
-[data-ax-page="compact"] .ax-dash-grid {
+[data-ax-page='compact'] .ax-dash-grid {
   gap: var(--ax-space-4);
 }
 
@@ -1485,6 +1342,6 @@ body.is-locked {
   pointer-events: none;
   visibility: hidden;
 }
-[data-ax-loader="off"] .ax-loader {
+[data-ax-loader='off'] .ax-loader {
   display: none;
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
-import type { Reserve } from '@/api/client'
+import type { Reserve, Severity } from '@/api/client'
+import MarketClosedBadge from '@/components/MarketClosedBadge.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
 import { duration, shortAddress, usd } from '@/lib/format'
 
@@ -15,14 +16,31 @@ const props = defineProps<{
 
 const emit = defineEmits<{ sort: [key: SortKey] }>()
 
-const sortable = (_key: SortKey) => props.sortKey !== undefined
-const ariaSort = (key: SortKey) =>
-  props.sortKey === key ? (props.sortDir === 'asc' ? 'ascending' : 'descending') : 'none'
+const COLUMNS: { key: SortKey | null; label: string; num?: boolean }[] = [
+  { key: 'asset', label: 'Asset' },
+  { key: null, label: 'Market' },
+  { key: null, label: 'Protocol' },
+  { key: 'score', label: 'Health' },
+  { key: null, label: 'Main issue' },
+  { key: null, label: 'Oracles' },
+  { key: 'priceAgeSeconds', label: 'Price age' },
+  { key: 'totalSupplyUsd', label: 'Supply', num: true },
+]
 
-/** The check a user should read first: the first critical one, otherwise the first one. */
+const isSortable = (key: SortKey | null): key is SortKey => key !== null && props.sortKey !== undefined
+const ariaSort = (key: SortKey) => (props.sortKey === key ? (props.sortDir === 'asc' ? 'ascending' : 'descending') : 'none')
+
+const PROTOCOL_NAMES: Record<string, string> = { kamino: 'Kamino', 'jupiter-lend': 'Jupiter Lend', marginfi: 'marginfi' }
+
+const SEVERITY_ORDER: Severity[] = ['critical', 'warning', 'info']
+
+/** The check a user should read first: the most severe one. */
 function mainIssue(r: Reserve): string {
-  const check = r.checks.find((c) => c.severity === 'critical') ?? r.checks[0]
-  return check ? check.message : 'No issues found'
+  for (const severity of SEVERITY_ORDER) {
+    const check = r.checks.find((c) => c.severity === severity)
+    if (check) return check.message
+  }
+  return 'No issues found'
 }
 </script>
 
@@ -33,28 +51,20 @@ function mainIssue(r: Reserve): string {
       <thead class="ax-table__head">
         <tr>
           <th
-            v-for="col in [
-              { key: 'asset', label: 'Asset' },
-              { key: null, label: 'Market' },
-              { key: 'score', label: 'Health' },
-              { key: null, label: 'Main issue' },
-              { key: null, label: 'Oracles' },
-              { key: 'priceAgeSeconds', label: 'Price age' },
-              { key: 'totalSupplyUsd', label: 'Supply', num: true },
-            ] as { key: SortKey | null; label: string; num?: boolean }[]"
+            v-for="col in COLUMNS"
             :key="col.label"
             class="ax-table__th"
-            :class="{ 'ax-table__th--sortable': col.key && sortable(col.key), 'ax-table__th--num': col.num }"
+            :class="{ 'ax-table__th--num': col.num }"
             scope="col"
-            :aria-sort="col.key && sortable(col.key) ? ariaSort(col.key) : undefined"
-            @click="col.key && sortable(col.key) && emit('sort', col.key)"
+            :aria-sort="isSortable(col.key) ? ariaSort(col.key) : undefined"
           >
-            {{ col.label }}
-            <template v-if="col.key && sortable(col.key)">
+            <button v-if="isSortable(col.key)" type="button" class="sort-button" @click="emit('sort', col.key)">
+              {{ col.label }}
               <svg v-if="sortKey !== col.key" class="ax-table__sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity: 0.4"><path d="M8 9l4 -4l4 4" /><path d="M16 15l-4 4l-4 -4" /></svg>
               <svg v-else-if="sortDir === 'asc'" class="ax-table__sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6 -6l6 6" /></svg>
               <svg v-else class="ax-table__sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6l6 -6" /></svg>
-            </template>
+            </button>
+            <template v-else>{{ col.label }}</template>
           </th>
         </tr>
       </thead>
@@ -64,15 +74,17 @@ function mainIssue(r: Reserve): string {
             <RouterLink :to="{ name: 'reserve', params: { address: r.address } }" class="asset-link">{{ r.asset || shortAddress(r.mint) }}</RouterLink>
           </td>
           <td class="ax-table__td muted">{{ r.market.name ?? shortAddress(r.market.address) }}</td>
+          <td class="ax-table__td muted protocol">{{ PROTOCOL_NAMES[r.protocol] ?? r.protocol }}</td>
           <td class="ax-table__td">
             <span class="health">
               <SeverityBadge :severity="r.severity" />
               <span class="ax-num score">{{ r.score }}</span>
+              <MarketClosedBadge :checks="r.checks" />
             </span>
           </td>
           <td class="ax-table__td issue">{{ mainIssue(r) }}</td>
           <td class="ax-table__td muted">{{ r.providers.join(', ') || '—' }}</td>
-          <td class="ax-table__td ax-num" :class="{ stale: r.price.isStale }">
+          <td class="ax-table__td ax-num" :class="{ stale: r.price.isStale === true }">
             {{ duration(r.price.ageSeconds) }}<span class="muted"> / {{ duration(r.price.maxAgeSeconds) }}</span>
           </td>
           <td class="ax-table__td ax-table__td--num ax-num">{{ usd(r.totalSupplyUsd) }}</td>
@@ -83,6 +95,24 @@ function mainIssue(r: Reserve): string {
 </template>
 
 <style scoped>
+.sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ax-space-1);
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.sort-button:focus-visible {
+  outline: 2px solid var(--ax-accent);
+  outline-offset: 2px;
+  border-radius: var(--ax-radius-sm);
+}
 .asset-link {
   color: var(--ax-text-strong);
   font-weight: 600;

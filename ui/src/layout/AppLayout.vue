@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /*
- * application shell layout (Vue edition). Mirrors the <body> structure
+ * Vireo — application shell layout (Vue edition). Mirrors the <body> structure
  * of every HTML reference page: loader, ambient glow, .ax-layout (sidebar +
- * .ax-shell (header + main + footer)), customizer offcanvas, command palette.
+ * .ax-shell (header + main + footer)), command palette.
  * The router <RouterView> renders into <main class="ax-main">.
  */
 import { watch } from 'vue'
@@ -11,7 +11,6 @@ import AxLoader from '@/components/shell/AxLoader.vue'
 import AxSidebar from '@/components/shell/AxSidebar.vue'
 import AxHeader from '@/components/shell/AxHeader.vue'
 import AxFooter from '@/components/shell/AxFooter.vue'
-import AxCustomizer from '@/components/shell/AxCustomizer.vue'
 import AxCommandPalette from '@/components/shell/AxCommandPalette.vue'
 import { useDrawer } from '@/composables/useDrawer'
 
@@ -47,6 +46,5 @@ watch(() => route.fullPath, () => drawer.closeDrawer())
       <AxFooter />
     </div>
   </div>
-  <AxCustomizer />
   <AxCommandPalette />
 </template>

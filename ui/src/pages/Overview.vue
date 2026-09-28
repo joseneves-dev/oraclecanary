@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { fetchReserves, type Reserve } from '@/api/client'
+import { fetchAllReserves, type Reserve } from '@/api/client'
 import KpiCard from '@/components/KpiCard.vue'
 import ReserveTable from '@/components/ReserveTable.vue'
-import { usd } from '@/lib/format'
+import { time, usd } from '@/lib/format'
 
-// Listed markets fit in one page of the API; unlisted ones hold junk tokens with arbitrary prices.
-const MAX_RESERVES = 500
 const ATTENTION_ROWS = 10
 
 const reserves = ref<Reserve[]>([])
@@ -16,7 +14,8 @@ const error = ref<string | null>(null)
 
 onMounted(async () => {
   try {
-    reserves.value = await fetchReserves({ listed: true, itemsPerPage: MAX_RESERVES })
+    // Unlisted markets hold junk tokens with arbitrary prices.
+    reserves.value = await fetchAllReserves({ listed: true })
   } catch (e) {
     error.value = (e as Error).message
   } finally {
@@ -58,7 +57,7 @@ const providerShare = computed(() => {
 
 const lastChecked = computed(() => {
   const latest = Math.max(...reserves.value.map((r) => Date.parse(r.checkedAt)))
-  return Number.isFinite(latest) ? new Date(latest).toLocaleTimeString() : null
+  return Number.isFinite(latest) ? time(latest) : null
 })
 </script>
 
@@ -78,7 +77,7 @@ const lastChecked = computed(() => {
   <div v-if="error" class="ax-alert ax-alert--danger" role="alert">{{ error }}</div>
 
   <div v-else class="ax-dash-grid" :aria-busy="loading">
-    <KpiCard label="Reserves monitored" :value="loading ? '…' : String(reserves.length)" icon="table" tone="c1" hint="Kamino, markets listed in its app" />
+    <KpiCard label="Reserves monitored" :value="loading ? '…' : String(reserves.length)" icon="table" tone="c1" hint="Kamino, Jupiter Lend and marginfi" />
     <KpiCard label="Supply watched" :value="loading ? '…' : usd(totalSupply)" icon="layout-dashboard" tone="c2" />
     <KpiCard label="Critical" :value="loading ? '…' : String(critical.length)" icon="alert-triangle" tone="c3" :hint="loading ? undefined : `${usd(supplyAtRisk)} supplied`" />
     <KpiCard label="Warnings" :value="loading ? '…' : String(warnings.length)" icon="bell" tone="c4" hint="Mostly single-source prices" />
@@ -93,7 +92,8 @@ const lastChecked = computed(() => {
           <RouterLink class="ax-btn ax-btn--secondary ax-btn--sm" :to="{ name: 'reserves' }">All reserves</RouterLink>
         </div>
       </div>
-      <ReserveTable :rows="needsAttention" />
+      <ReserveTable v-if="loading || needsAttention.length" :rows="needsAttention" />
+      <p v-else class="empty">No listed reserve has a critical issue or a warning right now.</p>
     </section>
 
     <section class="ax-card ax-col--4" aria-label="Supply by oracle provider">
@@ -120,6 +120,11 @@ const lastChecked = computed(() => {
 </template>
 
 <style scoped>
+.empty {
+  padding: var(--ax-space-8);
+  text-align: center;
+  color: var(--ax-text-muted);
+}
 .providers {
   display: grid;
   gap: var(--ax-space-4);

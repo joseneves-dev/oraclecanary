@@ -41,3 +41,33 @@ export const SEVERITY_BADGE: Record<Severity, string> = {
   info: 'ax-badge--info',
   ok: 'ax-badge--success',
 }
+
+// Dates come from the API in UTC and are shown in the viewer's own time zone, which is named so
+// the time cannot be mistaken for UTC.
+const dateTimeFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
+const dayFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' })
+const hourFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+const timeFormat = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' })
+
+type DateInput = Date | string | number
+const toDate = (value: DateInput) => (value instanceof Date ? value : new Date(value))
+
+/** 27 Sep, 22:55 GMT+1 */
+export function dateTime(value: DateInput): string {
+  return dateTimeFormat.format(toDate(value))
+}
+
+/** 27 Sep, 22:55, for axis labels and lists where the zone is shown once nearby. */
+export function dateHour(value: DateInput): string {
+  return hourFormat.format(toDate(value))
+}
+
+/** 27 Sep */
+export function day(value: DateInput): string {
+  return dayFormat.format(toDate(value))
+}
+
+/** 22:55:12 GMT+1 */
+export function time(value: DateInput): string {
+  return timeFormat.format(toDate(value))
+}

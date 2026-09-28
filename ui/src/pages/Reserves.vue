@@ -1,68 +1,125 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { fetchReserves, type Reserve, type ReserveQuery } from '@/api/client'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useRoute, useRouter, type LocationQuery } from 'vue-router'
+import { fetchReservePage, type Reserve, type ReserveQuery } from '@/api/client'
 import ReserveTable, { type SortKey } from '@/components/ReserveTable.vue'
 
 const PAGE_SIZE = 25
+const SORT_KEYS: SortKey[] = ['score', 'totalSupplyUsd', 'priceAgeSeconds', 'asset']
+type Health = 'all' | 'issues' | 'critical'
+type ProtocolFilter = 'all' | 'kamino' | 'jupiter-lend' | 'marginfi'
+
+const PROTOCOL_LABEL: Record<ProtocolFilter, string> = { all: 'All protocols', kamino: 'Kamino', 'jupiter-lend': 'Jupiter Lend', marginfi: 'marginfi' }
+
+interface ListState {
+  search: string
+  health: Health
+  protocol: ProtocolFilter
+  listedOnly: boolean
+  sortKey: SortKey
+  sortDir: 'asc' | 'desc'
+  page: number
+}
+
+const route = useRoute()
+const router = useRouter()
+
+/**
+ * The list state lives in the URL, so opening a reserve and going back restores the same
+ * filters, sort and page, and a filtered view can be shared as a link.
+ */
+function readState(q: LocationQuery): ListState {
+  const one = (key: string) => (typeof q[key] === 'string' ? (q[key] as string) : '')
+  const page = Number.parseInt(one('page'), 10)
+  return {
+    search: one('q'),
+    health: (['issues', 'critical'] as const).find((h) => h === one('health')) ?? 'all',
+    protocol: (['kamino', 'jupiter-lend', 'marginfi'] as const).find((p) => p === one('protocol')) ?? 'all',
+    listedOnly: one('listed') !== 'all',
+    sortKey: SORT_KEYS.find((k) => k === one('sort')) ?? 'score',
+    sortDir: one('dir') === 'desc' ? 'desc' : 'asc',
+    page: Number.isFinite(page) && page > 0 ? page : 1,
+  }
+}
+
+function writeState(next: Partial<ListState>) {
+  const s = { ...state.value, ...next }
+  const query: Record<string, string> = {}
+  if (s.search) query.q = s.search
+  if (s.health !== 'all') query.health = s.health
+  if (s.protocol !== 'all') query.protocol = s.protocol
+  if (!s.listedOnly) query.listed = 'all'
+  if (s.sortKey !== 'score') query.sort = s.sortKey
+  if (s.sortDir !== 'asc') query.dir = s.sortDir
+  if (s.page > 1) query.page = String(s.page)
+  router.replace({ query })
+}
+
+const state = computed(() => readState(route.query))
 
 const rows = ref<Reserve[]>([])
+const total = ref(0)
 const loading = ref(false)
 const error = ref<string | null>(null)
-
-const search = ref('')
-const health = ref<'all' | 'issues' | 'critical'>('all')
-const listedOnly = ref(true)
-const sortKey = ref<SortKey>('score')
-const sortDir = ref<'asc' | 'desc'>('asc')
-const page = ref(1)
+const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
 
 /**
  * Health bands map onto the score: a critical check costs 50 points, so reserves at or
  * below 50 have a critical issue (or several warnings), and anything below 100 has at least one.
  */
-function buildQuery(): ReserveQuery {
-  const query: Record<string, string | number | boolean> = {
-    page: page.value,
-    itemsPerPage: PAGE_SIZE,
-    [`order[${sortKey.value}]`]: sortDir.value,
-  }
-  if (listedOnly.value) query.listed = true
-  if (search.value.trim()) query.asset = search.value.trim()
-  if (health.value === 'issues') query['score[lt]'] = 100
-  if (health.value === 'critical') query['score[lte]'] = 50
-  return query as ReserveQuery
+function buildQuery(s: ListState): ReserveQuery {
+  const query: ReserveQuery = { page: s.page, itemsPerPage: PAGE_SIZE, [`order[${s.sortKey}]`]: s.sortDir }
+  if (s.listedOnly) query.listed = true
+  if (s.protocol !== 'all') query.protocol = s.protocol
+  if (s.search.trim()) query.asset = s.search.trim()
+  if (s.health === 'issues') query['score[lt]'] = 100
+  if (s.health === 'critical') query['score[lte]'] = 50
+  return query
 }
 
-let requestId = 0
-async function load() {
-  const id = ++requestId
+let inFlight: AbortController | null = null
+async function load(s: ListState) {
+  // The route also changes when navigating away from this page; that is not a new query.
+  if (route.name !== 'reserves') return
+  inFlight?.abort()
+  const controller = (inFlight = new AbortController())
   loading.value = true
   error.value = null
   try {
-    const result = await fetchReserves(buildQuery())
-    if (id === requestId) rows.value = result
+    const page = await fetchReservePage(buildQuery(s), controller.signal)
+    rows.value = page.rows
+    total.value = page.total
   } catch (e) {
-    if (id === requestId) error.value = (e as Error).message
+    if (controller.signal.aborted) return
+    rows.value = []
+    total.value = 0
+    error.value = (e as Error).message
   } finally {
-    if (id === requestId) loading.value = false
+    if (inFlight === controller) loading.value = false
   }
 }
+
+watch(state, load, { immediate: true, deep: true })
+onBeforeUnmount(() => {
+  inFlight?.abort()
+  clearTimeout(searchTimer)
+})
+
+// The search box is edited locally and written to the URL after a pause in typing.
+const search = ref(state.value.search)
+watch(() => state.value.search, (value) => (search.value = value))
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(search, (value) => {
+  clearTimeout(searchTimer)
+  if (value === state.value.search) return
+  searchTimer = setTimeout(() => writeState({ search: value, page: 1 }), 250)
+})
 
 function sortBy(key: SortKey) {
-  if (sortKey.value === key) sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
-  else {
-    sortKey.value = key
-    sortDir.value = key === 'score' || key === 'asset' ? 'asc' : 'desc'
-  }
+  const s = state.value
+  const sortDir = s.sortKey === key ? (s.sortDir === 'asc' ? 'desc' : 'asc') : key === 'score' || key === 'asset' ? 'asc' : 'desc'
+  writeState({ sortKey: key, sortDir, page: 1 })
 }
-
-let searchTimer: ReturnType<typeof setTimeout> | undefined
-watch(search, () => {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => (page.value === 1 ? load() : (page.value = 1)), 250)
-})
-watch([health, listedOnly, sortKey, sortDir], () => (page.value === 1 ? load() : (page.value = 1)))
-watch(page, load, { immediate: true })
 </script>
 
 <template>
@@ -79,18 +136,36 @@ watch(page, load, { immediate: true })
     <section class="ax-card ax-col--12" aria-label="Lending reserves">
       <div class="ax-card__header toolbar">
         <div class="ax-card__titles">
-          <h2 class="ax-card__title">Kamino</h2>
-          <p class="ax-card__subtitle">Sorted and filtered by the API</p>
+          <h2 class="ax-card__title">{{ PROTOCOL_LABEL[state.protocol] }}</h2>
+          <p class="ax-card__subtitle ax-num">{{ loading ? 'Loading…' : `${total} reserves` }}</p>
         </div>
         <div class="ax-card__actions toolbar__controls">
           <input v-model="search" type="search" class="ax-input ax-input--sm" placeholder="Search asset, e.g. SOL" aria-label="Search by asset" />
-          <select v-model="health" class="ax-select ax-select--sm" aria-label="Filter by health">
+          <select
+            class="ax-select ax-select--sm"
+            aria-label="Filter by protocol"
+            :value="state.protocol"
+            @change="writeState({ protocol: ($event.target as HTMLSelectElement).value as ProtocolFilter, page: 1 })"
+          >
+            <option v-for="(label, value) in PROTOCOL_LABEL" :key="value" :value="value">{{ label }}</option>
+          </select>
+          <select
+            class="ax-select ax-select--sm"
+            aria-label="Filter by health"
+            :value="state.health"
+            @change="writeState({ health: ($event.target as HTMLSelectElement).value as Health, page: 1 })"
+          >
             <option value="all">All health levels</option>
             <option value="issues">With issues (score &lt; 100)</option>
             <option value="critical">Serious (score ≤ 50)</option>
           </select>
           <label class="toolbar__check">
-            <input v-model="listedOnly" type="checkbox" class="ax-checkbox" />
+            <input
+              type="checkbox"
+              class="ax-checkbox"
+              :checked="state.listedOnly"
+              @change="writeState({ listedOnly: ($event.target as HTMLInputElement).checked, page: 1 })"
+            />
             Listed markets only
           </label>
         </div>
@@ -98,17 +173,29 @@ watch(page, load, { immediate: true })
 
       <div v-if="error" class="ax-alert ax-alert--danger" role="alert">{{ error }}</div>
       <div v-else :aria-busy="loading" :class="{ loading }">
-        <ReserveTable :rows="rows" :sort-key="sortKey" :sort-dir="sortDir" @sort="sortBy" />
+        <ReserveTable :rows="rows" :sort-key="state.sortKey" :sort-dir="state.sortDir" @sort="sortBy" />
         <p v-if="!loading && !rows.length" class="empty">No reserves match these filters.</p>
       </div>
 
       <div class="ax-card__footer pager">
-        <span class="ax-num muted">Page {{ page }}</span>
+        <span class="ax-num muted">Page {{ state.page }} of {{ pageCount }}</span>
         <nav class="ax-pagination" aria-label="Pagination">
-          <button type="button" class="ax-pagination__prev" :disabled="page === 1" aria-label="Previous page" @click="page--">
+          <button
+            type="button"
+            class="ax-pagination__prev"
+            :disabled="loading || state.page <= 1"
+            aria-label="Previous page"
+            @click="writeState({ page: state.page - 1 })"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6l6 6" /></svg>
           </button>
-          <button type="button" class="ax-pagination__next" :disabled="rows.length < PAGE_SIZE" aria-label="Next page" @click="page++">
+          <button
+            type="button"
+            class="ax-pagination__next"
+            :disabled="loading || state.page >= pageCount"
+            aria-label="Next page"
+            @click="writeState({ page: state.page + 1 })"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6l-6 6" /></svg>
           </button>
         </nav>

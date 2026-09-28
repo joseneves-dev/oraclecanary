@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Service health
+         * @description Returns 200 when the database answers and the indexer refreshed every protocol within maxDataAgeSeconds, 503 otherwise. Point uptime monitors here.
+         */
+        get: operations["api_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reserves": {
         parameters: {
             query?: never;
@@ -44,10 +64,120 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieves the collection of ReserveEvent resources.
+         * @description Retrieves the collection of ReserveEvent resources.
+         */
+        get: operations["api_events_get_collection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieves a ReserveEvent resource.
+         * @description Retrieves a ReserveEvent resource.
+         */
+        get: operations["api_events_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieves the collection of ReserveIncident resources.
+         * @description Retrieves the collection of ReserveIncident resources.
+         */
+        get: operations["api_incidents_get_collection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/incidents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieves a ReserveIncident resource.
+         * @description Retrieves a ReserveIncident resource.
+         */
+        get: operations["api_incidents_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reserves/{address}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieves the collection of ReserveSnapshot resources.
+         * @description Retrieves the collection of ReserveSnapshot resources.
+         */
+        get: operations["api_reserves_addresshistory_get_collection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CheckState: {
+            code?: string;
+            /** @enum {string} */
+            severity?: "ok" | "info" | "warning" | "critical";
+        };
+        "CheckState.jsonld": {
+            code?: string;
+            /** @enum {string} */
+            severity?: "ok" | "info" | "warning" | "critical";
+        };
         /** @description A representation of common errors. */
         Error: {
             /** @description A short, human-readable summary of the problem. */
@@ -81,15 +211,35 @@ export interface components {
             readonly type?: string;
             readonly description?: string | null;
         };
+        /** @description Whether the database answers and every protocol was refreshed recently. */
+        Health: {
+            /** @description "ok" or "degraded". */
+            status?: string;
+            /** @description "ok" or "unreachable". */
+            database?: string;
+            /** @description Protocols not refreshed within this many seconds make the service degraded. */
+            maxDataAgeSeconds?: number;
+            protocols?: components["schemas"]["ProtocolFreshness"][];
+        };
+        /** @description Whether the database answers and every protocol was refreshed recently. */
+        "Health.jsonld": components["schemas"]["HydraItemBaseSchema"] & {
+            /** @description "ok" or "degraded". */
+            status?: string;
+            /** @description "ok" or "unreachable". */
+            database?: string;
+            /** @description Protocols not refreshed within this many seconds make the service degraded. */
+            maxDataAgeSeconds?: number;
+            protocols?: components["schemas"]["ProtocolFreshness.jsonld"][];
+        };
         HealthCheck: {
-            /** @description e.g. STALE, NO_FALLBACK, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE. */
+            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE. */
             code?: string;
             /** @enum {string} */
             severity?: "ok" | "info" | "warning" | "critical";
             message?: string;
         };
         "HealthCheck.jsonld": {
-            /** @description e.g. STALE, NO_FALLBACK, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE. */
+            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE. */
             code?: string;
             /** @enum {string} */
             severity?: "ok" | "info" | "warning" | "critical";
@@ -164,6 +314,10 @@ export interface components {
             scopeChain?: number[];
             pyth?: string | null;
             switchboard?: string | null;
+            /** @description Oracle account that chains several sources (Jupiter Lend). */
+            oracle?: string | null;
+            /** @description Sources of that oracle, each multiplied or divided into the price. */
+            sources?: components["schemas"]["OracleSourceRef"][];
         };
         "OracleAccounts.jsonld": {
             /** @description Scope price account (Kamino's oracle aggregator). */
@@ -172,22 +326,62 @@ export interface components {
             scopeChain?: number[];
             pyth?: string | null;
             switchboard?: string | null;
+            /** @description Oracle account that chains several sources (Jupiter Lend). */
+            oracle?: string | null;
+            /** @description Sources of that oracle, each multiplied or divided into the price. */
+            sources?: components["schemas"]["OracleSourceRef.jsonld"][];
+        };
+        OracleSourceRef: {
+            /** @description Source type as named by the oracle program, e.g. "Chainlink", "Pyth", "StakePool". */
+            type?: string;
+            /** @description Source account on Solana. */
+            account?: string;
+        };
+        "OracleSourceRef.jsonld": {
+            /** @description Source type as named by the oracle program, e.g. "Chainlink", "Pyth", "StakePool". */
+            type?: string;
+            /** @description Source account on Solana. */
+            account?: string;
         };
         PriceStatus: {
             /** @description Age of the oldest price in the reserve's price chain; null when it could not be read. */
             ageSeconds?: number | null;
             /** @description The protocol's own limit: older prices are rejected. */
             maxAgeSeconds?: number;
-            /** @description True when the price is older than the protocol accepts. */
-            isStale?: boolean;
+            /** @description True when the price is older than the protocol accepts; null when the age is unknown. */
+            isStale?: boolean | null;
         };
         "PriceStatus.jsonld": {
             /** @description Age of the oldest price in the reserve's price chain; null when it could not be read. */
             ageSeconds?: number | null;
             /** @description The protocol's own limit: older prices are rejected. */
             maxAgeSeconds?: number;
-            /** @description True when the price is older than the protocol accepts. */
-            isStale?: boolean;
+            /** @description True when the price is older than the protocol accepts; null when the age is unknown. */
+            isStale?: boolean | null;
+        };
+        ProtocolFreshness: {
+            /** @description e.g. "kamino". */
+            protocol?: string;
+            /** @description "ok" when refreshed within the limit, "stale" otherwise. */
+            status?: string;
+            /**
+             * Format: date-time
+             * @description When the indexer last saved this protocol; null if it never did.
+             */
+            lastCheckedAt?: string | null;
+            ageSeconds?: number | null;
+        };
+        "ProtocolFreshness.jsonld": {
+            /** @description e.g. "kamino". */
+            protocol?: string;
+            /** @description "ok" when refreshed within the limit, "stale" otherwise. */
+            status?: string;
+            /**
+             * Format: date-time
+             * @description When the indexer last saved this protocol; null if it never did.
+             */
+            lastCheckedAt?: string | null;
+            ageSeconds?: number | null;
         };
         /** @description Lending reserves with their oracle health, filterable and sortable. */
         Reserve: {
@@ -247,6 +441,164 @@ export interface components {
             /** Format: date-time */
             checkedAt?: string;
         };
+        /** @description Health changes, newest first. */
+        ReserveEvent: {
+            id?: string;
+            /** @description Reserve / bank / vault address on Solana. */
+            reserve?: string;
+            protocol?: string;
+            asset?: string;
+            /** @description Null for markets not listed in the protocol's own app. */
+            marketName?: string | null;
+            /**
+             * Format: date-time
+             * @description When the new state was first seen. The event is recorded a few minutes later, once the change has lasted.
+             */
+            occurredAt?: string;
+            /** @enum {string} */
+            direction?: "degraded" | "recovered" | "changed";
+            /**
+             * @description Worst severity after the change, or "ok" when no check fails any more.
+             * @enum {string}
+             */
+            severity?: "ok" | "info" | "warning" | "critical";
+            previousScore?: number;
+            score?: number;
+            /** @description Checks that started failing. */
+            started?: components["schemas"]["CheckState"][];
+            /** @description Checks that stopped failing. */
+            resolved?: components["schemas"]["CheckState"][];
+            /** @description Every failed check after the change. */
+            checks?: components["schemas"]["CheckState"][];
+            /** @description Supply in USD when the change happened. */
+            totalSupplyUsd?: number;
+        };
+        /** @description Health changes, newest first. */
+        "ReserveEvent.jsonld": components["schemas"]["HydraItemBaseSchema"] & {
+            id?: string;
+            /** @description Reserve / bank / vault address on Solana. */
+            reserve?: string;
+            protocol?: string;
+            asset?: string;
+            /** @description Null for markets not listed in the protocol's own app. */
+            marketName?: string | null;
+            /**
+             * Format: date-time
+             * @description When the new state was first seen. The event is recorded a few minutes later, once the change has lasted.
+             */
+            occurredAt?: string;
+            /** @enum {string} */
+            direction?: "degraded" | "recovered" | "changed";
+            /**
+             * @description Worst severity after the change, or "ok" when no check fails any more.
+             * @enum {string}
+             */
+            severity?: "ok" | "info" | "warning" | "critical";
+            previousScore?: number;
+            score?: number;
+            /** @description Checks that started failing. */
+            started?: components["schemas"]["CheckState.jsonld"][];
+            /** @description Checks that stopped failing. */
+            resolved?: components["schemas"]["CheckState.jsonld"][];
+            /** @description Every failed check after the change. */
+            checks?: components["schemas"]["CheckState.jsonld"][];
+            /** @description Supply in USD when the change happened. */
+            totalSupplyUsd?: number;
+        };
+        /** @description Incidents, most recent start first. */
+        ReserveIncident: {
+            id?: string;
+            /** @description Reserve / bank / vault address on Solana. */
+            reserve?: string;
+            protocol?: string;
+            asset?: string;
+            marketName?: string | null;
+            /** Format: date-time */
+            startedAt?: string;
+            /**
+             * @description True when the reserve was already failing when OracleCanary started tracking it: the start is
+             *     then worked out from the age of its price.
+             */
+            startEstimated?: boolean;
+            /**
+             * Format: date-time
+             * @description Null while the incident is ongoing.
+             */
+            endedAt?: string | null;
+            /** @description Length of the incident in seconds; null while it is ongoing. */
+            durationSeconds?: number | null;
+            /** @description The critical checks when the incident started. */
+            checks?: components["schemas"]["CheckState"][];
+            /** @description Largest supply exposed during the incident, in USD. */
+            totalSupplyUsd?: number;
+        };
+        /** @description Incidents, most recent start first. */
+        "ReserveIncident.jsonld": components["schemas"]["HydraItemBaseSchema"] & {
+            id?: string;
+            /** @description Reserve / bank / vault address on Solana. */
+            reserve?: string;
+            protocol?: string;
+            asset?: string;
+            marketName?: string | null;
+            /** Format: date-time */
+            startedAt?: string;
+            /**
+             * @description True when the reserve was already failing when OracleCanary started tracking it: the start is
+             *     then worked out from the age of its price.
+             */
+            startEstimated?: boolean;
+            /**
+             * Format: date-time
+             * @description Null while the incident is ongoing.
+             */
+            endedAt?: string | null;
+            /** @description Length of the incident in seconds; null while it is ongoing. */
+            durationSeconds?: number | null;
+            /** @description The critical checks when the incident started. */
+            checks?: components["schemas"]["CheckState.jsonld"][];
+            /** @description Largest supply exposed during the incident, in USD. */
+            totalSupplyUsd?: number;
+        };
+        /** @description Hourly health of one reserve, newest first by default. Empty for unknown reserves and unlisted markets. */
+        ReserveSnapshot: {
+            address?: string;
+            /**
+             * Format: date-time
+             * @description Start of the hour, in UTC.
+             */
+            hour?: string;
+            /** @description Lowest score during the hour, 0 (broken) to 100 (healthy). */
+            score?: number;
+            /**
+             * @description Worst severity among the failed checks, or "ok" when none failed.
+             * @enum {string}
+             */
+            severity?: "ok" | "info" | "warning" | "critical";
+            /** @description Age of the price the protocol would use, in seconds; null when unknown. */
+            priceAgeSeconds?: number | null;
+            totalSupplyUsd?: number;
+            checks?: components["schemas"]["CheckState"][];
+        };
+        /** @description Hourly health of one reserve, newest first by default. Empty for unknown reserves and unlisted markets. */
+        "ReserveSnapshot.jsonld": components["schemas"]["HydraItemBaseSchema"] & {
+            address?: string;
+            /**
+             * Format: date-time
+             * @description Start of the hour, in UTC.
+             */
+            hour?: string;
+            /** @description Lowest score during the hour, 0 (broken) to 100 (healthy). */
+            score?: number;
+            /**
+             * @description Worst severity among the failed checks, or "ok" when none failed.
+             * @enum {string}
+             */
+            severity?: "ok" | "info" | "warning" | "critical";
+            /** @description Age of the price the protocol would use, in seconds; null when unknown. */
+            priceAgeSeconds?: number | null;
+            totalSupplyUsd?: number;
+            checks?: components["schemas"]["CheckState.jsonld"][];
+        };
     };
     responses: never;
     parameters: never;
@@ -256,6 +608,34 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    api_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Healthy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["Health.jsonld"];
+                    "application/json": components["schemas"]["Health"];
+                };
+            };
+            /** @description Degraded: data is stale, or the database is unreachable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     api_reserves_get_collection: {
         parameters: {
             query?: {
@@ -263,154 +643,42 @@ export interface operations {
                 page?: number;
                 /** @description The number of items per page */
                 itemsPerPage?: number;
-                /** @description e.g. kamino */
-                protocol?: string;
-                /** @description e.g. kamino */
-                "protocol[]"?: string[];
+                /** @description Lending protocol */
+                protocol?: "kamino" | "marginfi" | "jupiter-lend";
                 /** @description Lending market address */
                 market?: string;
-                /** @description Lending market address */
-                "market[]"?: string[];
-                /** @description Part of the market name */
+                /** @description Part of the market name, case-insensitive */
                 marketName?: string;
-                /** @description Part of the market name */
-                "marketName[]"?: string[];
                 /** @description true: only markets listed in the protocol's own app. Unlisted (permissionless) markets can hold tokens with arbitrary prices. */
                 listed?: boolean;
-                /** @description true: only markets listed in the protocol's own app. Unlisted (permissionless) markets can hold tokens with arbitrary prices. */
-                "listed[]"?: boolean[];
-                /** @description Part of the asset symbol */
+                /** @description Part of the asset symbol, case-insensitive */
                 asset?: string;
-                /** @description Part of the asset symbol */
-                "asset[]"?: string[];
-                /** @description active, obsolete or hidden */
-                status?: string;
-                /** @description active, obsolete or hidden */
-                "status[]"?: string[];
-                /** @description e.g. score[lt]=50 */
-                "score[gt]"?: {
-                    gt?: string;
-                    gte?: string;
-                    lt?: string;
-                    lte?: string;
-                    ne?: string;
-                    between?: string;
-                };
-                /** @description e.g. score[lt]=50 */
-                "score[gte]"?: {
-                    gt?: string;
-                    gte?: string;
-                    lt?: string;
-                    lte?: string;
-                    ne?: string;
-                    between?: string;
-                };
-                /** @description e.g. score[lt]=50 */
-                "score[lt]"?: {
-                    gt?: string;
-                    gte?: string;
-                    lt?: string;
-                    lte?: string;
-                    ne?: string;
-                    between?: string;
-                };
-                /** @description e.g. score[lt]=50 */
-                "score[lte]"?: {
-                    gt?: string;
-                    gte?: string;
-                    lt?: string;
-                    lte?: string;
-                    ne?: string;
-                    between?: string;
-                };
-                /** @description e.g. score[lt]=50 */
-                "score[ne]"?: {
-                    gt?: string;
-                    gte?: string;
-                    lt?: string;
-                    lte?: string;
-                    ne?: string;
-                    between?: string;
-                };
-                /** @description e.g. score[lt]=50 */
-                "score[between]"?: {
-                    gt?: string;
-                    gte?: string;
-                    lt?: string;
-                    lte?: string;
-                    ne?: string;
-                    between?: string;
-                };
-                /** @description e.g. totalSupplyUsd[gte]=100000 */
-                "totalSupplyUsd[gt]"?: {
-                    gt?: string;
-                    gte?: string;
-                    lt?: string;
-                    lte?: string;
-                    ne?: string;
-                    between?: string;
-                };
-                /** @description e.g. totalSupplyUsd[gte]=100000 */
-                "totalSupplyUsd[gte]"?: {
-                    gt?: string;
-                    gte?: string;
-                    lt?: string;
-                    lte?: string;
-                    ne?: string;
-                    between?: string;
-                };
-                /** @description e.g. totalSupplyUsd[gte]=100000 */
-                "totalSupplyUsd[lt]"?: {
-                    gt?: string;
-                    gte?: string;
-                    lt?: string;
-                    lte?: string;
-                    ne?: string;
-                    between?: string;
-                };
-                /** @description e.g. totalSupplyUsd[gte]=100000 */
-                "totalSupplyUsd[lte]"?: {
-                    gt?: string;
-                    gte?: string;
-                    lt?: string;
-                    lte?: string;
-                    ne?: string;
-                    between?: string;
-                };
-                /** @description e.g. totalSupplyUsd[gte]=100000 */
-                "totalSupplyUsd[ne]"?: {
-                    gt?: string;
-                    gte?: string;
-                    lt?: string;
-                    lte?: string;
-                    ne?: string;
-                    between?: string;
-                };
-                /** @description e.g. totalSupplyUsd[gte]=100000 */
-                "totalSupplyUsd[between]"?: {
-                    gt?: string;
-                    gte?: string;
-                    lt?: string;
-                    lte?: string;
-                    ne?: string;
-                    between?: string;
-                };
-                /** @description Reserve order[score] */
-                "order[score]"?: "asc" | "desc" | "ASC" | "DESC";
-                /** @description Reserve order[score] */
-                "order[score][]"?: ("asc" | "desc" | "ASC" | "DESC")[];
-                /** @description Reserve order[totalSupplyUsd] */
-                "order[totalSupplyUsd]"?: "asc" | "desc" | "ASC" | "DESC";
-                /** @description Reserve order[totalSupplyUsd] */
-                "order[totalSupplyUsd][]"?: ("asc" | "desc" | "ASC" | "DESC")[];
-                /** @description Reserve order[priceAgeSeconds] */
-                "order[priceAgeSeconds]"?: "asc" | "desc" | "ASC" | "DESC";
-                /** @description Reserve order[priceAgeSeconds] */
-                "order[priceAgeSeconds][]"?: ("asc" | "desc" | "ASC" | "DESC")[];
-                /** @description Reserve order[asset] */
-                "order[asset]"?: "asc" | "desc" | "ASC" | "DESC";
-                /** @description Reserve order[asset] */
-                "order[asset][]"?: ("asc" | "desc" | "ASC" | "DESC")[];
+                /** @description Reserve status */
+                status?: "active" | "obsolete" | "hidden" | "unknown";
+                /** @description Score greater than */
+                "score[gt]"?: number;
+                /** @description Score greater than or equal to */
+                "score[gte]"?: number;
+                /** @description Score less than, e.g. score[lt]=100 for reserves with any issue */
+                "score[lt]"?: number;
+                /** @description Score less than or equal to */
+                "score[lte]"?: number;
+                /** @description Supply greater than, in USD */
+                "totalSupplyUsd[gt]"?: number;
+                /** @description Supply greater than or equal to, in USD, e.g. 1000000 */
+                "totalSupplyUsd[gte]"?: number;
+                /** @description Supply less than, in USD */
+                "totalSupplyUsd[lt]"?: number;
+                /** @description Supply less than or equal to, in USD */
+                "totalSupplyUsd[lte]"?: number;
+                /** @description Sort by score */
+                "order[score]"?: "asc" | "desc";
+                /** @description Sort by supply */
+                "order[totalSupplyUsd]"?: "asc" | "desc";
+                /** @description Sort by price age */
+                "order[priceAgeSeconds]"?: "asc" | "desc";
+                /** @description Sort by asset symbol */
+                "order[asset]"?: "asc" | "desc";
             };
             header?: never;
             path?: never;
@@ -463,6 +731,197 @@ export interface operations {
                     "application/ld+json": components["schemas"]["Error.jsonld"];
                     "application/problem+json": components["schemas"]["Error"];
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    api_events_get_collection: {
+        parameters: {
+            query?: {
+                /** @description The collection page number */
+                page?: number;
+                /** @description The number of items per page */
+                itemsPerPage?: number;
+                /** @description Only events recorded after the event with this id. Ids only grow, so pollers can pass the highest id they have seen to get each event once. */
+                "id[gt]"?: number;
+                /** @description Lending protocol */
+                protocol?: "kamino" | "marginfi" | "jupiter-lend";
+                /** @description Reserve address */
+                reserve?: string;
+                /** @description Part of the asset symbol, case-insensitive */
+                asset?: string;
+                /** @description true: only markets listed in the protocol's own app */
+                listed?: boolean;
+                /** @description Changes that started at or after this UTC time, e.g. 2026-09-27T00:00:00Z */
+                "occurredAt[after]"?: string;
+                /** @description Changes that started at or before this UTC time */
+                "occurredAt[before]"?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ReserveEvent collection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["HydraCollectionBaseSchema"] & {
+                        member: components["schemas"]["ReserveEvent.jsonld"][];
+                    };
+                    "application/json": components["schemas"]["ReserveEvent"][];
+                };
+            };
+        };
+    };
+    api_events_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ReserveEvent identifier */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ReserveEvent resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["ReserveEvent.jsonld"];
+                    "application/json": components["schemas"]["ReserveEvent"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["Error.jsonld"];
+                    "application/problem+json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    api_incidents_get_collection: {
+        parameters: {
+            query?: {
+                /** @description The collection page number */
+                page?: number;
+                /** @description The number of items per page */
+                itemsPerPage?: number;
+                /** @description Lending protocol */
+                protocol?: "kamino" | "marginfi" | "jupiter-lend";
+                /** @description Reserve address */
+                reserve?: string;
+                /** @description Part of the asset symbol, case-insensitive */
+                asset?: string;
+                /** @description true: only incidents that ended; false: only ongoing ones */
+                resolved?: boolean;
+                /** @description Largest exposure at least this many USD, e.g. 1 to leave out empty reserves */
+                "totalSupplyUsd[gte]"?: number;
+                /** @description Incidents that started at or after this UTC time, e.g. 2026-09-27T00:00:00Z */
+                "startedAt[after]"?: string;
+                /** @description Incidents that started at or before this UTC time */
+                "startedAt[before]"?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ReserveIncident collection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["HydraCollectionBaseSchema"] & {
+                        member: components["schemas"]["ReserveIncident.jsonld"][];
+                    };
+                    "application/json": components["schemas"]["ReserveIncident"][];
+                };
+            };
+        };
+    };
+    api_incidents_id_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ReserveIncident identifier */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ReserveIncident resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["ReserveIncident.jsonld"];
+                    "application/json": components["schemas"]["ReserveIncident"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["Error.jsonld"];
+                    "application/problem+json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    api_reserves_addresshistory_get_collection: {
+        parameters: {
+            query?: {
+                /** @description The collection page number */
+                page?: number;
+                /** @description The number of items per page */
+                itemsPerPage?: number;
+                /** @description Hours starting at or after this UTC time, e.g. 2026-09-27T00:00:00Z */
+                "hour[after]"?: string;
+                /** @description Hours starting at or before this UTC time */
+                "hour[before]"?: string;
+                /** @description asc for charts (oldest first) */
+                "order[hour]"?: "asc" | "desc";
+            };
+            header?: never;
+            path: {
+                /** @description ReserveHealthHourly identifier */
+                address: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ReserveSnapshot collection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["HydraCollectionBaseSchema"] & {
+                        member: components["schemas"]["ReserveSnapshot.jsonld"][];
+                    };
+                    "application/json": components["schemas"]["ReserveSnapshot"][];
                 };
             };
         };

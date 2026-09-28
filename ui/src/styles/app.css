@@ -1,27 +1,27 @@
 /*
- * HTML reference edition · single CSS entry
+ * Vireo — HTML reference edition · single CSS entry
  * Visual language: "Aurora" (glassy, high-radius, glow) on the spec's --ax-* token system.
  * Load order (spec 12 §5.1): tailwind → primitives → roles → accents → charts → recipes
  *                            → base → components → utilities → plugins.
  */
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* ── Layer 1–3 token system (Aurora values, spec names) ── */
-@import "./tokens/_primitives.css"; /* L1 scales + neutral/dark ramps + semantics */
-@import "./tokens/_roles.css"; /* L2 role aliases — light :root + [data-ax-theme=dark] */
-@import "./tokens/_accents.css"; /* 12 accent presets (light + dark compound) */
-@import "./tokens/_charts.css"; /* constant data-viz palette, chart-1 = accent */
-@import "./tokens/_recipes.css"; /* ambient glow + glass card + gradients + focus */
+@import './tokens/_primitives.css'; /* L1 scales + neutral/dark ramps + semantics */
+@import './tokens/_roles.css'; /* L2 role aliases — light :root + [data-ax-theme=dark] */
+@import './tokens/_accents.css'; /* 12 accent presets (light + dark compound) */
+@import './tokens/_charts.css'; /* constant data-viz palette, chart-1 = accent */
+@import './tokens/_recipes.css'; /* ambient glow + glass card + gradients + focus */
 
 /* ── App layers ── */
-@import "./base.css"; /* reset, root typography, shell scaffolding, RTL logical props */
-@import "./components.css"; /* ax-* component classes (one block per 05 contract) */
-@import "./nav.css"; /* sidebar navigation tree (manifest-driven menu) */
-@import "./shell.css"; /* shell-chrome: customizer drawer, header dropdowns, command palette, etc. */
-@import "./utilities.css"; /* token-driven helpers */
+@import './base.css'; /* reset, root typography, shell scaffolding, RTL logical props */
+@import './components.css'; /* ax-* component classes (one block per 05 contract) */
+@import './nav.css'; /* sidebar navigation tree (manifest-driven menu) */
+@import './shell.css'; /* shell-chrome: customizer drawer, header dropdowns, command palette, etc. */
+@import './utilities.css'; /* token-driven helpers */
 
 /* ── Surface schemes (sidebar/header chrome) ── */
-@import "./schemes.css";
+@import './schemes.css';
 
 /*
  * Tailwind v4 @theme bridge — exposes --ax-* role/scale tokens as Tailwind

@@ -1,14 +1,12 @@
 <script setup lang="ts">
 /*
- * sidebar (manifest-driven nav). Native Vue re-expression of
- * src/html/partials/sidebar.html: brand, menu filter, role=tree nav with
- * accordion groups, section eyebrows, and the mini user-card foot. Same classes
- * + ARIA as the reference so the shared app.css renders identical pixels.
+ * Vireo — sidebar: brand, the manifest's sections as a flat list of links, and a
+ * data-source note. The menu has no nested groups, so it is a plain <nav> list that
+ * works with the normal Tab order.
  */
-import { ref, computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import AxIcon from '@/components/AxIcon.vue'
-import SidebarNode from './SidebarNode.vue'
 import { buildSidebar, resolveActive } from '@/composables/useNav'
 import { currentSlug } from '@/lib/manifest'
 
@@ -16,36 +14,7 @@ const sections = buildSidebar()
 const route = useRoute()
 
 const slug = computed(() => currentSlug((route.meta.slug as string) || route.path.replace(/^\//, '') || 'overview'))
-const active = computed(() => resolveActive(slug.value))
-const activeId = computed(() => active.value.activeId)
-
-// open-group state: seed from the active trail; the user can toggle.
-const openIds = ref<Set<string>>(new Set(active.value.openGroups))
-watch(active, (a) => {
-  openIds.value = new Set(a.openGroups)
-})
-
-// top-level group ids (for accordion: opening one closes its top-level siblings).
-const topGroupIds = computed(() => new Set(sections.flatMap((s) => s.groups.map((g) => g.id))))
-
-function toggle(id: string): void {
-  const next = new Set(openIds.value)
-  if (next.has(id)) {
-    next.delete(id)
-  } else {
-    if (topGroupIds.value.has(id)) {
-      // accordion: close sibling top-level trunks
-      for (const t of topGroupIds.value) if (t !== id) next.delete(t)
-    }
-    next.add(id)
-  }
-  openIds.value = next
-}
-
-const q = ref('')
-function clearFilter(): void {
-  q.value = ''
-}
+const activeId = computed(() => resolveActive(slug.value).activeId)
 </script>
 
 <template>
@@ -60,48 +29,17 @@ function clearFilter(): void {
       </RouterLink>
     </div>
 
-    <!-- MENU FILTER -->
-    <div class="ax-sidebar__search">
-      <AxIcon class="ax-icon ax-sidebar__search-icon" name="search" />
-      <input
-        type="search"
-        class="ax-sidebar__filter"
-        placeholder="Filter menu…"
-        aria-label="Filter menu"
-        v-model="q"
-        @keydown.escape="clearFilter"
-      />
-      <button v-if="q" type="button" class="ax-sidebar__filter-clear" @click="clearFilter" aria-label="Clear filter">
-        <AxIcon class="ax-icon" name="x" />
-      </button>
-    </div>
-
-    <!-- NAV TREE -->
-    <nav class="ax-sidebar__nav" role="tree" aria-label="Main menu">
+    <nav class="ax-sidebar__nav" aria-label="Main menu">
       <template v-for="section in sections" :key="section.label">
-        <p class="ax-sidebar__section" role="presentation">{{ section.label }}</p>
-        <SidebarNode
-          v-for="group in section.groups"
-          :key="group.id"
-          :item="group"
-          :level="1"
-          :top-group-icon="true"
-          :open-ids="openIds"
-          :active-id="activeId"
-          :filter="q"
-          @toggle="toggle"
-        />
+        <p class="ax-sidebar__section">{{ section.label }}</p>
         <component
           :is="leaf.external ? 'a' : RouterLink"
           v-for="leaf in section.leaves"
           :key="leaf.id"
           class="ax-nav__item"
-          role="treeitem"
-          :aria-level="1"
           v-bind="leaf.external ? { href: leaf.href, target: '_blank', rel: 'noopener' } : { to: leaf.href }"
           :class="{ 'ax-nav__item--active is-active': activeId === leaf.id }"
           :aria-current="activeId === leaf.id ? 'page' : undefined"
-          tabindex="-1"
         >
           <span class="ax-nav__bar" aria-hidden="true"></span>
           <AxIcon class="ax-nav__icon" :name="leaf.icon || 'layout-grid'" />
@@ -115,7 +53,7 @@ function clearFilter(): void {
       <div class="ax-sidebar__user">
         <span class="ax-sidebar__user-meta">
           <b class="ax-sidebar__user-name">Solana mainnet</b>
-          <small class="ax-sidebar__user-mail">Kamino · checked every 60s</small>
+          <small class="ax-sidebar__user-mail">Kamino · Jupiter Lend · marginfi</small>
         </span>
       </div>
     </div>

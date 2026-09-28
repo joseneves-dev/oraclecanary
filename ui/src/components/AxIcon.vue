@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * inline Tabler icon (24x24, currentColor). Matches the inline SVGs in
+ * Vireo — inline Tabler icon (24x24, currentColor). Matches the inline SVGs in
  * the HTML reference. Either pass a registry `name` or raw `path` markup. Size
  * and color come from CSS (the consuming class), per the token system.
  */

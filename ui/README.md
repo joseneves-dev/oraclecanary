@@ -5,6 +5,12 @@ lending market depends on, and whether it is healthy.
 
 Vue 3 + TypeScript + Vite, talking to the OracleCanary REST API (`/api`).
 
+## Licence notice
+
+The layout, styles and shell components are based on the **Vireo** admin template, purchased on
+ThemeForest under an Envato licence. This repository must stay **private**: the template code may not
+be redistributed. Only the parts the product uses are kept here.
+
 ## Development
 
 Requires Node.js 18+ and the OracleCanary API running on `http://127.0.0.1:8000`

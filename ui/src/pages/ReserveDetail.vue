@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { fetchReserve, type Reserve } from '@/api/client'
+import { fetchEvents, fetchReserve, fetchReserveHistory, type Reserve, type ReserveEvent, type ReserveSnapshot } from '@/api/client'
+import EventList from '@/components/EventList.vue'
+import HealthHistoryChart from '@/components/HealthHistoryChart.vue'
 import KpiCard from '@/components/KpiCard.vue'
+import MarketClosedBadge from '@/components/MarketClosedBadge.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
-import { duration, shortAddress, solscanAccount, usd } from '@/lib/format'
+import { dateTime, duration, shortAddress, solscanAccount, usd } from '@/lib/format'
 
 const props = defineProps<{ address: string }>()
 
@@ -14,15 +17,57 @@ const error = ref<string | null>(null)
 
 watch(
   () => props.address,
-  async (address) => {
+  async (address, _previous, onCleanup) => {
+    // The component is reused when only the address changes; a slower earlier response must not
+    // overwrite the reserve now in the URL.
+    const controller = new AbortController()
+    onCleanup(() => controller.abort())
     loading.value = true
     error.value = null
     try {
-      reserve.value = await fetchReserve(address)
+      reserve.value = await fetchReserve(address, controller.signal)
     } catch (e) {
-      error.value = (e as Error).message
+      if (!controller.signal.aborted) error.value = (e as Error).message
     } finally {
-      loading.value = false
+      if (!controller.signal.aborted) loading.value = false
+    }
+  },
+  { immediate: true },
+)
+
+const RANGES = [
+  { label: '24h', hours: 24 },
+  { label: '7d', hours: 24 * 7 },
+  { label: '30d', hours: 24 * 30 },
+] as const
+const rangeHours = ref<number>(RANGES[0].hours)
+/** Start of the first hour in the range, so the current hour is the last bar. */
+const rangeStart = computed(() => {
+  const start = new Date(Date.now() - (rangeHours.value - 1) * 3_600_000)
+  start.setUTCMinutes(0, 0, 0)
+  return start
+})
+
+const history = ref<ReserveSnapshot[]>([])
+const events = ref<ReserveEvent[]>([])
+const historyError = ref<string | null>(null)
+const RECENT_EVENTS = 20
+
+watch(
+  [() => props.address, rangeStart],
+  async ([address, from], _previous, onCleanup) => {
+    const controller = new AbortController()
+    onCleanup(() => controller.abort())
+    historyError.value = null
+    try {
+      const [samples, changes] = await Promise.all([
+        fetchReserveHistory(address, from, controller.signal),
+        fetchEvents({ reserve: address, itemsPerPage: RECENT_EVENTS }, controller.signal),
+      ])
+      history.value = samples
+      events.value = changes
+    } catch (e) {
+      if (!controller.signal.aborted) historyError.value = (e as Error).message
     }
   },
   { immediate: true },
@@ -36,6 +81,8 @@ const accountRows = (r: Reserve) =>
     { label: 'Scope price account', value: r.oracleAccounts.scopePrices, extra: r.oracleAccounts.scopeChain.length ? `chain [${r.oracleAccounts.scopeChain.join(', ')}]` : null },
     { label: 'Pyth feed', value: r.oracleAccounts.pyth },
     { label: 'Switchboard feed', value: r.oracleAccounts.switchboard },
+    { label: 'Oracle', value: r.oracleAccounts.oracle },
+    ...r.oracleAccounts.sources.map((s, i) => ({ label: `Source ${i + 1}: ${s.type}`, value: s.account })),
   ].filter((row): row is { label: string; value: string; extra?: string | null } => row.value !== null)
 </script>
 
@@ -54,9 +101,10 @@ const accountRows = (r: Reserve) =>
           <h1 class="ax-page-head__title title">
             {{ reserve.asset || shortAddress(reserve.mint) }}
             <SeverityBadge :severity="reserve.severity" />
+            <MarketClosedBadge :checks="reserve.checks" />
           </h1>
           <p class="ax-page-head__subtitle">
-            {{ reserve.protocol }} · {{ reserve.market.name ?? 'Unlisted market' }} · checked {{ new Date(reserve.checkedAt).toLocaleString() }}
+            {{ reserve.protocol }} · {{ reserve.market.name ?? 'Unlisted market' }} · checked {{ dateTime(reserve.checkedAt) }}
           </p>
         </div>
       </div>
@@ -73,6 +121,45 @@ const accountRows = (r: Reserve) =>
         :hint="`The protocol rejects prices older than ${duration(reserve.price.maxAgeSeconds)}`"
       />
       <KpiCard label="Oracle providers" :value="String(reserve.providers.length)" icon="book" tone="c4" :hint="reserve.providers.join(', ') || 'None found'" />
+
+      <section class="ax-card ax-col--12" aria-label="Health history">
+        <div class="ax-card__header">
+          <div class="ax-card__titles">
+            <h2 class="ax-card__title">Health history</h2>
+            <p class="ax-card__subtitle">Worst score of each hour. Recorded for listed markets since 27 Sep 2026.</p>
+          </div>
+          <div class="ax-btn-group ax-btn-group--segmented" role="group" aria-label="Time range">
+            <button
+              v-for="range in RANGES"
+              :key="range.label"
+              type="button"
+              class="ax-btn ax-btn--sm"
+              :aria-pressed="rangeHours === range.hours"
+              @click="rangeHours = range.hours"
+            >
+              {{ range.label }}
+            </button>
+          </div>
+        </div>
+        <div class="ax-card__body">
+          <div v-if="historyError" class="ax-alert ax-alert--danger" role="alert">{{ historyError }}</div>
+          <p v-else-if="!reserve.market.name" class="muted">History is not recorded for unlisted markets.</p>
+          <HealthHistoryChart v-else :samples="history" :from="rangeStart" :hours="rangeHours" />
+        </div>
+      </section>
+
+      <section v-if="reserve.market.name" class="ax-card ax-col--12" aria-label="Changes">
+        <div class="ax-card__header">
+          <div class="ax-card__titles">
+            <h2 class="ax-card__title">Changes</h2>
+            <p class="ax-card__subtitle">When a check started or stopped failing, once the change lasted a few minutes</p>
+          </div>
+        </div>
+        <div class="ax-card__body">
+          <EventList v-if="events.length" :events="events" hide-asset />
+          <p v-else class="muted">No change recorded yet: this reserve has kept its current state since recording started.</p>
+        </div>
+      </section>
 
       <section class="ax-card ax-col--6" aria-label="Health checks">
         <div class="ax-card__header">

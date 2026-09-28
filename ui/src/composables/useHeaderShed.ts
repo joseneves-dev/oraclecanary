@@ -1,5 +1,5 @@
 /*
- * responsive header SHED signal (Vue edition).
+ * Vireo — responsive header SHED signal (Vue edition).
  *
  * Port of _bindBands() in src/js/alpine/index.js (02-shell §4.12). The utility
  * cluster is eleven controls wide; below each band the bar copy of a control is
@@ -10,7 +10,6 @@
  *
  * BANDS — keep in lockstep with shell.css §18:
  *   < 992px (lg) … language · fullscreen · app-grid
- *   < 768px (md) … + cart · customizer
  */
 import { ref, onMounted, onBeforeUnmount, type Ref } from 'vue'
 
@@ -27,7 +26,6 @@ export function useHeaderShed(): Ref<string[]> {
     }
     const next: string[] = []
     if (w < 992) next.push('lang', 'fullscreen', 'apps')
-    if (w < 768) next.push('cart', 'customizer')
     shed.value = next
   }
 

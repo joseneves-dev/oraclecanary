@@ -1,5 +1,5 @@
 /*
- * HTML reference edition · schemes.css
+ * Vireo — HTML reference edition · schemes.css
  * ────────────────────────────────────────────────────────────────────────
  * SURFACE SCHEMES for the shell chrome (sidebar + header), independent of
  * content cards. Each scheme remaps the Layer-3 chrome tokens that .ax-sidebar
@@ -72,22 +72,18 @@
    (this is the ONE sanctioned place to reach the dark ramp, because the
    chrome is forced dark independent of [data-ax-theme]).
    ════════════════════════════════════════════════════════════════════════ */
-[data-ax-sidebar="dark"] .ax-sidebar {
+[data-ax-sidebar='dark'] .ax-sidebar {
   --ax-sidebar-bg: var(--ax-dark-850);
   --ax-sidebar-fg: var(--ax-dark-300);
   --ax-sidebar-fg-strong: var(--ax-dark-50);
   --ax-sidebar-border: var(--ax-dark-stroke);
   --ax-sidebar-hover: var(--ax-dark-fill-1);
-  --ax-sidebar-active-bg: color-mix(
-    in oklab,
-    var(--ax-accent) 18%,
-    transparent
-  );
+  --ax-sidebar-active-bg: color-mix(in oklab, var(--ax-accent) 18%, transparent);
   color: var(--ax-dark-300);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-[data-ax-header="dark"] :is(.ax-header, .ax-appbar) {
+[data-ax-header='dark'] :is(.ax-header, .ax-appbar) {
   --ax-header-bg: var(--ax-dark-850);
   --ax-header-fg: var(--ax-dark-300);
   --ax-header-fg-strong: var(--ax-dark-50);
@@ -98,8 +94,8 @@
   backdrop-filter: none;
 }
 /* strong text inside dark chrome (brand, active labels, KPI) reads bright */
-[data-ax-sidebar="dark"] .ax-sidebar__wordmark,
-[data-ax-sidebar="dark"] .ax-sidebar__logo {
+[data-ax-sidebar='dark'] .ax-sidebar__wordmark,
+[data-ax-sidebar='dark'] .ax-sidebar__logo {
   color: var(--ax-dark-50);
 }
 
@@ -108,26 +104,18 @@
    fg uses --ax-on-accent so it stays legible across all 12 accents
    (incl. Amber's dark ink).
    ════════════════════════════════════════════════════════════════════════ */
-[data-ax-sidebar="brand"] .ax-sidebar {
+[data-ax-sidebar='brand'] .ax-sidebar {
   --ax-sidebar-bg: var(--ax-accent);
   --ax-sidebar-fg: color-mix(in oklab, var(--ax-on-accent) 78%, transparent);
   --ax-sidebar-fg-strong: var(--ax-on-accent);
-  --ax-sidebar-border: color-mix(
-    in oklab,
-    var(--ax-on-accent) 16%,
-    transparent
-  );
+  --ax-sidebar-border: color-mix(in oklab, var(--ax-on-accent) 16%, transparent);
   --ax-sidebar-hover: color-mix(in oklab, var(--ax-on-accent) 12%, transparent);
-  --ax-sidebar-active-bg: color-mix(
-    in oklab,
-    var(--ax-on-accent) 18%,
-    transparent
-  );
+  --ax-sidebar-active-bg: color-mix(in oklab, var(--ax-on-accent) 18%, transparent);
   color: var(--ax-on-accent);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-[data-ax-header="brand"] :is(.ax-header, .ax-appbar) {
+[data-ax-header='brand'] :is(.ax-header, .ax-appbar) {
   --ax-header-bg: var(--ax-accent);
   --ax-header-fg: color-mix(in oklab, var(--ax-on-accent) 78%, transparent);
   --ax-header-fg-strong: var(--ax-on-accent);
@@ -137,8 +125,8 @@
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-[data-ax-sidebar="brand"] .ax-sidebar__wordmark,
-[data-ax-sidebar="brand"] .ax-sidebar__logo {
+[data-ax-sidebar='brand'] .ax-sidebar__wordmark,
+[data-ax-sidebar='brand'] .ax-sidebar__logo {
   color: var(--ax-on-accent);
 }
 
@@ -146,35 +134,19 @@
    3 · GRADIENT chrome — vertical accent gradient (accent-600 → accent-800),
    also derives from the active preset's ramp.
    ════════════════════════════════════════════════════════════════════════ */
-[data-ax-sidebar="gradient"] .ax-sidebar {
-  --ax-sidebar-bg: linear-gradient(
-    180deg,
-    var(--ax-accent-600),
-    var(--ax-accent-800)
-  );
+[data-ax-sidebar='gradient'] .ax-sidebar {
+  --ax-sidebar-bg: linear-gradient(180deg, var(--ax-accent-600), var(--ax-accent-800));
   --ax-sidebar-fg: color-mix(in oklab, var(--ax-on-accent) 80%, transparent);
   --ax-sidebar-fg-strong: var(--ax-on-accent);
-  --ax-sidebar-border: color-mix(
-    in oklab,
-    var(--ax-on-accent) 14%,
-    transparent
-  );
+  --ax-sidebar-border: color-mix(in oklab, var(--ax-on-accent) 14%, transparent);
   --ax-sidebar-hover: color-mix(in oklab, var(--ax-on-accent) 12%, transparent);
-  --ax-sidebar-active-bg: color-mix(
-    in oklab,
-    var(--ax-on-accent) 20%,
-    transparent
-  );
+  --ax-sidebar-active-bg: color-mix(in oklab, var(--ax-on-accent) 20%, transparent);
   color: var(--ax-on-accent);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-[data-ax-header="gradient"] :is(.ax-header, .ax-appbar) {
-  --ax-header-bg: linear-gradient(
-    90deg,
-    var(--ax-accent-600),
-    var(--ax-accent-800)
-  );
+[data-ax-header='gradient'] :is(.ax-header, .ax-appbar) {
+  --ax-header-bg: linear-gradient(90deg, var(--ax-accent-600), var(--ax-accent-800));
   --ax-header-fg: color-mix(in oklab, var(--ax-on-accent) 80%, transparent);
   --ax-header-fg-strong: var(--ax-on-accent);
   --ax-header-border: color-mix(in oklab, var(--ax-on-accent) 14%, transparent);
@@ -183,8 +155,8 @@
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-[data-ax-sidebar="gradient"] .ax-sidebar__wordmark,
-[data-ax-sidebar="gradient"] .ax-sidebar__logo {
+[data-ax-sidebar='gradient'] .ax-sidebar__wordmark,
+[data-ax-sidebar='gradient'] .ax-sidebar__logo {
   color: var(--ax-on-accent);
 }
 
@@ -192,7 +164,7 @@
    4 · TRANSPARENT chrome — no fill; chrome floats over the canvas/glow.
    fg keeps theme text roles so it reads on either mode's canvas.
    ════════════════════════════════════════════════════════════════════════ */
-[data-ax-sidebar="transparent"] .ax-sidebar {
+[data-ax-sidebar='transparent'] .ax-sidebar {
   --ax-sidebar-bg: transparent;
   --ax-sidebar-fg: var(--ax-text-muted);
   --ax-sidebar-fg-strong: var(--ax-text-strong);
@@ -202,7 +174,7 @@
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-[data-ax-header="transparent"] :is(.ax-header, .ax-appbar) {
+[data-ax-header='transparent'] :is(.ax-header, .ax-appbar) {
   --ax-header-bg: transparent;
   --ax-header-fg: var(--ax-text-muted);
   --ax-header-fg-strong: var(--ax-text-strong);
@@ -232,20 +204,19 @@
    rail's own background — accent-on-accent makes the current page vanish. Consume
    the already-computed contrasting --ax-sidebar-active-bg (on-accent based) here.
    light/dark/transparent keep the default accent-glow (no override targets them). */
-[data-ax-sidebar="brand"] .ax-sidebar .ax-nav__item.is-active,
-[data-ax-sidebar="gradient"] .ax-sidebar .ax-nav__item.is-active {
+[data-ax-sidebar='brand'] .ax-sidebar .ax-nav__item.is-active,
+[data-ax-sidebar='gradient'] .ax-sidebar .ax-nav__item.is-active {
   background: var(--ax-sidebar-active-bg);
   color: var(--ax-sidebar-fg-strong);
-  box-shadow: inset 0 0 0 1px
-    color-mix(in oklab, var(--ax-on-accent) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ax-on-accent) 22%, transparent);
 }
-[data-ax-sidebar="brand"] .ax-sidebar .ax-nav__item.is-active::before,
-[data-ax-sidebar="gradient"] .ax-sidebar .ax-nav__item.is-active::before {
+[data-ax-sidebar='brand'] .ax-sidebar .ax-nav__item.is-active::before,
+[data-ax-sidebar='gradient'] .ax-sidebar .ax-nav__item.is-active::before {
   background: var(--ax-on-accent);
   box-shadow: none;
 }
-[data-ax-sidebar="brand"] .ax-sidebar .ax-nav__item.is-active svg,
-[data-ax-sidebar="gradient"] .ax-sidebar .ax-nav__item.is-active svg {
+[data-ax-sidebar='brand'] .ax-sidebar .ax-nav__item.is-active svg,
+[data-ax-sidebar='gradient'] .ax-sidebar .ax-nav__item.is-active svg {
   color: var(--ax-on-accent);
 }
 :is(.ax-header, .ax-appbar) .ax-icon-btn:hover {
@@ -261,8 +232,8 @@
   color: var(--ax-header-fg);
 }
 :is(.ax-header, .ax-appbar) .ax-icon-btn:hover,
-:is(.ax-header, .ax-appbar) .ax-icon-btn[aria-expanded="true"],
-:is(.ax-header, .ax-appbar) .ax-icon-btn[aria-pressed="true"] {
+:is(.ax-header, .ax-appbar) .ax-icon-btn[aria-expanded='true'],
+:is(.ax-header, .ax-appbar) .ax-icon-btn[aria-pressed='true'] {
   color: var(--ax-header-fg-strong);
   background: var(--ax-header-hover);
 }
@@ -295,12 +266,9 @@
    NOT on `.ax-sidebar`. Read it off the same element as the scheme attribute, then
    reach the rail via a descendant combinator. `.ax-sidebar` is already positioned
    (fixed/absolute) in base.css, so the absolute ::before has its containing block. */
-:where(
-    [data-ax-sidebar="light"],
-    html:not([data-ax-sidebar])
-  )[data-ax-sidebar-image]:not([data-ax-sidebar-image="none"])
+:where([data-ax-sidebar='light'], html:not([data-ax-sidebar]))[data-ax-sidebar-image]:not([data-ax-sidebar-image='none'])
   .ax-sidebar::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   z-index: -1;
@@ -309,56 +277,51 @@
   background-position: center;
   opacity: 0.5;
   /* canvas-tinted veil keeps nav text legible over the texture */
-  box-shadow: inset 0 0 0 100vmax
-    color-mix(in oklab, var(--ax-surface-raised) 72%, transparent);
+  box-shadow: inset 0 0 0 100vmax color-mix(in oklab, var(--ax-surface-raised) 72%, transparent);
 }
 /* suppress texture entirely for non-light schemes */
-[data-ax-sidebar="dark"] .ax-sidebar::before,
-[data-ax-sidebar="brand"] .ax-sidebar::before,
-[data-ax-sidebar="gradient"] .ax-sidebar::before,
-[data-ax-sidebar="transparent"] .ax-sidebar::before {
+[data-ax-sidebar='dark'] .ax-sidebar::before,
+[data-ax-sidebar='brand'] .ax-sidebar::before,
+[data-ax-sidebar='gradient'] .ax-sidebar::before,
+[data-ax-sidebar='transparent'] .ax-sidebar::before {
   display: none;
 }
 
 /* texture token slots (1–6). Real tile assets are wired by the build/assets
    layer; these provide deterministic, theme-safe placeholders so the control
    demonstrates live without shipping binary art in CSS. */
-[data-ax-sidebar-image="texture-1"] {
+[data-ax-sidebar-image='texture-1'] {
   --ax-sidebar-texture: radial-gradient(
     circle at 1px 1px,
     var(--ax-border-strong) 1px,
     transparent 0
   );
 }
-[data-ax-sidebar-image="texture-2"] {
+[data-ax-sidebar-image='texture-2'] {
   --ax-sidebar-texture: repeating-linear-gradient(
     45deg,
     var(--ax-fill-hover) 0 8px,
     transparent 8px 16px
   );
 }
-[data-ax-sidebar-image="texture-3"] {
-  --ax-sidebar-texture: linear-gradient(
-    160deg,
-    var(--ax-accent-wash),
-    transparent 60%
-  );
+[data-ax-sidebar-image='texture-3'] {
+  --ax-sidebar-texture: linear-gradient(160deg, var(--ax-accent-wash), transparent 60%);
 }
-[data-ax-sidebar-image="texture-4"] {
+[data-ax-sidebar-image='texture-4'] {
   --ax-sidebar-texture: repeating-linear-gradient(
     90deg,
     var(--ax-fill-hover) 0 1px,
     transparent 1px 14px
   );
 }
-[data-ax-sidebar-image="texture-5"] {
+[data-ax-sidebar-image='texture-5'] {
   --ax-sidebar-texture: radial-gradient(
     circle at 80% 0,
     var(--ax-accent-wash),
     transparent 55%
   );
 }
-[data-ax-sidebar-image="texture-6"] {
+[data-ax-sidebar-image='texture-6'] {
   --ax-sidebar-texture: conic-gradient(
     from 180deg at 50% 0,
     var(--ax-fill-hover),

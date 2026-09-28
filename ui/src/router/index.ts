@@ -9,6 +9,7 @@ export const router = createRouter({
       component: AppLayout,
       children: [
         { path: '', name: 'overview', component: () => import('@/pages/Overview.vue'), meta: { slug: 'overview' } },
+        { path: 'incidents', name: 'incidents', component: () => import('@/pages/Incidents.vue'), meta: { slug: 'incidents' } },
         { path: 'reserves', name: 'reserves', component: () => import('@/pages/Reserves.vue'), meta: { slug: 'reserves' } },
         {
           path: 'reserves/:address',

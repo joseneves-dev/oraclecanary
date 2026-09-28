@@ -1,5 +1,5 @@
 /*
- * HTML reference edition · utilities.css
+ * Vireo — HTML reference edition · utilities.css
  * ────────────────────────────────────────────────────────────────────────
  * Token-driven helper classes that Tailwind's built-ins don't cleanly cover.
  * Kept deliberately MINIMAL — Tailwind utilities handle most spacing/flex/
@@ -14,7 +14,7 @@
 .ax-num,
 [data-ax-tabular] {
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
+  font-feature-settings: 'tnum' 1;
 }
 .ax-mono {
   font-family: var(--ax-font-mono);
@@ -156,7 +156,7 @@
   border-radius: var(--ax-radius-sm);
 }
 .ax-skeleton::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
@@ -256,7 +256,7 @@
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: var(--ax-space-6);
-  align-items: stretch; /* cards in the same row match height; shorter ones gain inner blank space */
+  align-items: stretch;        /* cards in the same row match height; shorter ones gain inner blank space */
 }
 @media (max-width: 768px) {
   .ax-dash-grid {
@@ -271,71 +271,33 @@
        the old failure mode was a stray card collapsing to 1/12 of a row);
      · a bare KPI card takes a quarter, which is what every KPI row wants, so
        the four-across rhythm needs no per-card class. */
-.ax-dash-grid > :where(*) {
-  grid-column: 1 / -1;
-}
-.ax-dash-grid > :where(.ax-kpi) {
-  grid-column: span 3;
-}
+.ax-dash-grid > :where(*) { grid-column: 1 / -1; }
+.ax-dash-grid > :where(.ax-kpi) { grid-column: span 3; }
 @media (max-width: 992px) {
-  .ax-dash-grid > :where(.ax-kpi) {
-    grid-column: span 6;
-  }
+  .ax-dash-grid > :where(.ax-kpi) { grid-column: span 6; }
 }
 @media (max-width: 576px) {
-  .ax-dash-grid > :where(.ax-kpi) {
-    grid-column: span 12;
-  }
+  .ax-dash-grid > :where(.ax-kpi) { grid-column: span 12; }
 }
 
-.ax-col--12 {
-  grid-column: span 12;
-}
-.ax-col--11 {
-  grid-column: span 11;
-}
-.ax-col--10 {
-  grid-column: span 10;
-}
-.ax-col--9 {
-  grid-column: span 9;
-}
-.ax-col--8 {
-  grid-column: span 8;
-}
-.ax-col--7 {
-  grid-column: span 7;
-}
-.ax-col--6 {
-  grid-column: span 6;
-}
-.ax-col--5 {
-  grid-column: span 5;
-}
-.ax-col--4 {
-  grid-column: span 4;
-}
-.ax-col--3 {
-  grid-column: span 3;
-}
-.ax-col--2 {
-  grid-column: span 2;
-}
+.ax-col--12 { grid-column: span 12; }
+.ax-col--11 { grid-column: span 11; }
+.ax-col--10 { grid-column: span 10; }
+.ax-col--9  { grid-column: span 9; }
+.ax-col--8  { grid-column: span 8; }
+.ax-col--7  { grid-column: span 7; }
+.ax-col--6  { grid-column: span 6; }
+.ax-col--5  { grid-column: span 5; }
+.ax-col--4  { grid-column: span 4; }
+.ax-col--3  { grid-column: span 3; }
+.ax-col--2  { grid-column: span 2; }
 
 /* lg: halves/two-thirds → full; quarters/thirds → halves */
 @media (max-width: 992px) {
-  .ax-col--11,
-  .ax-col--10,
-  .ax-col--9,
-  .ax-col--8,
-  .ax-col--7,
-  .ax-col--6 {
+  .ax-col--11, .ax-col--10, .ax-col--9, .ax-col--8, .ax-col--7, .ax-col--6 {
     grid-column: span 12;
   }
-  .ax-col--5,
-  .ax-col--4,
-  .ax-col--3,
-  .ax-col--2 {
+  .ax-col--5, .ax-col--4, .ax-col--3, .ax-col--2 {
     grid-column: span 6;
   }
 }
@@ -351,9 +313,5 @@
    silently destroys an inline `display:grid`/`display:flex` (the element falls
    back to `display:block`). Driving display from a class survives the toggle:
    x-show sets inline `display:none` to hide, and removing it falls back here. */
-.ax-grid {
-  display: grid;
-}
-.ax-flex {
-  display: flex;
-}
+.ax-grid { display: grid; }
+.ax-flex { display: flex; }

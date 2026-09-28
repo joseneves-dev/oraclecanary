@@ -1,10 +1,8 @@
 <script setup lang="ts">
 /*
- * header (topbar). Native Vue re-expression of src/html/partials/header.html:
+ * Vireo — header (topbar). Native Vue re-expression of src/html/partials/header.html:
  * sidebar toggle + ⌘K command search, then the SHARED right-hand utility cluster
- * (AxHeaderUtils.vue — language, fullscreen, light/dark toggle, app-grid, cart,
- * notifications, profile, customizer trigger), which the full-screen app bar
- * (AxAppBar.vue) renders too so the two chromes can never drift.
+ * (AxHeaderUtils.vue — fullscreen and light/dark toggle).
  * Same DOM / classes / ARIA as the reference.
  */
 import AxIcon from '@/components/AxIcon.vue'

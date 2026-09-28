@@ -1,5 +1,5 @@
 /*
- * HTML reference edition · COMPONENT LIBRARY (Aurora)
+ * Vireo — HTML reference edition · COMPONENT LIBRARY (Aurora)
  * ----------------------------------------------------------------------------
  * One block per component, per BUILD BRIEF 04 (the contract). Everything lives
  * in @layer components so Tailwind utilities and page-level overrides win.
@@ -51,9 +51,7 @@
     pointer-events: none;
     box-shadow: inset 0 1px 0 var(--ax-glass-hi);
   }
-  @supports not (
-    (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
-  ) {
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .ax-glass {
       background: var(--ax-surface-solid);
     }
@@ -119,8 +117,7 @@
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--ax-radius-sm);
-    transition:
-      background var(--ax-motion-instant) var(--ax-ease-standard),
+    transition: background var(--ax-motion-instant) var(--ax-ease-standard),
       border-color var(--ax-motion-instant) var(--ax-ease-standard),
       color var(--ax-motion-instant) var(--ax-ease-standard),
       box-shadow var(--ax-motion-fast) var(--ax-ease-standard),
@@ -473,8 +470,7 @@
     box-shadow: var(--ax-shadow-card);
     -webkit-backdrop-filter: blur(18px) saturate(1.1);
     backdrop-filter: blur(18px) saturate(1.1);
-    transition:
-      box-shadow var(--ax-motion-base) var(--ax-ease-standard),
+    transition: box-shadow var(--ax-motion-base) var(--ax-ease-standard),
       border-color var(--ax-motion-base) var(--ax-ease-standard),
       transform var(--ax-motion-base) var(--ax-ease-standard);
   }
@@ -486,9 +482,7 @@
     pointer-events: none;
     box-shadow: inset 0 1px 0 var(--ax-glass-hi);
   }
-  @supports not (
-    (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
-  ) {
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .ax-card {
       background: var(--ax-surface-solid);
     }
@@ -940,11 +934,7 @@
     opacity: 0.82;
   }
   .ax-card--gradient .ax-welcome::before {
-    background: radial-gradient(
-      circle,
-      rgba(255, 255, 255, 0.18) 0%,
-      transparent 70%
-    );
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.18) 0%, transparent 70%);
   }
 
   /* ── Stat group: the anti-KPI-row. Cells share one card, divided by
@@ -974,9 +964,9 @@
      cell stranded on its own row. Capping the track at a third of the block
      makes it wrap as two full rows of three, and the 210px floor still takes
      over on narrow screens (2 + 2 + 2, then stacked). */
-  .ax-statgroup:not(.ax-statgroup--stack):has(
-      > .ax-statgroup__cell:nth-child(6)
-    ):not(:has(> .ax-statgroup__cell:nth-child(7))) {
+  .ax-statgroup:not(.ax-statgroup--stack):has(> .ax-statgroup__cell:nth-child(6)):not(
+      :has(> .ax-statgroup__cell:nth-child(7))
+    ) {
     grid-template-columns: repeat(auto-fit, minmax(max(210px, 33.333%), 1fr));
   }
   .ax-statgroup__cell {
@@ -986,14 +976,10 @@
     padding: var(--ax-space-4);
     /* leading rule + rule underneath; both fall outside the block on the
        first column and the last row, where overflow:hidden removes them. */
-    box-shadow:
-      -1px 0 0 var(--ax-border),
-      0 1px 0 var(--ax-border);
+    box-shadow: -1px 0 0 var(--ax-border), 0 1px 0 var(--ax-border);
   }
   [dir="rtl"] .ax-statgroup__cell {
-    box-shadow:
-      1px 0 0 var(--ax-border),
-      0 1px 0 var(--ax-border);
+    box-shadow: 1px 0 0 var(--ax-border), 0 1px 0 var(--ax-border);
   }
   .ax-statgroup__icon {
     display: inline-flex;
@@ -1091,8 +1077,7 @@
     border: 1px solid var(--ax-border);
     border-radius: var(--ax-radius-md);
     cursor: pointer;
-    transition:
-      color var(--ax-motion-base) var(--ax-ease-standard),
+    transition: color var(--ax-motion-base) var(--ax-ease-standard),
       border-color var(--ax-motion-base) var(--ax-ease-standard),
       background var(--ax-motion-base) var(--ax-ease-standard);
   }
@@ -1505,15 +1490,11 @@
     --_av-status: 14px;
   }
   .ax-avatar--ringed {
-    box-shadow:
-      0 0 0 2px var(--ax-surface-solid),
-      0 0 0 3px var(--ax-border-strong);
+    box-shadow: 0 0 0 2px var(--ax-surface-solid), 0 0 0 3px var(--ax-border-strong);
   }
   .ax-avatar.is-current,
   .ax-avatar--selected {
-    box-shadow:
-      0 0 0 2px var(--ax-surface-solid),
-      0 0 0 4px var(--ax-accent);
+    box-shadow: 0 0 0 2px var(--ax-surface-solid), 0 0 0 4px var(--ax-accent);
   }
   .ax-avatar__status {
     position: absolute;
@@ -1719,8 +1700,7 @@
     box-shadow: var(--ax-shadow-lg);
     -webkit-backdrop-filter: blur(18px) saturate(1.1);
     backdrop-filter: blur(18px) saturate(1.1);
-    transition:
-      opacity var(--ax-motion-base) var(--ax-ease-standard),
+    transition: opacity var(--ax-motion-base) var(--ax-ease-standard),
       transform var(--ax-motion-base) var(--ax-ease-standard);
   }
   .ax-toast__icon {
@@ -2225,8 +2205,7 @@
     transform: translateX(var(--ax-tabs-ind-x, 0));
     background: var(--ax-accent);
     border-radius: 2px;
-    transition:
-      transform var(--ax-motion-base) var(--ax-ease-standard),
+    transition: transform var(--ax-motion-base) var(--ax-ease-standard),
       width var(--ax-motion-base) var(--ax-ease-standard);
   }
   .ax-tabs__panel {
@@ -2289,8 +2268,7 @@
     width: 2px;
     height: var(--ax-tabs-ind-h, 0);
     transform: translateY(var(--ax-tabs-ind-y, 0));
-    transition:
-      transform var(--ax-motion-base) var(--ax-ease-standard),
+    transition: transform var(--ax-motion-base) var(--ax-ease-standard),
       height var(--ax-motion-base) var(--ax-ease-standard);
   }
   .ax-tabs--vertical .ax-tabs__panel {
@@ -3362,8 +3340,7 @@
     background: var(--ax-surface);
     border: 1px solid var(--ax-border);
     border-radius: var(--ax-radius-sm);
-    transition:
-      border-color var(--ax-motion-instant) var(--ax-ease-standard),
+    transition: border-color var(--ax-motion-instant) var(--ax-ease-standard),
       box-shadow var(--ax-motion-fast) var(--ax-ease-standard),
       background var(--ax-motion-instant) var(--ax-ease-standard);
   }
@@ -3431,8 +3408,7 @@
   }
   .ax-input.is-invalid:focus-visible,
   .ax-textarea.is-invalid:focus-visible {
-    box-shadow: 0 0 0 3px
-      color-mix(in srgb, var(--ax-danger-500) 26%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ax-danger-500) 26%, transparent);
   }
   .ax-input.is-valid,
   .ax-textarea.is-valid,
@@ -3503,8 +3479,7 @@
     border: 1px solid var(--ax-border-strong);
     border-radius: var(--ax-radius-xs);
     cursor: pointer;
-    transition:
-      background var(--ax-motion-instant) var(--ax-ease-standard),
+    transition: background var(--ax-motion-instant) var(--ax-ease-standard),
       border-color var(--ax-motion-instant) var(--ax-ease-standard);
   }
   .ax-checkbox:hover {
@@ -3730,8 +3705,7 @@
     border-radius: 50%;
     box-shadow: var(--ax-shadow-sm);
     cursor: grab;
-    transition:
-      width var(--ax-motion-instant) var(--ax-ease-standard),
+    transition: width var(--ax-motion-instant) var(--ax-ease-standard),
       height var(--ax-motion-instant) var(--ax-ease-standard);
   }
   .ax-range__handle:hover,
@@ -3800,8 +3774,7 @@
     border: 1.5px dashed var(--ax-border-strong);
     border-radius: var(--ax-radius-md);
     cursor: pointer;
-    transition:
-      border-color var(--ax-motion-fast) var(--ax-ease-standard),
+    transition: border-color var(--ax-motion-fast) var(--ax-ease-standard),
       background var(--ax-motion-fast) var(--ax-ease-standard);
   }
   .ax-dropzone__area svg {
@@ -4083,8 +4056,7 @@
     border: 0;
     border-radius: var(--ax-radius-sm);
     cursor: pointer;
-    transition:
-      background var(--ax-motion-instant) var(--ax-ease-standard),
+    transition: background var(--ax-motion-instant) var(--ax-ease-standard),
       color var(--ax-motion-instant) var(--ax-ease-standard);
   }
   .ax-segment__option svg {

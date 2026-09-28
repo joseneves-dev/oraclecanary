@@ -19,6 +19,8 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': { target: API_URL, changeOrigin: true },
+      // Swagger UI (at /api/docs) loads its scripts and styles from here.
+      '/assets/bundles': { target: API_URL, changeOrigin: true },
     },
   },
 })

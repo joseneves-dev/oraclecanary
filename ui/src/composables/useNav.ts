@@ -1,5 +1,5 @@
 /*
- * manifest → sidebar tree builder (Vue edition).
+ * Vireo — manifest → sidebar tree builder (Vue edition).
  *
  * Transforms the flat nav-manifest into the nested {section → group → children}
  * structure the Sidebar renders, honouring `inMenu`, `order`, alias resolution

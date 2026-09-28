@@ -1,5 +1,5 @@
 /*
- * Sidebar navigation tree
+ * Vireo — Sidebar navigation tree
  * The base layout for the manifest-driven sidebar menu (.ax-sidebar__nav /
  * .ax-nav__*). Active state + glow bar live in tokens/_recipes.css; the six
  * sidebar STYLES (compact/overlay/…) live in base.css; this file owns the
@@ -99,7 +99,7 @@
   color: var(--ax-text-subtle);
   transition: transform var(--ax-motion-base) var(--ax-ease-standard);
 }
-.ax-nav__item--parent[aria-expanded="true"] .ax-nav__caret {
+.ax-nav__item--parent[aria-expanded='true'] .ax-nav__caret {
   transform: rotate(90deg);
 }
 
@@ -125,10 +125,10 @@
   font-size: var(--ax-text-sm);
   color: var(--ax-text-muted);
 }
-.ax-nav__item[aria-level="3"] {
+.ax-nav__item[aria-level='3'] {
   padding-inline-start: var(--ax-space-5);
 }
-.ax-nav__item[aria-level="4"] {
+.ax-nav__item[aria-level='4'] {
   padding-inline-start: var(--ax-space-8);
 }
 /* the leading active marker (hidden until active) */
@@ -217,7 +217,7 @@
     transform var(--ax-motion-fast) var(--ax-ease-standard),
     visibility 0s linear var(--ax-motion-fast);
 }
-[dir="rtl"] .ax-flyout {
+[dir='rtl'] .ax-flyout {
   transform: translateX(4px);
 }
 .ax-flyout::-webkit-scrollbar {
@@ -236,13 +236,13 @@
 /* invisible bridge spanning the rail→popover gap so the pointer can cross
    diagonally without the hover dropping (paired with the JS close delay) */
 .ax-flyout::before {
-  content: "";
+  content: '';
   position: absolute;
   inset-block: 0;
   inset-inline-start: calc((var(--ax-space-2) + 8px) * -1);
   inline-size: calc(var(--ax-space-2) + 8px);
 }
-[dir="rtl"] .ax-flyout::before {
+[dir='rtl'] .ax-flyout::before {
   inset-inline-start: auto;
   inset-inline-end: calc((var(--ax-space-2) + 8px) * -1);
 }

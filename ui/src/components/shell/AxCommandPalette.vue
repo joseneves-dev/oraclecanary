@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /*
- * command palette (⌘K / Ctrl-K). Native Vue re-expression of
+ * Vireo — command palette (⌘K / Ctrl-K). Native Vue re-expression of
  * src/js/core/command-palette.js + the static shell of src/html/partials/command.html.
  * Fuzzy search over the SAME nav-manifest the sidebar uses, grouped results, arrow/
- * enter navigation, Esc close, plus theme + customizer actions. Open state via
+ * enter navigation, Esc close, plus the dark mode action. Open state via
  * useShellBus.
  *
  * Rendered by BOTH shells (AppLayout + AppShellLayout) at layout level, never
@@ -28,9 +28,9 @@ interface CmdItem {
   group: string
   keywords: string
   href?: string
-  /** Served outside the SPA (e.g. the API docs), so it needs a full page load. */
+  /** Served outside the SPA (e.g. the API docs); opened in a new tab like the sidebar link. */
   external?: boolean
-  action?: 'toggle-theme' | 'open-customizer'
+  action?: 'toggle-theme'
 }
 
 /* Manifest section → result group. Anything unmapped lands in "Pages", which is
@@ -72,7 +72,6 @@ function buildItems(): CmdItem[] {
   }
   items.push(
     { title: 'Toggle dark mode', crumb: 'Theme', group: 'Actions', keywords: 'dark light theme mode', action: 'toggle-theme' },
-    { title: 'Open theme customizer', crumb: 'Settings', group: 'Actions', keywords: 'customizer settings theme appearance', action: 'open-customizer' },
   )
   return items
 }
@@ -164,12 +163,7 @@ function go(it: CmdItem): void {
     bus.closeCommand()
     return
   }
-  if (it.action === 'open-customizer') {
-    bus.closeCommand()
-    bus.openCustomizer()
-    return
-  }
-  if (it.href && it.external) window.location.assign(it.href)
+  if (it.href && it.external) window.open(it.href, '_blank', 'noopener')
   else if (it.href) router.push(it.href)
   bus.closeCommand()
 }
@@ -242,7 +236,7 @@ function indexOfItem(item: CmdItem): number {
           v-model="q"
           type="text"
           data-ax-command-input
-          placeholder="Search pages, apps and actions…"
+          placeholder="Search pages and actions…"
           aria-label="Search pages, apps and actions"
           aria-controls="ax-command-results"
           autocomplete="off"

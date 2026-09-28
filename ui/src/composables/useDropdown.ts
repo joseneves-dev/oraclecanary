@@ -1,5 +1,5 @@
 /*
- * dropdown / popover helper (Vue edition). Native re-expression of the
+ * Vireo — dropdown / popover helper (Vue edition). Native re-expression of the
  * Alpine axDropdown() component: open/close state + click-outside + Escape close.
  * Returns a ref to bind to the popover root and reactive `open` state.
  */
