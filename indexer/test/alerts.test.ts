@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { alertFor, formatAlert, problemCodes, type HealthEvent } from '../src/alerts.js';
+import { alertFor, formatAlert, formatSummary, problemCodes, summaryDue, type HealthEvent, type ReserveStatus } from '../src/alerts.js';
 
 const MIN = 10_000;
 
@@ -109,5 +109,61 @@ describe('formatAlert', () => {
   it('escapes HTML in names read from chain', () => {
     const text = formatAlert(alertFor(event([], ['STALE:critical'], { asset: '<b>X&Y', marketName: null }), false, MIN)!, 'https://x');
     assert.match(text, /Price unusable: &lt;b&gt;X&amp;Y<\/b>\nKamino\n/);
+  });
+});
+
+describe('formatSummary', () => {
+  const reserve = (asset: string, checks: string[], totalSupplyUsd: number, protocol = 'kamino'): ReserveStatus => ({
+    address: `reserve-${asset}`,
+    protocol,
+    asset,
+    checks,
+    totalSupplyUsd,
+  });
+
+  it('says all is clear, with what is watched, when nothing large is critical', () => {
+    const text = formatSummary(
+      [
+        reserve('USDC', ['NO_FALLBACK:warning'], 3_000_000_000),
+        reserve('SOL', [], 1_200_000_000, 'marginfi'),
+        // A dead, empty vault stays out of the daily message, as it does of alerts.
+        reserve('wstUSR', ['STALE:critical'], 0, 'jupiter-lend'),
+      ],
+      MIN,
+      'https://oraclecanary.com',
+    );
+
+    assert.match(text, /🟢 Daily check: all clear/);
+    assert.match(text, /3 listed reserves · \$4\.2B supplied · Jupiter Lend, Kamino, marginfi/);
+    assert.match(text, /No reserve above \$10\.0K has a critical oracle problem\./);
+    assert.doesNotMatch(text, /wstUSR/);
+    assert.match(text, /https:\/\/oraclecanary\.com$/);
+  });
+
+  it('counts a stock paused by its closed market apart from real problems', () => {
+    const text = formatSummary([reserve('FWDI', CLOSED_STALE, 27_000_000)], MIN, 'https://oraclecanary.com');
+
+    assert.match(text, /all clear/);
+    assert.match(text, /Market closed: 1 tokenized stock paused \(\$27\.0M\)\./);
+  });
+
+  it('lists critical reserves, largest first', () => {
+    const text = formatSummary(
+      [reserve('JTO', ['STALE:critical'], 50_000), reserve('<b>X', ['NO_ORACLE:critical'], 900_000), reserve('SOL', [], 1_000_000)],
+      MIN,
+      'https://oraclecanary.com',
+    );
+
+    assert.match(text, /🔴 Daily check: 2 critical/);
+    assert.ok(text.indexOf('&lt;b&gt;X (Kamino): NO_ORACLE, $900.0K') < text.indexOf('JTO (Kamino): STALE, $50.0K'));
+  });
+});
+
+describe('summaryDue', () => {
+  it('is due once per UTC day, from the chosen hour', () => {
+    assert.equal(summaryDue(new Date('2026-09-29T13:59:00Z'), 14, '2026-09-28'), null);
+    assert.equal(summaryDue(new Date('2026-09-29T14:00:00Z'), 14, '2026-09-28'), '2026-09-29');
+    assert.equal(summaryDue(new Date('2026-09-29T20:00:00Z'), 14, '2026-09-29'), null);
+    assert.equal(summaryDue(new Date('2026-09-29T15:00:00Z'), 14, null), '2026-09-29');
   });
 });

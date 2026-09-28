@@ -63,7 +63,10 @@ when the API is down or the data stops refreshing.
 
 The `alerts` service posts to a Telegram channel when a reserve with at least `ALERT_MIN_SUPPLY_USD`
 supplied gets a critical check, gets a new one, or recovers. A tokenized stock that goes stale
-because its market closed is not alerted, but one still frozen after the market opens is.
+because its market closed is not alerted, but one still frozen after the market opens is. Once a
+day, at `SUMMARY_HOUR_UTC` (14:00 UTC by default, just after the US market opens; `off` disables
+it), it also posts a short summary: reserves watched, total supplied and any critical ones, so a
+quiet channel still shows the monitor is running.
 
 1. Create a bot with @BotFather and a public channel; add the bot to the channel as an
    administrator allowed to post.

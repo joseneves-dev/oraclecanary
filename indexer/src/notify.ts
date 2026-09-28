@@ -4,10 +4,11 @@ import { dirname } from 'node:path';
 
 import pg from 'pg';
 
-import { alertFor, formatAlert, type HealthEvent } from './alerts.js';
+import { alertFor, formatAlert, formatSummary, summaryDue, type HealthEvent, type ReserveStatus } from './alerts.js';
 
 /**
- * Posts alerts to a Telegram channel for new health events. Keeps the last event handled and the
+ * Posts alerts to a Telegram channel for new health events, and a daily summary so the channel shows
+ * it is still watching on quiet days. Keeps the last event handled and the
  * reserves with an open alert in STATE_FILE, so a restart neither repeats alerts nor skips events
  * recorded while it was down, and every alert opened is eventually closed.
  */
@@ -18,6 +19,9 @@ const SITE_URL = (process.env.SITE_URL ?? 'https://oraclecanary.com').replace(/\
 const MIN_SUPPLY_USD = Number(process.env.ALERT_MIN_SUPPLY_USD ?? 10_000);
 const POLL_SECONDS = Number(process.env.CHECK_INTERVAL_SECONDS ?? 60);
 const STATE_FILE = process.env.ALERT_STATE_FILE ?? '/data/alerts-cursor';
+// UTC hour of the daily summary; 14 is just after the US stock market opens, so stocks paused
+// overnight have resumed. "off" disables it.
+const SUMMARY_HOUR = process.env.SUMMARY_HOUR_UTC === 'off' ? null : Number(process.env.SUMMARY_HOUR_UTC ?? 14);
 // Written after every poll that reached Telegram or had nothing to send; the container health check
 // (src/healthcheck.ts) reports "unhealthy" when it gets old, e.g. while Telegram keeps failing.
 const HEARTBEAT_FILE = process.env.HEARTBEAT_FILE ?? '/data/alerts.heartbeat';
@@ -45,16 +49,22 @@ interface State {
   cursor: string;
   /** Reserves with an alert that has not been closed by a "Recovered" yet. */
   open: Set<string>;
+  /** UTC date (YYYY-MM-DD) of the last daily summary sent. */
+  lastSummary: string | null;
 }
 
 async function readState(): Promise<State | null> {
   try {
     const text = (await readFile(STATE_FILE, 'utf8')).trim();
     // The first version stored only the cursor.
-    if (/^\d+$/.test(text)) return { cursor: text, open: new Set() };
-    const saved = JSON.parse(text) as { cursor?: unknown; open?: unknown };
+    if (/^\d+$/.test(text)) return { cursor: text, open: new Set(), lastSummary: null };
+    const saved = JSON.parse(text) as { cursor?: unknown; open?: unknown; lastSummary?: unknown };
     if (typeof saved.cursor !== 'string' || !/^\d+$/.test(saved.cursor)) return null;
-    return { cursor: saved.cursor, open: new Set(Array.isArray(saved.open) ? saved.open.filter((a): a is string => typeof a === 'string') : []) };
+    return {
+      cursor: saved.cursor,
+      open: new Set(Array.isArray(saved.open) ? saved.open.filter((a): a is string => typeof a === 'string') : []),
+      lastSummary: typeof saved.lastSummary === 'string' ? saved.lastSummary : null,
+    };
   } catch {
     return null;
   }
@@ -63,7 +73,7 @@ async function readState(): Promise<State | null> {
 async function writeState(state: State): Promise<void> {
   await mkdir(dirname(STATE_FILE), { recursive: true });
   // Written aside and renamed, so a crash mid-write cannot leave a half-written file.
-  await writeFile(`${STATE_FILE}.tmp`, JSON.stringify({ cursor: state.cursor, open: [...state.open] }));
+  await writeFile(`${STATE_FILE}.tmp`, JSON.stringify({ cursor: state.cursor, open: [...state.open], lastSummary: state.lastSummary }));
   await rename(`${STATE_FILE}.tmp`, STATE_FILE);
 }
 
@@ -83,6 +93,21 @@ async function eventsAfter(id: string): Promise<HealthEvent[]> {
     marketName: r.market_name,
     previousChecks: strings(r.previous_checks),
     checks: strings(r.checks),
+    totalSupplyUsd: Number(r.total_supply_usd),
+  }));
+}
+
+/** Active reserves in listed markets, with their current checks as "CODE:severity". */
+async function listedReserves(): Promise<ReserveStatus[]> {
+  const { rows } = await pool.query(
+    `SELECT address, protocol, asset, checks, total_supply_usd
+       FROM lending_reserve WHERE market_name IS NOT NULL AND status = 'active'`,
+  );
+  return rows.map((r) => ({
+    address: r.address,
+    protocol: r.protocol,
+    asset: r.asset,
+    checks: (Array.isArray(r.checks) ? r.checks : []).map((c: { code: string; severity: string }) => `${c.code}:${c.severity}`),
     totalSupplyUsd: Number(r.total_supply_usd),
   }));
 }
@@ -124,7 +149,7 @@ let state = await readState();
 if (!state) {
   // First start: alert from now on rather than replaying the whole history.
   const { rows } = await pool.query('SELECT COALESCE(MAX(id), 0) AS id FROM reserve_health_event');
-  state = { cursor: String(rows[0].id), open: new Set() };
+  state = { cursor: String(rows[0].id), open: new Set(), lastSummary: null };
   await writeState(state);
 }
 console.log(`Sending alerts to ${CHAT_ID} for events after #${state.cursor} (reserves with at least $${MIN_SUPPLY_USD} supplied).`);
@@ -152,6 +177,23 @@ for (;;) {
       // Moved past only once handled, so a failed send is retried on the next poll.
       state.cursor = event.id;
       await writeState(state);
+    }
+    const due = SUMMARY_HOUR === null ? null : summaryDue(new Date(), SUMMARY_HOUR, state.lastSummary);
+    if (due) {
+      const reserves = await listedReserves();
+      // An empty table means the indexer has not run yet: nothing true to say.
+      if (reserves.length) {
+        try {
+          await send(formatSummary(reserves, MIN_SUPPLY_USD, SITE_URL));
+          console.log(`Sent the daily summary for ${due}`);
+        } catch (e) {
+          if (!(e instanceof RejectedMessage)) throw e;
+          rejected = true;
+          console.error(`Alerts: skipped the daily summary: ${e.message}`);
+        }
+        state.lastSummary = due;
+        await writeState(state);
+      }
     }
     if (!rejected) await heartbeat();
   } catch (e) {

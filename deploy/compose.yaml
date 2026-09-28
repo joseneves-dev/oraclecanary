@@ -75,6 +75,8 @@ services:
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-@OracleCanaryAlerts}
       SITE_URL: ${SITE_URL:-https://oraclecanary.com}
       ALERT_MIN_SUPPLY_USD: ${ALERT_MIN_SUPPLY_USD:-10000}
+      # Daily "still watching" summary at this UTC hour (just after the US market opens); "off" disables it.
+      SUMMARY_HOUR_UTC: ${SUMMARY_HOUR_UTC:-14}
       # Polls every CHECK_INTERVAL_SECONDS; the health check reads the same value and HEARTBEAT_FILE.
       CHECK_INTERVAL_SECONDS: 60
       HEARTBEAT_FILE: /data/alerts.heartbeat

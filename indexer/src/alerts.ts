@@ -112,3 +112,59 @@ export function formatAlert({ kind, event, codes }: Alert, siteUrl: string): str
     `${siteUrl}/reserves/${event.address}`,
   ].join('\n');
 }
+
+/** A listed reserve as the daily summary sees it. */
+export interface ReserveStatus {
+  address: string;
+  protocol: string;
+  asset: string;
+  /** Checks failing now, as "CODE:severity". */
+  checks: string[];
+  totalSupplyUsd: number;
+}
+
+/**
+ * The daily "still watching" message: what is monitored, what is critical now and which stocks are
+ * paused because their market is closed. Critical reserves under `minSupplyUsd` are left out, as
+ * they are from alerts, so a long-dead empty vault does not make every day look bad.
+ */
+export function formatSummary(reserves: ReserveStatus[], minSupplyUsd: number, siteUrl: string): string {
+  const total = reserves.reduce((sum, r) => sum + r.totalSupplyUsd, 0);
+  const protocols = [...new Set(reserves.map((r) => PROTOCOL_NAMES[r.protocol] ?? r.protocol))].sort();
+  const critical = reserves
+    .filter((r) => r.totalSupplyUsd >= minSupplyUsd && problemCodes(r.checks).length)
+    .sort((a, b) => b.totalSupplyUsd - a.totalSupplyUsd);
+  const paused = reserves.filter(
+    (r) => r.totalSupplyUsd >= minSupplyUsd && isMarketClosed(r.checks) && r.checks.includes('STALE:critical'),
+  );
+
+  const lines = [
+    critical.length ? `<b>🔴 Daily check: ${critical.length} critical</b>` : '<b>🟢 Daily check: all clear</b>',
+    `${reserves.length} listed reserves · ${usd(total)} supplied · ${protocols.join(', ')}`,
+    '',
+  ];
+  if (critical.length) {
+    for (const r of critical.slice(0, 5)) {
+      const codes = problemCodes(r.checks).join(', ');
+      lines.push(`• ${escapeHtml(r.asset || r.address)} (${PROTOCOL_NAMES[r.protocol] ?? r.protocol}): ${codes}, ${usd(r.totalSupplyUsd)}`);
+    }
+    if (critical.length > 5) lines.push(`• and ${critical.length - 5} more`);
+  } else {
+    lines.push(`No reserve above ${usd(minSupplyUsd)} has a critical oracle problem.`);
+  }
+  if (paused.length) {
+    const pausedUsd = paused.reduce((sum, r) => sum + r.totalSupplyUsd, 0);
+    lines.push(`Market closed: ${paused.length} tokenized stock${paused.length > 1 ? 's' : ''} paused (${usd(pausedUsd)}).`);
+  }
+  lines.push('', siteUrl);
+  return lines.join('\n');
+}
+
+/**
+ * Whether the daily summary is due: once per UTC day, from `hourUtc` on. `lastSent` is the UTC date
+ * (YYYY-MM-DD) of the last one sent.
+ */
+export function summaryDue(now: Date, hourUtc: number, lastSent: string | null): string | null {
+  const today = now.toISOString().slice(0, 10);
+  return now.getUTCHours() >= hourUtc && lastSent !== today ? today : null;
+}
