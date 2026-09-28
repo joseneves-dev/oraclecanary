@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { fetchAllReserves, fetchIncidents, type Reserve, type ReserveIncident } from '@/api/client'
 import IncidentLog from '@/components/IncidentLog.vue'
@@ -39,7 +39,8 @@ const LOG_FILTERS = [
   { label: 'Ongoing', resolved: false },
   { label: 'Resolved', resolved: true },
 ] as const
-const logFilter = ref<(typeof LOG_FILTERS)[number]>(LOG_FILTERS[0])
+// shallowRef keeps the filter object itself, so the `===` that marks the pressed button holds.
+const logFilter = shallowRef<(typeof LOG_FILTERS)[number]>(LOG_FILTERS[0])
 const incidents = ref<ReserveIncident[]>([])
 const logError = ref<string | null>(null)
 
