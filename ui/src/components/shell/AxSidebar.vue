@@ -44,6 +44,7 @@ const activeId = computed(() => resolveActive(slug.value).activeId)
           <span class="ax-nav__bar" aria-hidden="true"></span>
           <AxIcon class="ax-nav__icon" :name="leaf.icon || 'layout-grid'" />
           <span class="ax-nav__label">{{ leaf.title }}</span>
+          <span v-if="leaf.badge?.value" class="ax-nav__badge" :class="`ax-nav__badge--${leaf.badge.type}`">{{ leaf.badge.value }}</span>
         </component>
       </template>
     </nav>

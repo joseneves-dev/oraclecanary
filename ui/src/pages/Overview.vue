@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { fetchAllReserves, fetchIncidents, fetchReserves, type Reserve, type ReserveIncident, type Severity } from '@/api/client'
-import KpiCard from '@/components/KpiCard.vue'
+import PositionLegend from '@/components/PositionLegend.vue'
 import ReserveTable from '@/components/ReserveTable.vue'
+import WalletLookup from '@/components/WalletLookup.vue'
 import { time, usd } from '@/lib/format'
 
+const router = useRouter()
 const ATTENTION_ROWS = 10
 const TELEGRAM_URL = 'https://t.me/OracleCanaryAlerts'
 
@@ -59,7 +61,8 @@ const switchboardUnlisted = computed(() => switchboard.value?.filter((r) => !r.m
 const totalSupply = computed(() => reserves.value.reduce((sum, r) => sum + r.totalSupplyUsd, 0))
 const critical = computed(() => reserves.value.filter((r) => r.severity === 'critical'))
 const warnings = computed(() => reserves.value.filter((r) => r.severity === 'warning'))
-const supplyAtRisk = computed(() => critical.value.reduce((sum, r) => sum + r.totalSupplyUsd, 0))
+/** The colour of the live status dot: the worst health among listed reserves. */
+const statusTone = computed(() => (critical.value.length ? 'danger' : warnings.value.length ? 'warning' : 'success'))
 
 const SEVERITY_RANK: Record<Severity, number> = { ok: 0, info: 1, warning: 2, critical: 3 }
 
@@ -98,67 +101,70 @@ const lastChecked = computed(() => {
 </script>
 
 <template>
-  <section class="hero" aria-labelledby="hero-title">
-    <h1 id="hero-title" class="hero__title">When a lending oracle fails, withdrawals and liquidations silently stop.</h1>
-    <p class="hero__lead">
-      OracleCanary watches the oracle behind every reserve of Kamino, marginfi and Jupiter Lend's listed markets<template
-        v-if="!loading && reserves.length"
-        >: {{ reserves.length }} reserves holding {{ usd(totalSupply) }}</template
-      >. It alerts on Telegram when one breaks, and its on-chain guard (live on devnet) lets programs refuse to act on a broken price.
-      <template v-if="lastChecked"> Last checked at {{ lastChecked }}.</template>
-    </p>
-    <div class="hero__actions">
-      <a class="ax-btn ax-btn--primary ax-btn--sm" :href="TELEGRAM_URL" target="_blank" rel="noopener">Get alerts on Telegram</a>
-      <RouterLink class="ax-btn ax-btn--secondary ax-btn--sm" :to="{ name: 'positions' }">Check my positions</RouterLink>
-      <RouterLink class="ax-btn ax-btn--secondary ax-btn--sm" :to="{ name: 'incidents' }">See incidents</RouterLink>
-      <a class="ax-btn ax-btn--secondary ax-btn--sm" href="/api/docs" target="_blank" rel="noopener">Public API</a>
-    </div>
-
-    <div class="stories">
-      <RouterLink v-if="switchboard && switchboard.length" class="story ax-card" :to="{ name: 'switchboard' }">
-        <span class="story__kicker">Switchboard shut down on 25 Sep</span>
-        <span class="story__text">
-          <template v-if="!switchboardListed.length">No listed market depends on it any more.</template>
-          <template v-else>{{ switchboardListed.length }} listed reserves still depend on it.</template>
-          <!-- The compiler drops whitespace between templates, so the space between sentences is explicit. -->
-          <template v-if="switchboardUnlisted.length">
-            {{ ' ' }}{{ switchboardUnlisted.length }} reserves in unlisted markets still do, and their price can no longer be produced.
+  <!-- One wrapper: the layout pads each top-level block, which would stretch a bare card edge to edge. -->
+  <div class="intro">
+  <section class="ax-card ax-welcome hero" aria-labelledby="hero-title">
+    <div class="ax-welcome__body">
+      <div class="ax-welcome__text hero__text">
+        <span class="ax-welcome__eyebrow">Independent oracle monitor for Solana lending</span>
+        <h1 id="hero-title" class="hero__title">When a lending oracle fails, withdrawals and liquidations silently stop.</h1>
+        <p class="hero__lead">
+          Is your money exposed? OracleCanary checks the price behind every listed reserve of Kamino, marginfi and Jupiter Lend<template
+            v-if="!loading && reserves.length"
+            >: {{ reserves.length }} reserves holding {{ usd(totalSupply) }}</template
+          >.
+        </p>
+        <WalletLookup large @lookup="(address) => router.push({ name: 'positions', query: { address } })" />
+        <p v-if="!error" class="status" :aria-busy="loading">
+          <span class="status__dot" :class="`status__dot--${statusTone}`" aria-hidden="true"></span>
+          <template v-if="loading">Checking the latest prices…</template>
+          <template v-else>
+            {{ critical.length }} critical · {{ warnings.length }} warnings<template v-if="lastChecked"> · checked at {{ lastChecked }}</template>
           </template>
-        </span>
-        <span class="story__more">Switchboard exposure →</span>
-      </RouterLink>
-      <RouterLink
-        v-if="largestFreeze"
-        class="story ax-card"
-        :to="{ name: 'reserve', params: { address: largestFreeze.incident.reserve } }"
-      >
-        <span class="story__kicker">Frozen by market hours</span>
-        <span class="story__text">
-          A {{ usd(largestFreeze.incident.totalSupplyUsd) }} tokenized-stock reserve ({{ largestFreeze.incident.asset }}) had no fresh price for
-          {{ largestFreeze.label }} while the US market was closed. Its only oracle follows market hours, so the protocol rejects the price,
-          and loans against it cannot be liquidated, every night and weekend.
-        </span>
-        <span class="story__more">{{ largestFreeze.incident.asset }} →</span>
-      </RouterLink>
-      <RouterLink v-if="!loading && noFallbackSupply" class="story ax-card" :to="{ name: 'reserves', query: { issue: 'NO_FALLBACK' } }">
-        <span class="story__kicker">No fallback oracle</span>
-        <span class="story__text">
-          {{ usd(noFallbackSupply) }}, {{ Math.round((noFallbackSupply / totalSupply) * 100) }}% of listed supply, is priced through a feed
-          with no fallback oracle: if that feed stops, the price stops.
-        </span>
-        <span class="story__more">All reserves →</span>
-      </RouterLink>
+          <span class="status__links">
+            <a :href="TELEGRAM_URL" target="_blank" rel="noopener">Get alerts on Telegram</a>
+            <RouterLink :to="{ name: 'incidents' }">Incidents</RouterLink>
+            <RouterLink :to="{ name: 'how-it-works' }">How it works</RouterLink>
+            <a href="/api/docs" target="_blank" rel="noopener">Public API</a>
+          </span>
+        </p>
+      </div>
+      <PositionLegend />
     </div>
   </section>
+
+  <div class="stories">
+    <RouterLink v-if="switchboard && switchboard.length" class="story ax-card" :to="{ name: 'switchboard' }">
+      <span class="story__kicker">Switchboard shut down on 25 Sep</span>
+      <span class="story__text">
+        <template v-if="switchboardListed.length">{{ switchboardListed.length }} listed reserves still depend on it.</template>
+        <template v-else-if="switchboardUnlisted.length">No listed market depends on it; {{ switchboardUnlisted.length }} unlisted reserves still do.</template>
+        <template v-else>No market depends on it any more.</template>
+      </span>
+      <span class="story__more">Switchboard exposure →</span>
+    </RouterLink>
+    <RouterLink v-if="largestFreeze" class="story ax-card" :to="{ name: 'reserve', params: { address: largestFreeze.incident.reserve } }">
+      <span class="story__kicker">Frozen by market hours</span>
+      <span class="story__text">
+        {{ largestFreeze.incident.asset }} ({{ usd(largestFreeze.incident.totalSupplyUsd) }}) had no usable price for {{ largestFreeze.label }}
+        while the US market was closed, so loans against it could not be liquidated.
+      </span>
+      <span class="story__more">{{ largestFreeze.incident.asset }} →</span>
+    </RouterLink>
+    <RouterLink v-if="!loading && noFallbackSupply" class="story ax-card" :to="{ name: 'reserves', query: { issue: 'NO_FALLBACK' } }">
+      <span class="story__kicker">No fallback oracle</span>
+      <span class="story__text">
+        {{ usd(noFallbackSupply) }} ({{ Math.round((noFallbackSupply / totalSupply) * 100) }}% of listed supply) is priced by a single feed: if it
+        stops, the price stops.
+      </span>
+      <span class="story__more">All reserves →</span>
+    </RouterLink>
+  </div>
+  </div>
 
   <div v-if="error" class="ax-alert ax-alert--danger" role="alert">{{ error }}</div>
 
   <div v-else class="ax-dash-grid" :aria-busy="loading">
-    <KpiCard label="Reserves monitored" :value="loading ? '…' : String(reserves.length)" icon="table" tone="c1" hint="Kamino, Jupiter Lend and marginfi" />
-    <KpiCard label="Supply watched" :value="loading ? '…' : usd(totalSupply)" icon="layout-dashboard" tone="c2" />
-    <KpiCard label="Critical" :value="loading ? '…' : String(critical.length)" icon="alert-triangle" tone="c3" :hint="loading ? undefined : `${usd(supplyAtRisk)} supplied`" />
-    <KpiCard label="Warnings" :value="loading ? '…' : String(warnings.length)" icon="bell" tone="c4" hint="Mostly single-source prices" />
-
     <section class="ax-card ax-col--8" aria-label="Reserves that need attention">
       <div class="ax-card__header">
         <div class="ax-card__titles">
@@ -198,9 +204,10 @@ const lastChecked = computed(() => {
 
 <style scoped>
 .hero {
-  display: grid;
-  gap: var(--ax-space-4);
-  margin-bottom: var(--ax-space-6);
+  margin-bottom: var(--ax-space-5);
+}
+.hero__text {
+  gap: var(--ax-space-3);
 }
 .hero__title {
   font-family: var(--ax-font-display);
@@ -213,16 +220,51 @@ const lastChecked = computed(() => {
   color: var(--ax-text-muted);
   max-width: 72ch;
 }
-.hero__actions {
+.status {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--ax-space-2);
+  padding-block-start: var(--ax-space-2);
+  font-size: var(--ax-text-sm);
+  color: var(--ax-text-muted);
+}
+.status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.status__dot--danger {
+  background: var(--ax-danger-500);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ax-danger-500) 20%, transparent);
+}
+.status__dot--warning {
+  background: var(--ax-warning-500);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ax-warning-500) 20%, transparent);
+}
+.status__dot--success {
+  background: var(--ax-success-500);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ax-success-500) 20%, transparent);
+}
+.status__links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--ax-space-3);
+  margin-inline-start: var(--ax-space-2);
+}
+.status__links a {
+  color: var(--ax-link);
+  font-weight: 600;
 }
 .stories {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--ax-space-4);
-  margin-top: var(--ax-space-2);
+}
+/* The grid below brings its own top padding. */
+.intro {
+  padding-block-end: 0 !important;
 }
 .story {
   display: grid;

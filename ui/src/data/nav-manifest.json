@@ -27,13 +27,38 @@
       "alias": null
     },
     {
+      "id": "positions",
+      "title": "My positions",
+      "slug": "positions",
+      "icon": "wallet",
+      "parent": null,
+      "section": "MONITOR",
+      "order": 2,
+      "badge": {
+        "type": "new",
+        "value": "New"
+      },
+      "keywords": [
+        "wallet",
+        "positions",
+        "my",
+        "exposure",
+        "connect",
+        "phantom",
+        "deposits",
+        "loans"
+      ],
+      "inMenu": true,
+      "alias": null
+    },
+    {
       "id": "incidents",
       "title": "Incidents",
       "slug": "incidents",
       "icon": "alert-triangle",
       "parent": null,
       "section": "MONITOR",
-      "order": 2,
+      "order": 3,
       "badge": null,
       "keywords": [
         "alerts",
@@ -55,7 +80,7 @@
       "icon": "table",
       "parent": null,
       "section": "MONITOR",
-      "order": 3,
+      "order": 4,
       "badge": null,
       "keywords": [
         "markets",
@@ -76,7 +101,7 @@
       "icon": "users-group",
       "parent": null,
       "section": "MONITOR",
-      "order": 3.5,
+      "order": 5,
       "badge": null,
       "keywords": [
         "vaults",
@@ -91,36 +116,17 @@
       "alias": null
     },
     {
-      "id": "positions",
-      "title": "My positions",
-      "slug": "positions",
-      "icon": "wallet",
-      "parent": null,
-      "section": "MONITOR",
-      "order": 3.7,
-      "badge": null,
-      "keywords": [
-        "wallet",
-        "positions",
-        "my",
-        "exposure",
-        "connect",
-        "phantom",
-        "deposits",
-        "loans"
-      ],
-      "inMenu": true,
-      "alias": null
-    },
-    {
       "id": "switchboard",
       "title": "Switchboard exposure",
       "slug": "switchboard",
       "icon": "life-buoy",
       "parent": null,
       "section": "MONITOR",
-      "order": 4,
-      "badge": null,
+      "order": 6,
+      "badge": {
+        "type": "hot",
+        "value": "Shut down"
+      },
       "keywords": [
         "switchboard",
         "shutdown",
@@ -128,7 +134,7 @@
         "migration",
         "oracle"
       ],
-      "inMenu": false,
+      "inMenu": true,
       "alias": null
     },
     {
@@ -138,7 +144,7 @@
       "icon": "brand-telegram",
       "parent": null,
       "section": "MONITOR",
-      "order": 5,
+      "order": 7,
       "badge": null,
       "keywords": [
         "telegram",
@@ -149,6 +155,26 @@
       "inMenu": true,
       "alias": null,
       "external": true
+    },
+    {
+      "id": "how-it-works",
+      "title": "How it works",
+      "slug": "how-it-works",
+      "icon": "info-circle",
+      "parent": null,
+      "section": "DEVELOPERS",
+      "order": 5.5,
+      "badge": null,
+      "keywords": [
+        "methodology",
+        "score",
+        "checks",
+        "guard",
+        "how",
+        "about"
+      ],
+      "inMenu": true,
+      "alias": null
     },
     {
       "id": "api-docs",

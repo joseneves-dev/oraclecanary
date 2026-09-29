@@ -13,6 +13,7 @@ export const router = createRouter({
         { path: 'reserves', name: 'reserves', component: () => import('@/pages/Reserves.vue'), meta: { slug: 'reserves' } },
         { path: 'switchboard', name: 'switchboard', component: () => import('@/pages/Switchboard.vue'), meta: { slug: 'switchboard' } },
         { path: 'positions', name: 'positions', component: () => import('@/pages/Positions.vue'), meta: { slug: 'positions' } },
+        { path: 'how-it-works', name: 'how-it-works', component: () => import('@/pages/HowItWorks.vue'), meta: { slug: 'how-it-works' } },
         { path: 'vaults', name: 'vaults', component: () => import('@/pages/Vaults.vue'), meta: { slug: 'vaults' } },
         {
           path: 'vaults/:address',
