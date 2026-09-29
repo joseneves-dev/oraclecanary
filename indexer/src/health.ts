@@ -19,6 +19,7 @@ export interface Check {
     | 'FIXED_PRICE'
     | 'UNREADABLE_ORACLE'
     | 'MARKET_CLOSED'
+    | 'WINDING_DOWN'
     | 'PRICE_DEVIATION'
     | 'WIDE_CONFIDENCE';
   severity: Severity;
@@ -51,7 +52,7 @@ const NEAR_STALE_RATIO = 0.8;
 const DIVERGENCE_WARNING_RATIO = 0.5;
 
 /** Checks that explain another check rather than report a problem of their own. */
-const NO_PENALTY = new Set<Check['code']>(['MARKET_CLOSED']);
+const NO_PENALTY = new Set<Check['code']>(['MARKET_CLOSED', 'WINDING_DOWN']);
 
 function score(checks: Check[]): number {
   return Math.max(0, 100 - checks.reduce((sum, c) => sum + (NO_PENALTY.has(c.code) ? 0 : PENALTY[c.severity]), 0));
@@ -371,7 +372,14 @@ export function evaluate(reserve: MarketOracleConfig, oracles: OracleData, now: 
         : evaluateKamino(reserve, oracles.scope, now);
   const closed = marketClosedCheck(reserve, result, now);
   const deviation = priceDeviationCheck(reserve, oracles, result);
-  const extra = [closed, deviation].filter((c): c is Check => !!c);
+  const windingDown: Check | null = reserve.windingDown
+    ? {
+        code: 'WINDING_DOWN',
+        severity: 'info',
+        message: 'Being wound down: no new deposits or borrows, and deposits count for no collateral, so its price backs no borrowing.',
+      }
+    : null;
+  const extra = [closed, deviation, windingDown].filter((c): c is Check => !!c);
   if (!extra.length) return result;
   const checks = [...result.checks, ...extra];
   return { ...result, checks, score: score(checks) };
@@ -461,6 +469,10 @@ function priceDeviationCheck(reserve: MarketOracleConfig, oracles: OracleData, r
   const fixed = result.checks.some((c) => c.code === 'FIXED_PRICE');
   const what = `${fixed ? 'The fixed price' : 'The oracle price'} ${usdPrice(price)} is ${gapText(price, quote.usdPrice)} market price`;
   const where = `${usdPrice(quote.usdPrice)} on Jupiter${liquid ? '' : ', a thin market'}`;
+  // Deposits that count for no collateral cannot be borrowed against, whatever their price says.
+  if (reserve.windingDown) {
+    return { code: 'PRICE_DEVIATION', severity: 'info', message: `${what} (${where}), but the bank is being wound down and counts it for no collateral: only the displayed value is off.` };
+  }
   if (gap > 0) {
     return { code: 'PRICE_DEVIATION', severity: gap >= DEVIATION_CRITICAL ? 'critical' : 'warning', message: `${what} (${where}): collateral is overvalued.` };
   }

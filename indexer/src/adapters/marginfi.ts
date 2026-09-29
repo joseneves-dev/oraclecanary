@@ -76,6 +76,9 @@ function toMarketOracleConfig(address: string, data: Buffer, tickers: Map<string
   const assets = (fromI80F48(bank.asset_share_value) * fromI80F48(bank.total_asset_shares)) / 10 ** bank.mint_decimals;
   const price = setup.startsWith('Fixed') ? fromI80F48(config.fixed_price) : fromI80F48(bank.cache.last_oracle_price);
   const maxAge: number = config.oracle_max_age;
+  const state = variant(config.operational_state);
+  // Weight 0 at opening and at liquidation: deposits give no borrowing power at all.
+  const noCollateral = fromI80F48(config.asset_weight_init) === 0 && fromI80F48(config.asset_weight_maint) === 0;
 
   return {
     protocol: 'marginfi',
@@ -84,7 +87,7 @@ function toMarketOracleConfig(address: string, data: Buffer, tickers: Map<string
     reserve: address,
     asset: tickers.get(address) ?? '',
     mint: bank.mint.toBase58(),
-    status: LIVE_STATES.has(variant(config.operational_state)) ? 'active' : 'obsolete',
+    status: LIVE_STATES.has(state) ? 'active' : 'obsolete',
     maxAgePriceSeconds: maxAge === 0 ? DEFAULT_MAX_AGE_SECONDS : maxAge,
     feeds: {
       // Every other setup prices from a Pyth account (possibly times an exchange rate); the
@@ -101,6 +104,7 @@ function toMarketOracleConfig(address: string, data: Buffer, tickers: Map<string
     supplyTokens: assets,
     // Only `Fixed` is the price itself; FixedKamino, FixedDrift... multiply it by an exchange rate.
     ...(setup === 'Fixed' ? { fixedPrice: price } : {}),
+    ...(state === 'ReduceOnly' && noCollateral ? { windingDown: true } : {}),
   };
 }
 

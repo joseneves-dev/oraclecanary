@@ -164,6 +164,21 @@ describe('evaluate', () => {
       assert.match(check!.message, /probably a deliberate haircut/);
     });
 
+    it('does not alarm about the price of a bank being wound down, which backs no borrowing', () => {
+      // marginfi's WEN bank: fixed far above the market, but reduce-only with no collateral weight.
+      const result = evaluate(
+        reserve({ windingDown: true }),
+        { scope: feed(entry(3, 'FixedPrice', { price: 0.0001 })), market: market(0.0000073, 500_000) },
+        NOW,
+      );
+      const check = result.checks.find((c) => c.code === 'PRICE_DEVIATION');
+
+      assert.equal(check?.severity, 'info');
+      assert.match(check!.message, /14× the market price .*wound down and counts it for no collateral/);
+      assert.ok(codes(result).includes('WINDING_DOWN:info'));
+      assert.equal(result.score, 100 - 5 - 5); // the fixed price and the deviation; winding down itself costs nothing
+    });
+
     it('is not computed while switched off', () => {
       setPriceDeviationCheck(false);
       try {

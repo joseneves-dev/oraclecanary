@@ -24,6 +24,7 @@ const ISSUES: Record<string, string> = {
   NO_FALLBACK: 'No fallback oracle',
   MARKET_CLOSED: 'Market hours',
   FIXED_PRICE: 'Fixed price',
+  WINDING_DOWN: 'Winding down',
 }
 
 /** Price sources, as the API's `provider` filter takes them (the names in each reserve's `providers`). */

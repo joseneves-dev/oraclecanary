@@ -49,6 +49,11 @@ export interface MarketOracleConfig {
   supplyTokens?: number;
   /** marginfi only: the price a Fixed oracle setup uses. */
   fixedPrice?: number;
+  /**
+   * marginfi only: the bank accepts no new deposits or borrows (ReduceOnly) and counts deposits as no
+   * collateral (both asset weights 0), so its price backs no borrowing: a bank being wound down.
+   */
+  windingDown?: boolean;
   /** Kamino only: collateral tokens (cTokens) in circulation, in raw units. */
   ctokenSupply?: number;
 }

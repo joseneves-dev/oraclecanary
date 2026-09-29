@@ -24,6 +24,12 @@ const TAGS: { code: string; label: string; badge: string; fallbackTitle: string 
     badge: 'ax-badge--neutral',
     fallbackTitle: 'The price is a fixed value set by the protocol and does not follow the market.',
   },
+  {
+    code: 'WINDING_DOWN',
+    label: 'Winding down',
+    badge: 'ax-badge--neutral',
+    fallbackTitle: 'No new deposits or borrows, and deposits count for no collateral, so its price backs no borrowing.',
+  },
 ]
 
 const tags = computed(() =>
