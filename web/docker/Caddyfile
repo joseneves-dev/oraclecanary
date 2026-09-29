@@ -9,7 +9,20 @@
 {$SERVER_NAME::80} {
 	encode zstd br gzip
 
-	@symfony path /api /api/* /bundles/*
+	# Wallet positions are read from the chain by the indexer's positions service, not by Symfony.
+	handle /api/wallets/* {
+		reverse_proxy {$POSITIONS_UPSTREAM:positions:3001} {
+			# The service gives up on a lookup after 15 s; this only guards against it hanging.
+			transport http {
+				response_header_timeout 30s
+			}
+		}
+	}
+
+	@symfony {
+		path /api /api/* /bundles/*
+		not path /api/wallets/*
+	}
 	handle @symfony {
 		root * /app/public
 		php_server

@@ -12,6 +12,7 @@ export const router = createRouter({
         { path: 'incidents', name: 'incidents', component: () => import('@/pages/Incidents.vue'), meta: { slug: 'incidents' } },
         { path: 'reserves', name: 'reserves', component: () => import('@/pages/Reserves.vue'), meta: { slug: 'reserves' } },
         { path: 'switchboard', name: 'switchboard', component: () => import('@/pages/Switchboard.vue'), meta: { slug: 'switchboard' } },
+        { path: 'positions', name: 'positions', component: () => import('@/pages/Positions.vue'), meta: { slug: 'positions' } },
         { path: 'vaults', name: 'vaults', component: () => import('@/pages/Vaults.vue'), meta: { slug: 'vaults' } },
         {
           path: 'vaults/:address',

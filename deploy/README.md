@@ -48,7 +48,7 @@ To update the web app, replace the contents of `deploy/ui/`; no restart is neede
 | Task | Command |
 |---|---|
 | Status | `docker compose -f deploy/compose.yaml --env-file deploy/.env ps` |
-| Logs | `docker compose -f deploy/compose.yaml --env-file deploy/.env logs -f indexer` |
+| Logs | `docker compose -f deploy/compose.yaml --env-file deploy/.env logs -f indexer` (or `alerts`, `positions`, `api`) |
 | Health | `curl https://<domain>/api/health`: 200 when every protocol is fresh, 503 otherwise |
 | Restore a backup | `gunzip -c deploy/backups/<file>.sql.gz \| docker compose -f deploy/compose.yaml --env-file deploy/.env exec -T database psql -U oraclecanary oraclecanary` |
 
@@ -58,6 +58,18 @@ losing the server.
 
 Point an uptime monitor (UptimeRobot, Better Stack...) at `https://<domain>/api/health` to be alerted
 when the API is down or the data stops refreshing.
+
+## Wallet positions
+
+The `positions` service answers `GET /api/wallets/{address}/positions` for the "My positions" page:
+a wallet's Kamino and marginfi deposits and loans and its Kamino vault shares, read from the chain.
+The `api` service proxies that path to it (`POSITIONS_UPSTREAM`, default `positions:3001`); if it is
+down, only that page fails. It stores nothing.
+
+Each new wallet costs a few RPC calls, including two `getProgramAccounts`, on a public endpoint. It
+caches each wallet for a minute, runs at most 4 lookups at once, allows 10 new wallets a minute per
+visitor and 120 in total, and gives up on a lookup after 15 s. Set `POSITIONS_RPC_URL` to a separate
+key so these lookups can never use up the indexer's quota.
 
 ## Telegram alerts
 

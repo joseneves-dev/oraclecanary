@@ -91,6 +91,28 @@
       "alias": null
     },
     {
+      "id": "positions",
+      "title": "My positions",
+      "slug": "positions",
+      "icon": "wallet",
+      "parent": null,
+      "section": "MONITOR",
+      "order": 3.7,
+      "badge": null,
+      "keywords": [
+        "wallet",
+        "positions",
+        "my",
+        "exposure",
+        "connect",
+        "phantom",
+        "deposits",
+        "loans"
+      ],
+      "inMenu": true,
+      "alias": null
+    },
+    {
       "id": "switchboard",
       "title": "Switchboard exposure",
       "slug": "switchboard",

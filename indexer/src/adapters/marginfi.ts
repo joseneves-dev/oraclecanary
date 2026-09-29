@@ -48,6 +48,25 @@ function fromI80F48(wrapped: { value: number[] }): number {
 
 const variant = (enumValue: object) => Object.keys(enumValue)[0] ?? 'Unknown';
 
+/**
+ * Integration banks hold another protocol's receipt token (Kamino, Drift, Solend or Jupiter Lend);
+ * their oracle prices the underlying token, and `cache.price_multiplier` is the exchange rate.
+ */
+const INTEGRATION_SETUP = /^(Fixed)?(Kamino|Drift|Solend|Juplend)/;
+
+/**
+ * The price of one deposited token, as marginfi last used it: the fixed price or the cached oracle
+ * price, times the exchange rate for integration banks. Zero when the bank never cached a price.
+ */
+function bankPrice(
+  bank: { config: { fixed_price: { value: number[] } }; cache: { last_oracle_price: { value: number[] }; price_multiplier: { value: number[] } } },
+  setup: string,
+): number {
+  const base = setup.startsWith('Fixed') ? fromI80F48(bank.config.fixed_price) : fromI80F48(bank.cache.last_oracle_price);
+  const multiplier = fromI80F48(bank.cache.price_multiplier);
+  return INTEGRATION_SETUP.test(setup) && multiplier > 0 ? base * multiplier : base;
+}
+
 /** Tickers such as "SOL | Wrapped SOL" from BankMetadata accounts, keyed by bank address. */
 async function fetchTickers(connection: Connection): Promise<Map<string, string>> {
   const accounts = await connection.getProgramAccounts(PROGRAM, {
@@ -74,7 +93,7 @@ function toMarketOracleConfig(address: string, data: Buffer, tickers: Map<string
   const group: string = bank.group.toBase58();
 
   const assets = (fromI80F48(bank.asset_share_value) * fromI80F48(bank.total_asset_shares)) / 10 ** bank.mint_decimals;
-  const price = setup.startsWith('Fixed') ? fromI80F48(config.fixed_price) : fromI80F48(bank.cache.last_oracle_price);
+  const price = bankPrice(bank, setup);
   const maxAge: number = config.oracle_max_age;
   const state = variant(config.operational_state);
   // Weight 0 at opening and at liquidation: deposits give no borrowing power at all.
@@ -103,7 +122,7 @@ function toMarketOracleConfig(address: string, data: Buffer, tickers: Map<string
     totalSupplyUsd: assets * price,
     supplyTokens: assets,
     // Only `Fixed` is the price itself; FixedKamino, FixedDrift... multiply it by an exchange rate.
-    ...(setup === 'Fixed' ? { fixedPrice: price } : {}),
+    ...(setup === 'Fixed' ? { fixedPrice: fromI80F48(config.fixed_price) } : {}),
     ...(state === 'ReduceOnly' && noCollateral ? { windingDown: true } : {}),
   };
 }
@@ -124,4 +143,87 @@ export async function fetchMarginfiBanks(connection: Connection): Promise<Market
     }
   }
   return banks;
+}
+
+/** A wallet's deposit in or loan from one marginfi bank. */
+export interface MarginfiPosition {
+  /** The marginfi account holding it; a wallet can have several. */
+  account: string;
+  bank: string;
+  side: 'deposit' | 'borrow';
+  tokens: number;
+  /** At the bank's last stored price (or its fixed price). */
+  usd: number;
+}
+
+/** Offset of `authority` in a MarginfiAccount: after the discriminator and `group`. */
+const AUTHORITY_OFFSET = 8 + 32;
+
+/**
+ * The deposits and loans of every marginfi account a wallet owns, in any group. Read-only: shares
+ * are converted with each bank's share values, and priced at the price the bank last stored.
+ */
+export async function fetchMarginfiPositions(connection: Connection, wallet: PublicKey): Promise<MarginfiPosition[]> {
+  const accounts = await connection.getProgramAccounts(PROGRAM, {
+    filters: [
+      { memcmp: { offset: 0, bytes: discriminator('MarginfiAccount') } },
+      { memcmp: { offset: AUTHORITY_OFFSET, bytes: wallet.toBase58() } },
+    ],
+  });
+
+  const balances: { account: string; bank: string; assetShares: number; liabilityShares: number }[] = [];
+  for (const { pubkey, account } of accounts) {
+    // One account the decoder cannot read must not hide the wallet's other positions.
+    try {
+      const decoded = coder.decode('MarginfiAccount', Buffer.from(account.data));
+      for (const balance of decoded.lending_account.balances) {
+        if (!balance.active) continue;
+        balances.push({
+          account: pubkey.toBase58(),
+          bank: balance.bank_pk.toBase58(),
+          assetShares: fromI80F48(balance.asset_shares),
+          liabilityShares: fromI80F48(balance.liability_shares),
+        });
+      }
+    } catch (e) {
+      console.warn(`Skipping marginfi account ${pubkey.toBase58()}: ${(e as Error).message}`);
+    }
+  }
+  if (!balances.length) return [];
+
+  const bankKeys = [...new Set(balances.map((b) => b.bank))];
+  const bankInfos = await connection.getMultipleAccountsInfo(bankKeys.map((k) => new PublicKey(k)));
+  const banks = new Map<string, { assetValue: number; liabilityValue: number; decimals: number; price: number }>();
+  bankInfos.forEach((info, i) => {
+    if (!info) return;
+    try {
+      const bank = coder.decode('Bank', Buffer.from(info.data));
+      banks.set(bankKeys[i], {
+        assetValue: fromI80F48(bank.asset_share_value),
+        liabilityValue: fromI80F48(bank.liability_share_value),
+        decimals: bank.mint_decimals,
+        price: bankPrice(bank, variant(bank.config.oracle_setup)),
+      });
+    } catch (e) {
+      console.warn(`Skipping marginfi bank ${bankKeys[i]}: ${(e as Error).message}`);
+    }
+  });
+
+  const positions: MarginfiPosition[] = [];
+  for (const b of balances) {
+    const bank = banks.get(b.bank);
+    if (!bank) continue;
+    const scale = 10 ** bank.decimals;
+    const sides: [MarginfiPosition['side'], number][] = [
+      ['deposit', (b.assetShares * bank.assetValue) / scale],
+      ['borrow', (b.liabilityShares * bank.liabilityValue) / scale],
+    ];
+    for (const [side, tokens] of sides) {
+      // Rounding leaves dust shares behind on closed positions; judged in tokens, so a position whose
+      // bank never cached a price is still listed (at $0) rather than hidden.
+      if (tokens * 10 ** bank.decimals < 1) continue;
+      positions.push({ account: b.account, bank: b.bank, side, tokens, usd: tokens * bank.price });
+    }
+  }
+  return positions;
 }

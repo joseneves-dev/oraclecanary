@@ -44,6 +44,9 @@ GET /api/incidents?resolved=false        periods a reserve's price could not be 
 GET /api/reserves/{address}/attestation  the latest health, signed for the on-chain oracle_guard
 GET /api/vaults                          Kamino curator vaults: deposits, allocations, money at risk
 GET /api/reserves?check=STALE&provider=Chainlink   filter by failed check or oracle provider
+GET /api/reserves.csv?listed=true&itemsPerPage=2000 the same lists as CSV (also /api/incidents.csv)
+GET /api/wallets/{address}/positions      a wallet's Kamino and marginfi deposits and loans and Kamino
+                                         vault shares, read from the chain (join with /api/reserves)
 ```
 
 `listed=true` keeps markets listed in the protocol's own app (Kamino's listed markets, marginfi's main
@@ -72,6 +75,10 @@ symfony serve -d
 
 # 3. Indexer: `npm run check` runs once, `npm run dev` checks every CHECK_INTERVAL_SECONDS
 cd ../indexer && cp .env.example .env && npm install && npm run check
+
+# 4. Wallet positions for the "My positions" page, on :3001 (the web app's dev server proxies
+#    /api/wallets there; set POSITIONS_URL to point it elsewhere). Not part of /api/docs.
+npm run positions
 ```
 
 Tests: `cd web && php bin/phpunit` and `cd indexer && npm test`.

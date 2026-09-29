@@ -118,3 +118,29 @@ export async function fetchIncidents(query: IncidentQuery, signal?: AbortSignal)
   if (!data) throw new ApiError(`Could not load incidents (HTTP ${status})`)
   return data as ReserveIncident[]
 }
+
+/** One of a wallet's positions, as the positions service reads it from the chain. */
+export type WalletPosition =
+  | { protocol: 'kamino' | 'marginfi'; side: 'deposit' | 'borrow'; reserve: string; account: string; tokens: number; usd: number }
+  | { protocol: 'kamino-vault'; side: 'deposit'; vault: string; share: number }
+
+export interface WalletPositions {
+  wallet: string
+  positions: WalletPosition[]
+  /** Protocols whose positions are not read yet. */
+  notCovered: string[]
+  /** Sources that could not be read this time; the other positions are still listed. */
+  failed: string[]
+  checkedAt: string
+}
+
+/**
+ * A wallet's lending positions. Served by the indexer's positions service rather than the Symfony
+ * API, so it is not in the OpenAPI schema.
+ */
+export async function fetchWalletPositions(address: string, signal?: AbortSignal): Promise<WalletPositions> {
+  const response = await fetch(`/api/wallets/${encodeURIComponent(address)}/positions`, { signal, headers: { Accept: 'application/json' } })
+  const body = (await response.json().catch(() => null)) as (WalletPositions & { error?: string }) | null
+  if (!response.ok || !body) throw new ApiError(body?.error ?? `Could not load this wallet (HTTP ${response.status})`)
+  return body
+}

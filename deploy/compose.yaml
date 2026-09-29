@@ -1,5 +1,6 @@
 # Production stack: PostgreSQL, the Symfony API + web app (FrankenPHP/Caddy, HTTPS), the Solana
-# indexer and a daily database backup. Configure it with deploy/.env (see .env.example).
+# indexer, the Telegram alerts, the wallet positions service and a daily database backup.
+# Configure it with deploy/.env (see .env.example).
 name: oraclecanary
 
 services:
@@ -61,6 +62,25 @@ services:
       timeout: 10s
       retries: 1
       start_period: 180s
+
+  # Reads a wallet's lending positions from the chain for the "My positions" page
+  # (GET /api/wallets/{address}/positions, proxied by the api service). Read-only, stores nothing.
+  positions:
+    build: ../indexer
+    restart: unless-stopped
+    command: ["npm", "run", "positions"]
+    environment:
+      RPC_URL: ${RPC_URL:?Set RPC_URL in deploy/.env}
+      # Optional separate key, so public lookups cannot use up the indexer's RPC quota.
+      POSITIONS_RPC_URL: ${POSITIONS_RPC_URL:-}
+      POSITIONS_PORT: 3001
+    healthcheck:
+      # Any JSON answer means the server is up; the root path is a 404 by design.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/').then((r) => process.exit(r.status === 404 ? 0 : 1), () => process.exit(1))"]
+      interval: 60s
+      timeout: 10s
+      retries: 2
+      start_period: 60s
 
   # Posts alerts for new incidents to a Telegram channel; idle until TELEGRAM_BOT_TOKEN is set.
   alerts:

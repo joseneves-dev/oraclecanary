@@ -1,6 +1,8 @@
 import { Connection, PublicKey } from '@solana/web3.js';
+import bs58 from 'bs58';
 // Import only the generated account decoder: the SDK's main entry pulls in
 // transaction helpers whose peer dependencies conflict with each other.
+import { Obligation } from '@kamino-finance/klend-sdk/dist/@codegen/klend/accounts/Obligation.js';
 import { Reserve } from '@kamino-finance/klend-sdk/dist/@codegen/klend/accounts/Reserve.js';
 import { PROGRAM_ID } from '@kamino-finance/klend-sdk/dist/@codegen/klend/programId.js';
 
@@ -120,4 +122,125 @@ export async function fetchKaminoReserves(connection: Connection): Promise<Marke
   }
   if (oldLayout) console.warn(`Skipped ${oldLayout} Kamino reserves that use an older account layout.`);
   return reserves;
+}
+
+/** A wallet's deposit in or loan from one Kamino reserve. */
+export interface KaminoPosition {
+  /** The obligation (loan account) holding it; a wallet has one per market it uses. */
+  account: string;
+  market: string;
+  reserve: string;
+  side: 'deposit' | 'borrow';
+  tokens: number;
+  /** At the reserve's last stored price. */
+  usd: number;
+}
+
+/** Offset of `owner` in an Obligation: discriminator, tag, last update and lending market come first. */
+const OBLIGATION_OWNER_OFFSET = 64;
+
+/** A "Bsf" big fraction: four little-endian u64 limbs, 60 fractional bits. */
+function fromBigFraction(value: { value: { toString(): string }[] }): number {
+  let raw = 0n;
+  value.value.forEach((limb, i) => {
+    raw += BigInt(limb.toString()) << BigInt(64 * i);
+  });
+  return Number(raw) / SF_SCALE;
+}
+
+/** What turns an obligation's raw amounts into tokens and dollars now. */
+interface ReserveRates {
+  decimals: number;
+  price: number;
+  /** Underlying tokens per collateral (cToken) unit, both in raw units. */
+  exchangeRate: number;
+  cumulativeBorrowRate: number;
+}
+
+function reserveRates(data: Buffer): ReserveRates {
+  const reserve = Reserve.decode(data);
+  const l = reserve.liquidity;
+  const sf = (v: { toString(): string }) => Number(v.toString()) / SF_SCALE;
+  // What the collateral is a claim on: the tokens lent out and in the vault, less the fees owed.
+  const liquidity =
+    Number(l.totalAvailableAmount.toString()) + sf(l.borrowedAmountSf) - sf(l.accumulatedProtocolFeesSf) - sf(l.accumulatedReferrerFeesSf) - sf(l.pendingReferrerFeesSf);
+  const collateral = Number(reserve.collateral.mintTotalSupply.toString());
+  return {
+    decimals: l.mintDecimals.toNumber(),
+    price: sf(l.marketPriceSf),
+    exchangeRate: collateral > 0 ? liquidity / collateral : 1,
+    cumulativeBorrowRate: fromBigFraction(l.cumulativeBorrowRateBsf),
+  };
+}
+
+/**
+ * Every Kamino obligation a wallet owns, in any market, with its deposits and loans. Read-only.
+ *
+ * Valued from the reserves' current state: an obligation's own stored values are only written when
+ * it is refreshed, which can be months ago for an idle loan. Deposits are collateral tokens times
+ * the reserve's exchange rate; loans grow with the reserve's cumulative borrow rate since the
+ * obligation last recorded it.
+ */
+export async function fetchKaminoPositions(connection: Connection, wallet: PublicKey): Promise<KaminoPosition[]> {
+  const accounts = await connection.getProgramAccounts(KLEND_PROGRAM, {
+    filters: [
+      { memcmp: { offset: 0, bytes: bs58.encode(Obligation.discriminator) } },
+      { memcmp: { offset: OBLIGATION_OWNER_OFFSET, bytes: wallet.toBase58() } },
+    ],
+  });
+
+  type Raw = { account: string; market: string; reserve: string } & (
+    | { side: 'deposit'; collateral: number }
+    | { side: 'borrow'; borrowedSf: number; obligationRate: number }
+  );
+  const raw: Raw[] = [];
+  for (const { pubkey, account } of accounts) {
+    // One account the decoder cannot read must not hide the wallet's other positions.
+    try {
+      const obligation = Obligation.decode(account.data);
+      const base = { account: pubkey.toBase58(), market: obligation.lendingMarket.toString() };
+      for (const d of obligation.deposits) {
+        if (d.depositedAmount.toString() === '0') continue;
+        raw.push({ ...base, reserve: d.depositReserve.toString(), side: 'deposit', collateral: Number(d.depositedAmount.toString()) });
+      }
+      for (const b of obligation.borrows) {
+        if (b.borrowedAmountSf.toString() === '0') continue;
+        raw.push({
+          ...base,
+          reserve: b.borrowReserve.toString(),
+          side: 'borrow',
+          borrowedSf: Number(b.borrowedAmountSf.toString()) / SF_SCALE,
+          obligationRate: fromBigFraction(b.cumulativeBorrowRateBsf),
+        });
+      }
+    } catch (e) {
+      console.warn(`Skipping Kamino obligation ${pubkey.toBase58()}: ${(e as Error).message}`);
+    }
+  }
+  if (!raw.length) return [];
+
+  const reserveKeys = [...new Set(raw.map((r) => r.reserve))];
+  const infos = await connection.getMultipleAccountsInfo(reserveKeys.map((k) => new PublicKey(k)));
+  const rates = new Map<string, ReserveRates>();
+  infos.forEach((info, i) => {
+    if (!info) return;
+    try {
+      rates.set(reserveKeys[i], reserveRates(info.data));
+    } catch (e) {
+      console.warn(`Skipping Kamino reserve ${reserveKeys[i]}: ${(e as Error).message}`);
+    }
+  });
+
+  const positions: KaminoPosition[] = [];
+  for (const r of raw) {
+    const rate = rates.get(r.reserve);
+    if (!rate) continue;
+    const scale = 10 ** rate.decimals;
+    const tokens =
+      r.side === 'deposit'
+        ? (r.collateral * rate.exchangeRate) / scale
+        : (r.borrowedSf * (r.obligationRate > 0 ? rate.cumulativeBorrowRate / r.obligationRate : 1)) / scale;
+    positions.push({ account: r.account, market: r.market, reserve: r.reserve, side: r.side, tokens, usd: tokens * rate.price });
+  }
+  return positions;
 }

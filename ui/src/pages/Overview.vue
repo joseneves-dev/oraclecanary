@@ -109,6 +109,7 @@ const lastChecked = computed(() => {
     </p>
     <div class="hero__actions">
       <a class="ax-btn ax-btn--primary ax-btn--sm" :href="TELEGRAM_URL" target="_blank" rel="noopener">Get alerts on Telegram</a>
+      <RouterLink class="ax-btn ax-btn--secondary ax-btn--sm" :to="{ name: 'positions' }">Check my positions</RouterLink>
       <RouterLink class="ax-btn ax-btn--secondary ax-btn--sm" :to="{ name: 'incidents' }">See incidents</RouterLink>
       <a class="ax-btn ax-btn--secondary ax-btn--sm" href="/api/docs" target="_blank" rel="noopener">Public API</a>
     </div>
