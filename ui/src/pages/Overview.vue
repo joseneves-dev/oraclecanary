@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { fetchAllReserves, fetchIncidents, fetchReserves, type Reserve, type ReserveIncident, type Severity } from '@/api/client'
-import PositionLegend from '@/components/PositionLegend.vue'
 import ReserveTable from '@/components/ReserveTable.vue'
 import WalletLookup from '@/components/WalletLookup.vue'
 import { time, usd } from '@/lib/format'
@@ -103,35 +102,55 @@ const lastChecked = computed(() => {
 <template>
   <!-- One wrapper: the layout pads each top-level block, which would stretch a bare card edge to edge. -->
   <div class="intro">
-  <section class="ax-card ax-welcome hero" aria-labelledby="hero-title">
-    <div class="ax-welcome__body">
-      <div class="ax-welcome__text hero__text">
-        <span class="ax-welcome__eyebrow">Independent oracle monitor for Solana lending</span>
-        <h1 id="hero-title" class="hero__title">When a lending oracle fails, withdrawals and liquidations silently stop.</h1>
-        <p class="hero__lead">
-          Is your money exposed? OracleCanary checks the price behind every listed reserve of Kamino, marginfi and Jupiter Lend<template
-            v-if="!loading && reserves.length"
-            >: {{ reserves.length }} reserves holding {{ usd(totalSupply) }}</template
-          >.
-        </p>
-        <WalletLookup large @lookup="(address) => router.push({ name: 'positions', query: { address } })" />
-        <p v-if="!error" class="status" :aria-busy="loading">
-          <span class="status__dot" :class="`status__dot--${statusTone}`" aria-hidden="true"></span>
-          <template v-if="loading">Checking the latest prices…</template>
-          <template v-else>
-            {{ critical.length }} critical · {{ warnings.length }} warnings<template v-if="lastChecked"> · checked at {{ lastChecked }}</template>
-          </template>
-          <span class="status__links">
-            <a :href="TELEGRAM_URL" target="_blank" rel="noopener">Get alerts on Telegram</a>
-            <RouterLink :to="{ name: 'incidents' }">Incidents</RouterLink>
-            <RouterLink :to="{ name: 'how-it-works' }">How it works</RouterLink>
-            <a href="/api/docs" target="_blank" rel="noopener">Public API</a>
-          </span>
-        </p>
+  <div class="top">
+    <section class="ax-card ax-welcome hero" aria-labelledby="hero-title">
+      <div class="ax-welcome__body">
+        <div class="ax-welcome__text hero__text">
+          <span class="ax-welcome__eyebrow">Independent oracle monitor for Solana lending</span>
+          <h1 id="hero-title" class="hero__title">When a lending oracle fails, withdrawals and liquidations silently stop.</h1>
+          <p class="hero__lead">
+            Is your money exposed? Check a wallet: each deposit, loan and vault share on Kamino and marginfi is matched with the health of the
+            price it depends on.
+          </p>
+          <WalletLookup large @lookup="(address) => router.push({ name: 'positions', query: { address } })" />
+        </div>
       </div>
-      <PositionLegend />
-    </div>
-  </section>
+    </section>
+
+    <!-- The monitor's own pulse, and where to go next. -->
+    <section class="ax-card live" aria-labelledby="live-title" :aria-busy="loading">
+      <div class="live__head">
+        <span class="status__dot" :class="`status__dot--${statusTone}`" aria-hidden="true"></span>
+        <h2 id="live-title" class="ax-eyebrow live__title">Live now</h2>
+        <span v-if="lastChecked" class="live__time">checked at {{ lastChecked }}</span>
+      </div>
+      <p v-if="error" class="muted">Live data could not be loaded right now.</p>
+      <div v-else class="live__stats">
+        <RouterLink class="live__stat" :to="{ name: 'reserves', query: { health: 'critical' } }">
+          <span class="live__value" :class="{ 'live__value--danger': critical.length }">{{ loading ? '…' : critical.length }}</span>
+          <span class="live__label">Critical</span>
+        </RouterLink>
+        <RouterLink class="live__stat" :to="{ name: 'reserves', query: { health: 'issues' } }">
+          <span class="live__value" :class="{ 'live__value--warning': warnings.length }">{{ loading ? '…' : warnings.length }}</span>
+          <span class="live__label">Warnings</span>
+        </RouterLink>
+        <RouterLink class="live__stat" :to="{ name: 'reserves' }">
+          <span class="live__value">{{ loading ? '…' : reserves.length }}</span>
+          <span class="live__label">Reserves watched</span>
+        </RouterLink>
+        <div class="live__stat">
+          <span class="live__value">{{ loading ? '…' : usd(totalSupply) }}</span>
+          <span class="live__label">Supply watched</span>
+        </div>
+      </div>
+      <a class="ax-btn ax-btn--primary ax-btn--sm live__cta" :href="TELEGRAM_URL" target="_blank" rel="noopener">Get alerts on Telegram</a>
+      <nav class="live__links" aria-label="More">
+        <RouterLink :to="{ name: 'incidents' }">Incidents →</RouterLink>
+        <RouterLink :to="{ name: 'how-it-works' }">How it works →</RouterLink>
+        <a href="/api/docs" target="_blank" rel="noopener">Public API →</a>
+      </nav>
+    </section>
+  </div>
 
   <div class="stories">
     <RouterLink v-if="switchboard && switchboard.length" class="story ax-card" :to="{ name: 'switchboard' }">
@@ -203,8 +222,17 @@ const lastChecked = computed(() => {
 </template>
 
 <style scoped>
-.hero {
-  margin-bottom: var(--ax-space-5);
+/* The action on the left, the monitor's pulse on the right; stacked on narrow screens. */
+.top {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: var(--ax-space-4);
+  margin-bottom: var(--ax-space-4);
+}
+@media (max-width: 1100px) {
+  .top {
+    grid-template-columns: 1fr;
+  }
 }
 .hero__text {
   gap: var(--ax-space-3);
@@ -218,16 +246,80 @@ const lastChecked = computed(() => {
 }
 .hero__lead {
   color: var(--ax-text-muted);
-  max-width: 72ch;
+  max-width: 64ch;
 }
-.status {
+.live {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: var(--ax-space-4);
+  padding: var(--ax-space-5);
+}
+.live__head {
+  display: flex;
   align-items: center;
   gap: var(--ax-space-2);
-  padding-block-start: var(--ax-space-2);
-  font-size: var(--ax-text-sm);
+}
+.live__title {
+  margin: 0;
+}
+.live__time {
+  margin-inline-start: auto;
+  font-size: var(--ax-text-xs);
+  color: var(--ax-text-subtle);
+}
+.live__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ax-space-2);
+}
+.live__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ax-space-3);
+  border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-md);
+  background: var(--ax-surface-subtle);
+  color: inherit;
+  text-decoration: none;
+}
+a.live__stat:hover {
+  border-color: var(--ax-border-strong);
+}
+.live__value {
+  font-family: var(--ax-font-display);
+  font-size: var(--ax-text-xl);
+  font-weight: var(--ax-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--ax-text-strong);
+}
+.live__value--danger {
+  color: var(--ax-danger-500);
+}
+.live__value--warning {
+  color: var(--ax-warning-500);
+}
+.live__label {
+  font-size: var(--ax-text-xs);
   color: var(--ax-text-muted);
+}
+.live__cta {
+  justify-content: center;
+}
+.live__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--ax-space-2);
+  font-size: var(--ax-text-sm);
+}
+.live__links a {
+  color: var(--ax-link);
+  font-weight: 600;
+}
+.muted {
+  color: var(--ax-text-muted);
+  font-size: var(--ax-text-sm);
 }
 .status__dot {
   width: 8px;
@@ -246,16 +338,6 @@ const lastChecked = computed(() => {
 .status__dot--success {
   background: var(--ax-success-500);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ax-success-500) 20%, transparent);
-}
-.status__links {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: var(--ax-space-3);
-  margin-inline-start: var(--ax-space-2);
-}
-.status__links a {
-  color: var(--ax-link);
-  font-weight: 600;
 }
 .stories {
   display: grid;
