@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter, type LocationQuery } from 'vue-router'
 import { fetchVaults, type Severity, type Vault } from '@/api/client'
 import KpiCard from '@/components/KpiCard.vue'
@@ -24,16 +24,75 @@ onMounted(async () => {
 
 /** Test and dust vaults hold next to nothing; they are listed only on request. */
 const MIN_VAULT_USD = 10_000
-/** Kept in the URL (small=1) like the sort, so going back from a vault keeps it. */
+/**
+ * Filters and sort live in the URL, so they survive going back from a vault and can be shared. An
+ * empty value removes its key, keeping links short.
+ */
+const one = (key: string) => (typeof route.query[key] === 'string' ? (route.query[key] as string) : '')
+function setQuery(patch: Record<string, string>) {
+  const query: Record<string, string> = {}
+  for (const [key, value] of Object.entries(route.query)) if (typeof value === 'string') query[key] = value
+  for (const [key, value] of Object.entries(patch)) {
+    if (value) query[key] = value
+    else delete query[key]
+  }
+  router.replace({ query })
+}
+
 const showSmall = computed({
-  get: () => route.query.small === '1',
-  set: (value: boolean) => {
-    const { small: _small, ...rest } = route.query
-    router.replace({ query: value ? { ...rest, small: '1' } : rest })
-  },
+  get: () => one('small') === '1',
+  set: (value: boolean) => setQuery({ small: value ? '1' : '' }),
 })
 const smallCount = computed(() => vaults.value.filter((v) => v.totalUsd < MIN_VAULT_USD).length)
-const shown = computed(() => (showSmall.value ? vaults.value : vaults.value.filter((v) => v.totalUsd >= MIN_VAULT_USD)))
+
+type HealthFilter = '' | 'exposed' | 'critical' | 'issues'
+const HEALTH_FILTERS: Record<Exclude<HealthFilter, ''>, string> = {
+  exposed: 'With money at risk',
+  critical: 'Critical',
+  issues: 'Any issue',
+}
+const filters = computed(() => ({
+  search: one('q'),
+  curator: one('curator'),
+  token: one('token'),
+  health: (one('health') in HEALTH_FILTERS ? one('health') : '') as HealthFilter,
+}))
+/** Choices come from the vaults themselves, so a new curator or token appears without a code change. */
+const curators = computed(() => [...new Set(vaults.value.map((v) => v.curator).filter((c): c is string => !!c))].sort())
+const tokens = computed(() => [...new Set(vaults.value.map((v) => v.token).filter((t): t is string => !!t))].sort())
+
+/** Typed search waits for a pause before it updates the URL, so every keystroke is not a history entry. */
+const search = ref(one('q'))
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(search, (value) => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => setQuery({ q: value.trim() }), 250)
+})
+
+const filtered = computed(() => {
+  const f = filters.value
+  return !!(f.search || f.curator || f.token || f.health)
+})
+function clearFilters() {
+  search.value = ''
+  clearTimeout(searchTimer)
+  setQuery({ q: '', curator: '', token: '', health: '' })
+}
+
+const shown = computed(() => {
+  const f = filters.value
+  const needle = f.search.toLowerCase()
+  return vaults.value.filter(
+    (v) =>
+      (showSmall.value || v.totalUsd >= MIN_VAULT_USD) &&
+      (!needle || v.name.toLowerCase().includes(needle)) &&
+      (!f.curator || v.curator === f.curator) &&
+      (!f.token || v.token === f.token) &&
+      (f.health !== 'exposed' || v.atRiskUsd > 0) &&
+      (f.health !== 'critical' || v.worstSeverity === 'critical') &&
+      (f.health !== 'issues' || v.worstSeverity === 'warning' || v.worstSeverity === 'critical'),
+  )
+})
 
 const total = computed(() => shown.value.reduce((sum, v) => sum + v.totalUsd, 0))
 const atRisk = computed(() => shown.value.reduce((sum, v) => sum + v.atRiskUsd, 0))
@@ -46,6 +105,7 @@ function openVault(event: MouseEvent, address: string) {
   if (window.getSelection()?.toString()) return
   router.push({ name: 'vault', params: { address } })
 }
+const selectValue = (event: Event) => (event.target as HTMLSelectElement).value
 const share = (part: number, whole: number) => (whole > 0 ? `${((part / whole) * 100).toFixed(part / whole < 0.1 ? 1 : 0)}%` : '—')
 
 // ---- Sorting: the whole list is loaded, so it runs in the browser. ----
@@ -78,11 +138,7 @@ const state = computed(() => readSort(route.query))
 function sortBy(key: SortKey) {
   const s = state.value
   const sortDir = s.sortKey === key ? (s.sortDir === 'asc' ? 'desc' : 'asc') : defaultDir(key)
-  const query: Record<string, string> = {}
-  if (key !== 'totalUsd') query.sort = key
-  if (sortDir !== defaultDir(key)) query.dir = sortDir
-  if (showSmall.value) query.small = '1'
-  router.replace({ query })
+  setQuery({ sort: key !== 'totalUsd' ? key : '', dir: sortDir !== defaultDir(key) ? sortDir : '' })
 }
 
 const rows = computed(() => {
@@ -162,7 +218,7 @@ const ariaSort = (key: SortKey) => (state.value.sortKey === key ? (state.value.s
     </section>
 
     <section class="ax-card ax-col--12" aria-label="Vaults">
-      <div class="ax-card__header vaults-header">
+      <div class="ax-card__header toolbar">
         <div class="ax-card__titles">
           <h2 class="ax-card__title">All vaults</h2>
           <p class="ax-card__subtitle ax-num">
@@ -170,11 +226,25 @@ const ariaSort = (key: SortKey) => (state.value.sortKey === key ? (state.value.s
             data
           </p>
         </div>
-        <div class="ax-card__actions">
+        <div class="ax-card__actions toolbar__controls">
+          <input v-model="search" type="search" class="ax-input ax-input--sm" placeholder="Search vault, e.g. USDC" aria-label="Search by vault name" />
+          <select class="ax-select ax-select--sm" aria-label="Filter by curator" :value="filters.curator" @change="setQuery({ curator: selectValue($event) })">
+            <option value="">All curators</option>
+            <option v-for="c in curators" :key="c" :value="c">{{ c }}</option>
+          </select>
+          <select class="ax-select ax-select--sm" aria-label="Filter by token" :value="filters.token" @change="setQuery({ token: selectValue($event) })">
+            <option value="">Any token</option>
+            <option v-for="t in tokens" :key="t" :value="t">{{ t }}</option>
+          </select>
+          <select class="ax-select ax-select--sm" aria-label="Filter by health" :value="filters.health" @change="setQuery({ health: selectValue($event) })">
+            <option value="">All health levels</option>
+            <option v-for="(label, value) in HEALTH_FILTERS" :key="value" :value="value">{{ label }}</option>
+          </select>
           <label v-if="smallCount" class="toggle">
             <input v-model="showSmall" type="checkbox" class="ax-checkbox" />
             Show {{ smallCount }} vaults under $10K
           </label>
+          <button v-if="filtered" type="button" class="ax-btn ax-btn--ghost ax-btn--sm" @click="clearFilters">Clear filters</button>
         </div>
       </div>
       <div class="ax-table-wrap">
@@ -216,15 +286,31 @@ const ariaSort = (key: SortKey) => (state.value.sortKey === key ? (state.value.s
         </table>
       </div>
       <p v-if="!loading && !vaults.length" class="empty">No vault data yet.</p>
+      <p v-else-if="!loading && !rows.length && filtered" class="empty">No vault matches these filters.</p>
       <p v-else-if="!loading && !rows.length" class="empty">No vault holds $10K or more. Use the option above to see the smaller ones.</p>
     </section>
   </div>
 </template>
 
 <style scoped>
-.vaults-header {
+.toolbar {
   flex-wrap: wrap;
   gap: var(--ax-space-3);
+}
+/* The filters take the full width under the title and wrap, as on the Reserves page. */
+.toolbar__controls {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ax-space-2);
+}
+.toolbar__controls .ax-select {
+  width: auto;
+  min-width: 0;
+}
+.toolbar__controls .ax-input {
+  width: 220px;
 }
 .toggle {
   display: inline-flex;
