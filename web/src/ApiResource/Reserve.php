@@ -36,6 +36,8 @@ use Symfony\Component\Validator\Constraints as Assert;
     operations: [
         new GetCollection(
             description: 'Lending reserves with their oracle health, filterable and sortable.',
+            // Also as CSV (Accept: text/csv, or .csv on the path) for spreadsheets.
+            outputFormats: ['jsonld' => ['application/ld+json'], 'json' => ['application/json'], 'csv' => ['text/csv']],
             // Each parameter documents exactly what it accepts; the filters' generated docs also advertise
             // array and operator variants this API rejects.
             parameters: [
@@ -130,7 +132,8 @@ use Symfony\Component\Validator\Constraints as Assert;
     cacheHeaders: ['public' => true, 'max_age' => 30, 'shared_max_age' => 60, 'stale_while_revalidate' => 60],
     paginationClientItemsPerPage: true,
     paginationItemsPerPage: 50,
-    paginationMaximumItemsPerPage: 500,
+    // High enough for the CSV export to hold every reserve in one file.
+    paginationMaximumItemsPerPage: 2000,
     stateOptions: new Options(entityClass: LendingReserve::class),
 )]
 #[Map(source: LendingReserve::class)]

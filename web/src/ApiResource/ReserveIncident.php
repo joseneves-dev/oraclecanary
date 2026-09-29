@@ -29,6 +29,8 @@ use Symfony\Component\Validator\Constraints as Assert;
     operations: [
         new GetCollection(
             uriTemplate: '/incidents',
+            // Also as CSV (Accept: text/csv, or .csv on the path) for spreadsheets.
+            outputFormats: ['jsonld' => ['application/ld+json'], 'json' => ['application/json'], 'csv' => ['text/csv']],
             description: 'Incidents, most recent start first.',
             parameters: [
                 'protocol' => new QueryParameter(

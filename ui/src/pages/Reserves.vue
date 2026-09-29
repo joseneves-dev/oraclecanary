@@ -123,6 +123,13 @@ function buildQuery(s: ListState): ReserveQuery {
   return query
 }
 
+/** The current filters and order as a CSV file, every page at once (the API allows up to 2,000 rows). */
+const csvHref = computed(() => {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries({ ...buildQuery(state.value), page: 1, itemsPerPage: 2000 })) params.set(key, String(value))
+  return `/api/reserves.csv?${params}`
+})
+
 /** Whether any filter narrows the list, so "Clear filters" is worth showing. */
 const filtered = computed(() => {
   const s = state.value
@@ -250,6 +257,7 @@ function sortBy(key: SortKey) {
             Listed markets only
           </label>
           <button v-if="filtered" type="button" class="ax-btn ax-btn--ghost ax-btn--sm" @click="clearFilters">Clear filters</button>
+          <a class="ax-btn ax-btn--ghost ax-btn--sm" :href="csvHref" download="oraclecanary-reserves.csv">Download CSV</a>
         </div>
       </div>
 

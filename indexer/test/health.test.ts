@@ -90,6 +90,8 @@ describe('evaluate', () => {
   it('flags a price older than the protocol limit as stale', () => {
     const result = evaluateKamino(reserve(), feed(entry(3, 'PythLazer', { unixTimestamp: NOW - 300 })), NOW);
     assert.ok(codes(result).includes('STALE:critical'));
+    // Says what stops working, not only that the price is old.
+    assert.match(result.checks.find((c) => c.code === 'STALE')!.message, /borrowing, withdrawals and liquidations that need it fail until it updates/);
   });
 
   it('does not flag the age of a price made only of fixed values', () => {

@@ -70,6 +70,22 @@ final class ReserveApiTest extends ApiTestCase
         self::assertCount(10, array_unique($seen), 'a reserve appeared on two pages');
     }
 
+    public function testExportsReservesAsCsvForSpreadsheets(): void
+    {
+        $client = static::createClient();
+
+        // As a browser or curl asks for it: the .csv path decides the format.
+        $response = $client->request('GET', '/api/reserves.csv?order[totalSupplyUsd]=desc', ['headers' => ['Accept' => '*/*']]);
+        self::assertResponseIsSuccessful();
+        self::assertResponseHeaderSame('content-type', 'text/csv; charset=utf-8');
+        $lines = explode("\n", trim($response->getContent()));
+        self::assertStringStartsWith('address,protocol,asset,', $lines[0]);
+        self::assertStringStartsWith('reserve-sol,kamino,SOL,', $lines[1]);
+
+        $client->request('GET', '/api/reserves', ['headers' => ['Accept' => 'text/csv']]);
+        self::assertResponseHeaderSame('content-type', 'text/csv; charset=utf-8');
+    }
+
     public function testFiltersReservesFailingACheck(): void
     {
         $this->insertReserve('reserve-sb', 'SBONLY', score: 50, supplyUsd: 5_000, checks: [

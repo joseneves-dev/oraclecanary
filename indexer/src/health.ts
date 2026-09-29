@@ -54,6 +54,13 @@ const DIVERGENCE_WARNING_RATIO = 0.5;
 /** Checks that explain another check rather than report a problem of their own. */
 const NO_PENALTY = new Set<Check['code']>(['MARKET_CLOSED', 'WINDING_DOWN']);
 
+/**
+ * Kamino and marginfi refuse to use a price past its max age: positions that need it cannot be
+ * refreshed, so borrowing, withdrawing and liquidating them all fail until it updates.
+ */
+const staleMessage = (age: number, limit: number) =>
+  `Price is ${age}s old; the protocol rejects prices older than ${limit}s, so borrowing, withdrawals and liquidations that need it fail until it updates.`;
+
 function score(checks: Check[]): number {
   return Math.max(0, 100 - checks.reduce((sum, c) => sum + (NO_PENALTY.has(c.code) ? 0 : PENALTY[c.severity]), 0));
 }
@@ -147,7 +154,7 @@ function evaluateScope(reserve: MarketOracleConfig, feed: ScopeFeed, now: number
   const priceAgeSeconds = top.length ? now - Math.min(...top.map((e) => e.unixTimestamp)) : null;
   if (!fixedOnly && priceAgeSeconds !== null && reserve.maxAgePriceSeconds > 0) {
     if (priceAgeSeconds > reserve.maxAgePriceSeconds) {
-      checks.push({ code: 'STALE', severity: 'critical', message: `Price is ${priceAgeSeconds}s old; the protocol rejects prices older than ${reserve.maxAgePriceSeconds}s.` });
+      checks.push({ code: 'STALE', severity: 'critical', message: staleMessage(priceAgeSeconds, reserve.maxAgePriceSeconds) });
     } else if (priceAgeSeconds > reserve.maxAgePriceSeconds * NEAR_STALE_RATIO) {
       checks.push({ code: 'NEAR_STALE', severity: 'warning', message: `Price is ${priceAgeSeconds}s old, close to the ${reserve.maxAgePriceSeconds}s limit.` });
     }
@@ -288,7 +295,7 @@ function evaluateMarginfi(reserve: MarketOracleConfig, pyth: PythPrice | undefin
 
   const priceAgeSeconds = Math.max(0, now - pyth.publishTime);
   if (priceAgeSeconds > reserve.maxAgePriceSeconds) {
-    checks.push({ code: 'STALE', severity: 'critical', message: `Price is ${priceAgeSeconds}s old; the protocol rejects prices older than ${reserve.maxAgePriceSeconds}s.` });
+    checks.push({ code: 'STALE', severity: 'critical', message: staleMessage(priceAgeSeconds, reserve.maxAgePriceSeconds) });
   } else if (priceAgeSeconds > reserve.maxAgePriceSeconds * NEAR_STALE_RATIO) {
     checks.push({ code: 'NEAR_STALE', severity: 'warning', message: `Price is ${priceAgeSeconds}s old, close to the ${reserve.maxAgePriceSeconds}s limit.` });
   }
