@@ -121,7 +121,7 @@ export async function fetchIncidents(query: IncidentQuery, signal?: AbortSignal)
 
 /** One of a wallet's positions, as the positions service reads it from the chain. */
 export type WalletPosition =
-  | { protocol: 'kamino' | 'marginfi'; side: 'deposit' | 'borrow'; reserve: string; account: string; tokens: number; usd: number; weight?: number }
+  | { protocol: 'kamino' | 'marginfi'; side: 'deposit' | 'borrow'; reserve: string; account: string; tokens: number; usd: number; weight?: number; unpriced?: true }
   | { protocol: 'kamino-vault'; side: 'deposit'; vault: string; share: number }
 
 export interface WalletPositions {

@@ -160,6 +160,8 @@ export interface MarginfiPosition {
    * weighted deposits.
    */
   weight: number;
+  /** The bank could not be read, or never cached a price: the value is unknown (0 here). */
+  unpriced?: true;
 }
 
 /** Offset of `authority` in a MarginfiAccount: after the discriminator and `group`. */
@@ -220,7 +222,12 @@ export async function fetchMarginfiPositions(connection: Connection, wallet: Pub
   const positions: MarginfiPosition[] = [];
   for (const b of balances) {
     const bank = banks.get(b.bank);
-    if (!bank) continue;
+    // Kept rather than dropped: a missing loan would make the account look safer than it is.
+    if (!bank) {
+      if (b.assetShares > 0) positions.push({ account: b.account, bank: b.bank, side: 'deposit', tokens: 0, usd: 0, weight: 0, unpriced: true });
+      if (b.liabilityShares > 0) positions.push({ account: b.account, bank: b.bank, side: 'borrow', tokens: 0, usd: 0, weight: 0, unpriced: true });
+      continue;
+    }
     const scale = 10 ** bank.decimals;
     const sides: [MarginfiPosition['side'], number][] = [
       ['deposit', (b.assetShares * bank.assetValue) / scale],
@@ -230,7 +237,15 @@ export async function fetchMarginfiPositions(connection: Connection, wallet: Pub
       // Rounding leaves dust shares behind on closed positions; judged in tokens, so a position whose
       // bank never cached a price is still listed (at $0) rather than hidden.
       if (tokens * 10 ** bank.decimals < 1) continue;
-      positions.push({ account: b.account, bank: b.bank, side, tokens, usd: tokens * bank.price, weight: side === 'deposit' ? bank.assetWeight : bank.liabilityWeight });
+      positions.push({
+        account: b.account,
+        bank: b.bank,
+        side,
+        tokens,
+        usd: tokens * bank.price,
+        weight: side === 'deposit' ? bank.assetWeight : bank.liabilityWeight,
+        ...(bank.price > 0 ? {} : { unpriced: true as const }),
+      });
     }
   }
   return positions;

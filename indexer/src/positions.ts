@@ -25,6 +25,8 @@ export type WalletPosition =
       usd: number;
       /** Liquidation weight: a deposit's threshold (0 to 1), a loan's factor (1 or more). */
       weight: number;
+      /** Amount and value unknown: the reserve or bank could not be read, or has no price. */
+      unpriced?: true;
     }
   | {
       protocol: 'kamino-vault';
@@ -114,8 +116,8 @@ export function vaultSharePositions(
  */
 export async function fetchWalletPositions(connection: Connection, wallet: PublicKey): Promise<WalletPositions> {
   const sources = [
-    ['kamino', () => fetchKaminoPositions(connection, wallet).then((list) => list.map((p) => ({ protocol: 'kamino' as const, side: p.side, reserve: p.reserve, account: p.account, tokens: p.tokens, usd: p.usd, weight: p.weight })))],
-    ['marginfi', () => fetchMarginfiPositions(connection, wallet).then((list) => list.map((p) => ({ protocol: 'marginfi' as const, side: p.side, reserve: p.bank, account: p.account, tokens: p.tokens, usd: p.usd, weight: p.weight })))],
+    ['kamino', () => fetchKaminoPositions(connection, wallet).then((list) => list.map((p) => ({ protocol: 'kamino' as const, side: p.side, reserve: p.reserve, account: p.account, tokens: p.tokens, usd: p.usd, weight: p.weight, ...(p.unpriced ? { unpriced: true as const } : {}) })))],
+    ['marginfi', () => fetchMarginfiPositions(connection, wallet).then((list) => list.map((p) => ({ protocol: 'marginfi' as const, side: p.side, reserve: p.bank, account: p.account, tokens: p.tokens, usd: p.usd, weight: p.weight, ...(p.unpriced ? { unpriced: true as const } : {}) })))],
     ['kamino-vault', () => fetchVaultShares(connection, wallet)],
   ] as const satisfies readonly (readonly [string, () => Promise<WalletPosition[]>])[];
 

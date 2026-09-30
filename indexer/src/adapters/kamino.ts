@@ -31,6 +31,8 @@ const API_TIMEOUT_MS = 15_000;
 
 // Names from the last successful call, used when the Kamino API is briefly unavailable.
 let lastListedMarkets: Map<string, string> | null = null;
+/** A new list smaller than this share of the last one is not trusted. */
+const SHRINK_TOLERANCE = 0.8;
 
 /** Token names are fixed-size byte arrays; PostgreSQL rejects NUL bytes anywhere in text. */
 function decodeName(bytes: number[]): string {
@@ -54,7 +56,14 @@ async function fetchListedMarkets(): Promise<Map<string, string>> {
     const response = await fetch(KAMINO_MARKETS_API, { signal: AbortSignal.timeout(API_TIMEOUT_MS) });
     if (!response.ok) throw new Error(`Kamino markets API returned ${response.status}`);
     const markets = (await response.json()) as { name: string; lendingMarket: string }[];
-    lastListedMarkets = new Map(markets.map((m) => [m.lendingMarket, m.name]));
+    const fresh = new Map(markets.map((m) => [m.lendingMarket, m.name]));
+    // A list that suddenly lost many markets is more likely a bad answer than a mass delisting: it
+    // would make their reserves look unlisted, then "newly listed" when the list recovers.
+    if (lastListedMarkets && fresh.size < lastListedMarkets.size * SHRINK_TOLERANCE) {
+      console.warn(`Kamino markets API listed ${fresh.size} markets instead of ${lastListedMarkets.size}; reusing the last list`);
+      return lastListedMarkets;
+    }
+    lastListedMarkets = fresh;
     return lastListedMarkets;
   } catch (e) {
     if (!lastListedMarkets) throw e;
@@ -141,6 +150,8 @@ export interface KaminoPosition {
    * times their factors exceed its deposits times their thresholds.
    */
   weight: number;
+  /** The reserve could not be read: amount, value and weight are unknown (0 here). */
+  unpriced?: true;
 }
 
 /** Offset of `owner` in an Obligation: discriminator, tag, last update and lending market come first. */
@@ -164,6 +175,8 @@ interface ReserveRates {
   cumulativeBorrowRate: number;
   liquidationThreshold: number;
   borrowFactor: number;
+  /** Elevation groups this reserve belongs to; a group's threshold applies only to its reserves. */
+  elevationGroups: number[];
 }
 
 function reserveRates(data: Buffer): ReserveRates {
@@ -182,6 +195,7 @@ function reserveRates(data: Buffer): ReserveRates {
     liquidationThreshold: reserve.config.liquidationThresholdPct / 100,
     // Stored as a percentage; 0 means unset, which Kamino treats as 100%.
     borrowFactor: Math.max(100, Number(reserve.config.borrowFactorPct.toString())) / 100,
+    elevationGroups: reserve.config.elevationGroups.filter((g) => g > 0),
   };
 }
 
@@ -264,13 +278,17 @@ export async function fetchKaminoPositions(connection: Connection, wallet: Publi
   const positions: KaminoPosition[] = [];
   for (const r of raw) {
     const rate = rates.get(r.reserve);
-    if (!rate) continue;
+    // Kept rather than dropped: a missing loan would make the account look safer than it is.
+    if (!rate) {
+      positions.push({ account: r.account, market: r.market, reserve: r.reserve, side: r.side, tokens: 0, usd: 0, weight: 0, unpriced: true });
+      continue;
+    }
     const scale = 10 ** rate.decimals;
     const tokens =
       r.side === 'deposit'
         ? (r.collateral * rate.exchangeRate) / scale
         : (r.borrowedSf * (r.obligationRate > 0 ? rate.cumulativeBorrowRate / r.obligationRate : 1)) / scale;
-    const group = r.elevationGroup > 0 ? groupThresholds.get(`${r.market}:${r.elevationGroup}`) : undefined;
+    const group = r.elevationGroup > 0 && rate.elevationGroups.includes(r.elevationGroup) ? groupThresholds.get(`${r.market}:${r.elevationGroup}`) : undefined;
     const weight = r.side === 'deposit' ? (group ?? rate.liquidationThreshold) : group !== undefined ? 1 : rate.borrowFactor;
     positions.push({ account: r.account, market: r.market, reserve: r.reserve, side: r.side, tokens, usd: tokens * rate.price, weight });
   }
