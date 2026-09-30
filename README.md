@@ -44,7 +44,7 @@ GET /api/incidents?resolved=false        periods a reserve's price could not be 
 GET /api/reserves/{address}/attestation  the latest health, signed for the on-chain oracle_guard
 GET /api/vaults                          Kamino curator vaults: deposits, allocations, money at risk
 GET /api/config-changes                  new listings and changes to how listed reserves are priced
-GET /api/stats                           wallets watched for personal Telegram alerts, and their value
+GET /api/stats                           wallets watched for personal Telegram alerts, and their deposits
 GET /api/reserves?check=STALE&provider=Chainlink   filter by failed check or oracle provider
 GET /api/reserves.csv?listed=true&itemsPerPage=2000 the same lists as CSV (also /api/incidents.csv)
 GET /api/wallets/{address}/positions      a wallet's Kamino and marginfi deposits and loans and Kamino

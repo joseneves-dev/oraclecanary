@@ -7,7 +7,7 @@ use ApiPlatform\Metadata\Get;
 use App\State\StatsProvider;
 
 /**
- * Public usage figures: how many wallets people watch through the Telegram bot, and the value in
+ * Public usage figures: how many wallets people watch through the Telegram bot, and the deposits in
  * them. Only totals; no wallet is listed.
  */
 #[ApiResource(
@@ -15,7 +15,7 @@ use App\State\StatsProvider;
     operations: [
         new Get(
             uriTemplate: '/stats',
-            description: 'How many wallets are watched through the Telegram bot, and the value in them.',
+            description: 'How many wallets are watched through the Telegram bot, and the deposits in them.',
             provider: StatsProvider::class,
             errors: [],
         ),
@@ -27,7 +27,7 @@ final class Stats
     public function __construct(
         /** Distinct wallets watched by at least one chat. */
         public int $walletsWatched,
-        /** Deposits plus loans in those wallets at their last check, in USD. */
+        /** Deposits in those wallets (Kamino and marginfi) at their last check, in USD. */
         public float $valueWatchedUsd,
     ) {
     }

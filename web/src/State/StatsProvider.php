@@ -18,10 +18,11 @@ final readonly class StatsProvider implements ProviderInterface
 
     public function provide(Operation $operation, array $uriVariables = [], array $context = []): Stats
     {
-        // A wallet watched by several chats counts once, at its latest known value.
+        // A wallet watched by several chats counts once, at its most recently checked value.
         $row = $this->connection->fetchAssociative(
             'SELECT COUNT(*) AS wallets, COALESCE(SUM(usd), 0) AS usd
-               FROM (SELECT wallet, MAX(last_usd) AS usd FROM wallet_watch GROUP BY wallet) AS watched',
+               FROM (SELECT DISTINCT ON (wallet) wallet, last_usd AS usd
+                       FROM wallet_watch ORDER BY wallet, last_checked_at DESC NULLS LAST) AS watched',
         );
 
         return new Stats((int) ($row['wallets'] ?? 0), (float) ($row['usd'] ?? 0));

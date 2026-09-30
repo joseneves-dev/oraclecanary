@@ -5,7 +5,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import pg from 'pg';
 
 import { fetchWalletPositions } from './positions.js';
-import { alertKeys, formatChange, formatCheck, shortAddress, summarizeWallet, walletChanges, type ReserveHealth, type WalletSummary } from './walletAlerts.js';
+import { alertKeys, formatChange, formatCheck, planWallet, shortAddress, summarizeWallet, type ReserveHealth, type WalletSummary } from './walletAlerts.js';
 
 /**
  * The Telegram bot's private side: people send it /watch <wallet> and get a direct message when a
@@ -62,7 +62,9 @@ async function telegram<T>(method: string, body: unknown, timeoutMs = 15_000): P
     return telegram(method, body, timeoutMs);
   }
   // The user blocked the bot or deleted the chat: nothing more can be sent there.
-  if (response.status === 403) throw new ChatGone(data.description ?? 'forbidden');
+  if (response.status === 403 || (response.status === 400 && /chat not found/i.test(data.description ?? ''))) {
+    throw new ChatGone(data.description ?? 'forbidden');
+  }
   // The URL holds the token, so only Telegram's description is reported.
   throw new Error(`Telegram ${method} answered ${response.status}: ${data.description ?? 'no description'}`);
 }
@@ -110,7 +112,25 @@ const HELP = [
   'Read-only: I only need the address, never a signature or a key.',
 ].join('\n');
 
-const lastCheck = new Map<number, number>();
+/** When each chat last made the bot read the chain (/watch, /check); pruned as it grows. */
+const lastRead = new Map<number, number>();
+/** Live reads for commands at once, across all chats; more are asked to wait. */
+const MAX_LIVE_READS = 4;
+let liveReads = 0;
+
+/** A live read for a command, or null with the reason to give the user when it is not allowed now. */
+async function liveSummary(chatId: number, wallet: string): Promise<{ summary: WalletSummary | null } | { refused: string }> {
+  if (Date.now() - (lastRead.get(chatId) ?? 0) < CHECK_COOLDOWN_MS) return { refused: 'One wallet every few seconds, please.' };
+  if (liveReads >= MAX_LIVE_READS) return { refused: 'Busy reading other wallets. Please try again in a moment.' };
+  lastRead.set(chatId, Date.now());
+  if (lastRead.size > 10_000) for (const [id, at] of lastRead) if (Date.now() - at > CHECK_COOLDOWN_MS) lastRead.delete(id);
+  liveReads++;
+  try {
+    return { summary: await summarize(wallet).catch(() => null) };
+  } finally {
+    liveReads--;
+  }
+}
 
 function parseAddress(arg: string | undefined): string | null {
   if (!arg || !ADDRESS.test(arg)) return null;
@@ -130,12 +150,14 @@ async function watch(chatId: number, wallet: string): Promise<void> {
   if (Number(rows[0].mine) >= MAX_PER_CHAT) return void (await say(chatId, `You can watch up to ${MAX_PER_CHAT} wallets. /list shows them; /unwatch one first.`));
   if (Number(rows[0].total) >= MAX_WALLETS) return void (await say(chatId, 'The watch list is full for now. Please try again later.'));
 
-  const summary = await summarize(wallet).catch(() => null);
+  const read = await liveSummary(chatId, wallet);
+  if ('refused' in read) return void (await say(chatId, read.refused));
+  const { summary } = read;
   await pool.query(
     `INSERT INTO wallet_watch (chat_id, wallet, created_at, last_state, last_usd, last_checked_at)
      VALUES ($1, $2, NOW(), $3, $4, $5) ON CONFLICT (chat_id, wallet) DO NOTHING`,
     // What the user sees now is what they were told: only later changes are alerted.
-    [chatId, wallet, JSON.stringify(summary ? alertKeys(summary) : []), summary ? summary.depositsUsd + summary.loansUsd : null, summary ? new Date() : null],
+    [chatId, wallet, JSON.stringify(summary ? alertKeys(summary) : []), summary ? summary.depositsUsd : null, summary ? new Date() : null],
   );
   console.log(`Watching a wallet for chat ${chatId}`);
   await say(chatId, [`✅ Watching ${shortAddress(wallet)}. I'll message you if one of its loan accounts is held up by a price, and when it recovers.`, '', summary ? formatCheck(wallet, summary, SITE_URL) : "I couldn't read it right now; I'll check again in a few minutes."].join('\n'));
@@ -164,13 +186,27 @@ async function handle(chatId: number, text: string): Promise<void> {
       const { rowCount } = await pool.query('DELETE FROM wallet_watch WHERE chat_id = $1 AND wallet = $2', [chatId, wallet]);
       return void (await say(chatId, rowCount ? `Stopped watching ${shortAddress(wallet)}.` : `Wasn't watching ${shortAddress(wallet)}.`));
     }
-    if (Date.now() - (lastCheck.get(chatId) ?? 0) < CHECK_COOLDOWN_MS) return void (await say(chatId, 'One check every few seconds, please.'));
-    lastCheck.set(chatId, Date.now());
-    const summary = await summarize(wallet).catch(() => null);
-    return void (await say(chatId, summary ? formatCheck(wallet, summary, SITE_URL) : "I couldn't read that wallet right now. Try again in a minute."));
+    const read = await liveSummary(chatId, wallet);
+    if ('refused' in read) return void (await say(chatId, read.refused));
+    return void (await say(chatId, read.summary ? formatCheck(wallet, read.summary, SITE_URL) : "I couldn't read that wallet right now. Try again in a minute."));
   }
 
   await say(chatId, HELP);
+}
+
+/** Each chat's commands run in order, and never hold up another chat's. */
+const chatQueues = new Map<number, Promise<void>>();
+
+function enqueue(chatId: number, text: string): void {
+  const run = (chatQueues.get(chatId) ?? Promise.resolve())
+    .then(() => handle(chatId, text))
+    .catch((e) => {
+      if (!(e instanceof ChatGone)) console.error(`Bot command: ${(e as Error).message}`);
+    })
+    .finally(() => {
+      if (chatQueues.get(chatId) === run) chatQueues.delete(chatId);
+    });
+  chatQueues.set(chatId, run);
 }
 
 async function listen(): Promise<never> {
@@ -187,9 +223,7 @@ async function listen(): Promise<never> {
         const message = update.message;
         // Commands only in private chats: alerts are personal.
         if (!message?.text || message.chat.type !== 'private') continue;
-        await handle(message.chat.id, message.text).catch((e) => {
-          if (!(e instanceof ChatGone)) console.error(`Bot command: ${(e as Error).message}`);
-        });
+        enqueue(message.chat.id, message.text);
       }
     } catch (e) {
       console.error(`Bot updates: ${(e as Error).message}`);
@@ -200,6 +234,44 @@ async function listen(): Promise<never> {
 
 // ---- Checking watched wallets ----
 
+/** Wallets read at once by the check loop; small, so a cycle stays gentle on the RPC. */
+const CHECK_CONCURRENCY = 4;
+
+async function checkWallet(wallet: string, watchers: { id: string; chatId: string; lastState: string[] }[]): Promise<boolean> {
+  let summary: WalletSummary | null = null;
+  try {
+    summary = await summarize(wallet);
+  } catch (e) {
+    console.warn(`Watch ${shortAddress(wallet)}: ${(e as Error).message}`);
+  }
+  // A wallet that could not be read keeps its state: no false "recovered".
+  if (!summary) return false;
+  for (const w of watchers) {
+    const plan = planWallet(w.lastState, summary);
+    try {
+      for (const change of plan.changes) {
+        await say(w.chatId, formatChange(wallet, change, SITE_URL));
+        // Recorded after each message, so a failure on the next one does not repeat this one.
+        await pool.query('UPDATE wallet_watch SET last_state = $2 WHERE id = $1', [w.id, JSON.stringify(change.stateAfter)]);
+      }
+    } catch (e) {
+      if (e instanceof ChatGone) {
+        await pool.query('DELETE FROM wallet_watch WHERE chat_id = $1', [w.chatId]);
+        continue;
+      }
+      console.error(`Alert to chat ${w.chatId}: ${(e as Error).message}`);
+      continue; // the unsent change is retried next time
+    }
+    await pool.query('UPDATE wallet_watch SET last_state = $2, last_usd = $3, last_checked_at = NOW() WHERE id = $1', [
+      w.id,
+      JSON.stringify(plan.state),
+      summary.depositsUsd,
+    ]);
+  }
+  return true;
+}
+
+/** Reads every watched wallet, a few at a time; the heartbeat moves on after each batch that read something. */
 async function checkAll(): Promise<void> {
   const { rows } = await pool.query('SELECT id, chat_id, wallet, last_state FROM wallet_watch ORDER BY wallet');
   const byWallet = new Map<string, { id: string; chatId: string; lastState: string[] }[]>();
@@ -208,48 +280,28 @@ async function checkAll(): Promise<void> {
     list.push({ id: r.id, chatId: r.chat_id, lastState: Array.isArray(r.last_state) ? r.last_state : [] });
     byWallet.set(r.wallet, list);
   }
-
-  for (const [wallet, watchers] of byWallet) {
-    let summary: WalletSummary | null = null;
-    try {
-      summary = await summarize(wallet);
-    } catch (e) {
-      console.warn(`Watch ${shortAddress(wallet)}: ${(e as Error).message}`);
-    }
-    // A wallet that could not be read keeps its state: no false "recovered".
-    if (!summary) continue;
-    const keys = alertKeys(summary);
-    for (const w of watchers) {
-      try {
-        for (const change of walletChanges(w.lastState, summary)) await say(w.chatId, formatChange(wallet, change, SITE_URL));
-      } catch (e) {
-        if (e instanceof ChatGone) {
-          await pool.query('DELETE FROM wallet_watch WHERE chat_id = $1', [w.chatId]);
-          continue;
-        }
-        console.error(`Alert to chat ${w.chatId}: ${(e as Error).message}`);
-        continue; // not recorded as told, so it is retried next time
-      }
-      await pool.query('UPDATE wallet_watch SET last_state = $2, last_usd = $3, last_checked_at = NOW() WHERE id = $1', [
-        w.id,
-        JSON.stringify(keys),
-        summary.depositsUsd + summary.loansUsd,
-      ]);
-    }
-    // Spreads the RPC calls out.
-    await sleep(1_000);
+  const wallets = [...byWallet];
+  // Nothing to read is a healthy cycle too.
+  if (!wallets.length) await heartbeat();
+  for (let i = 0; i < wallets.length; i += CHECK_CONCURRENCY) {
+    const results = await Promise.all(wallets.slice(i, i + CHECK_CONCURRENCY).map(([wallet, watchers]) => checkWallet(wallet, watchers)));
+    // A batch where every read failed (RPC down) is not a sign of health.
+    if (results.some(Boolean)) await heartbeat();
   }
 }
 
+const heartbeat = () => writeFile(HEARTBEAT_FILE, new Date().toISOString()).catch(() => {});
+
 async function checkLoop(): Promise<never> {
   for (;;) {
+    const started = Date.now();
     try {
       await checkAll();
-      await writeFile(HEARTBEAT_FILE, new Date().toISOString()).catch(() => {});
     } catch (e) {
       console.error(`Wallet checks: ${(e as Error).message}`);
     }
-    await sleep(INTERVAL_SECONDS * 1000);
+    // Cycles start every interval, however long the reads took.
+    await sleep(Math.max(0, INTERVAL_SECONDS * 1000 - (Date.now() - started)));
   }
 }
 

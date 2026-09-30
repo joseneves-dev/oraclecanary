@@ -2,8 +2,9 @@ import { usd } from './alerts.js';
 import type { WalletPosition } from './positions.js';
 
 /**
- * Judges a wallet's loan accounts from its positions and the health of the reserves behind them, and
- * words the Telegram messages about them. Pure, so the bot's decisions can be tested.
+ * Judges a wallet's loan accounts from its positions and the health of the reserves behind them,
+ * decides what to tell a chat, and words the Telegram messages. Pure, so the bot's decisions can be
+ * tested.
  *
  * On Kamino and marginfi a loan account (obligation, marginfi account) acts on all its prices at
  * once: one price the protocol cannot use holds up the whole account. A tokenized stock whose price
@@ -13,6 +14,8 @@ import type { WalletPosition } from './positions.js';
 
 /** Checks that make the protocol refuse a price (as on the web app's positions page). */
 const BLOCKING = new Set(['STALE', 'NO_ORACLE', 'EMPTY_PRICE_ENTRY', 'DEPRECATED_PROVIDER']);
+/** Telegram rejects messages longer than 4096 characters. */
+const MAX_MESSAGE = 3900;
 
 export interface ReserveHealth {
   address: string;
@@ -33,6 +36,8 @@ export interface AccountSummary {
   blockers: string[];
   depositsUsd: number;
   loansUsd: number;
+  /** A reserve of the account is not tracked (any more), so its state cannot be judged in full. */
+  incomplete: boolean;
 }
 
 export interface WalletSummary {
@@ -57,7 +62,6 @@ export function summarizeWallet(positions: WalletPosition[], reserves: Map<strin
     // Vault shares have no loan account; the bot judges loan accounts only.
     if (!('reserve' in p)) continue;
     const reserve = reserves.get(p.reserve);
-    if (!reserve) unmonitored++;
     const summary = accounts.get(p.account) ?? {
       account: p.account,
       protocol: p.protocol,
@@ -66,18 +70,21 @@ export function summarizeWallet(positions: WalletPosition[], reserves: Map<strin
       blockers: [],
       depositsUsd: 0,
       loansUsd: 0,
+      incomplete: false,
     };
+    if (!reserve) {
+      unmonitored++;
+      summary.incomplete = true;
+    }
     summary.market ??= reserve?.marketName ?? null;
     if (p.side === 'borrow') summary.loansUsd += p.usd;
     else summary.depositsUsd += p.usd;
     const state = reserve ? reserveState(reserve) : 'ok';
-    if (state !== 'ok') {
-      if (state === 'blocked' || summary.state !== 'blocked') {
-        // A real failure outranks a closed market for the same account.
-        if (state === 'blocked' && summary.state === 'paused') summary.blockers = [];
-        summary.state = state;
-        summary.blockers = [...new Set([...summary.blockers, reserve!.asset || reserve!.address])].sort();
-      }
+    if (state !== 'ok' && (state === 'blocked' || summary.state !== 'blocked')) {
+      // A real failure outranks a closed market for the same account.
+      if (state === 'blocked' && summary.state === 'paused') summary.blockers = [];
+      summary.state = state;
+      summary.blockers = [...new Set([...summary.blockers, reserve!.asset || reserve!.address])].sort();
     }
     accounts.set(p.account, summary);
   }
@@ -90,12 +97,38 @@ export function summarizeWallet(positions: WalletPosition[], reserves: Map<strin
   };
 }
 
-/** What a chat was told, one key per blocked account: alerts go out only when this set changes. */
+/*
+ * What a chat knows about a wallet is stored as a list of strings, one per loan account:
+ *   "told:<account>:<blockers>"  the chat was told the account is held up by these prices;
+ *   "seen:<account>:<blockers>"  found held up once, not yet told: an alert goes out only when the
+ *                                next check agrees, so a price that crosses its limit for a moment
+ *                                (or a stock settling just after the open) stays quiet.
+ * Keys from the first version ("<account>:<blockers>") read as "told".
+ */
+interface Entry {
+  kind: 'told' | 'seen';
+  blockers: string;
+}
+
+function parseState(keys: string[]): Map<string, Entry> {
+  const entries = new Map<string, Entry>();
+  for (const key of keys) {
+    const parts = key.split(':');
+    const tagged = parts[0] === 'told' || parts[0] === 'seen';
+    const account = tagged ? parts[1] : parts[0];
+    const blockers = (tagged ? parts.slice(2) : parts.slice(1)).join(':');
+    if (account) entries.set(account, { kind: tagged ? (parts[0] as Entry['kind']) : 'told', blockers });
+  }
+  return entries;
+}
+
+function serialize(entries: Map<string, Entry>): string[] {
+  return [...entries].map(([account, e]) => `${e.kind}:${account}:${e.blockers}`).sort();
+}
+
+/** The state of a chat that has just been shown the wallet (e.g. on /watch): every held-up account counts as told. */
 export function alertKeys(summary: WalletSummary): string[] {
-  return summary.accounts
-    .filter((a) => a.state === 'blocked')
-    .map((a) => `${a.account}:${a.blockers.join(',')}`)
-    .sort();
+  return serialize(new Map(summary.accounts.filter((a) => a.state === 'blocked').map((a) => [a.account, { kind: 'told' as const, blockers: a.blockers.join(',') }])));
 }
 
 export interface WalletChange {
@@ -103,31 +136,65 @@ export interface WalletChange {
   account: string;
   /** The account now (blocked), or null when it disappeared (e.g. closed) while blocked. */
   summary: AccountSummary | null;
+  /** The state to store once this message is sent, so a later failure cannot make it repeat. */
+  stateAfter: string[];
+}
+
+export interface WalletPlan {
+  changes: WalletChange[];
+  /** The state to store when every change was sent (or when there is none). */
+  state: string[];
 }
 
 /**
- * The changes to tell a chat about, from the keys it was last told and the wallet now. A blocked
- * account whose blockers change is re-announced as blocked.
+ * What to tell a chat, from what it was told and the wallet now:
+ * - an account held up on two checks in a row is announced once; an announced account whose
+ *   blockers change is announced again at once;
+ * - an announced account is "recovered" only when every price it uses is usable and all its
+ *   reserves are tracked, or when it no longer exists; while paused by a closed market, or while one
+ *   of its reserves is not tracked, it keeps its state.
  */
-export function walletChanges(previousKeys: string[], summary: WalletSummary): WalletChange[] {
-  const now = alertKeys(summary);
-  const before = new Set(previousKeys);
-  const after = new Set(now);
-  const accountOf = (key: string) => key.slice(0, key.indexOf(':'));
-  const changes: WalletChange[] = [];
-  for (const key of now) {
-    if (before.has(key)) continue;
-    const account = accountOf(key);
-    changes.push({ kind: 'blocked', account, summary: summary.accounts.find((a) => a.account === account) ?? null });
+export function planWallet(previousKeys: string[], summary: WalletSummary): WalletPlan {
+  const before = parseState(previousKeys);
+  const after = new Map<string, Entry>();
+  const changes: Omit<WalletChange, 'stateAfter'>[] = [];
+  const present = new Set(summary.accounts.map((a) => a.account));
+
+  for (const a of summary.accounts) {
+    const was = before.get(a.account);
+    const blockers = a.blockers.join(',');
+    if (a.state === 'blocked') {
+      const confirmed = was?.kind === 'told' || (was?.kind === 'seen' && was.blockers === blockers);
+      if (confirmed) {
+        after.set(a.account, { kind: 'told', blockers });
+        if (!(was?.kind === 'told' && was.blockers === blockers)) changes.push({ kind: 'blocked', account: a.account, summary: a });
+      } else {
+        after.set(a.account, { kind: 'seen', blockers });
+      }
+    } else if (was?.kind === 'told' && (a.state === 'paused' || a.incomplete)) {
+      after.set(a.account, was);
+    } else if (was?.kind === 'told') {
+      changes.push({ kind: 'recovered', account: a.account, summary: a });
+    }
   }
-  const stillBlocked = new Set(now.map(accountOf));
-  for (const key of previousKeys) {
-    if (after.has(key)) continue;
-    const account = accountOf(key);
-    if (stillBlocked.has(account)) continue; // re-announced above with its new blockers
-    changes.push({ kind: 'recovered', account, summary: summary.accounts.find((a) => a.account === account) ?? null });
+  for (const [account, was] of before) {
+    if (!present.has(account) && was.kind === 'told') changes.push({ kind: 'recovered', account, summary: null });
   }
-  return changes;
+
+  // Until its message is sent, a changed account keeps what the chat was told; then it takes its new state.
+  const changed = new Set(changes.map((c) => c.account));
+  const progress = new Map([...after].filter(([account]) => !changed.has(account)));
+  for (const account of changed) {
+    const was = before.get(account);
+    if (was) progress.set(account, was);
+  }
+  const withState = changes.map((c) => {
+    const next = after.get(c.account);
+    if (next) progress.set(c.account, next);
+    else progress.delete(c.account);
+    return { ...c, stateAfter: serialize(progress) };
+  });
+  return { changes: withState, state: serialize(after) };
 }
 
 const PROTOCOL: Record<AccountSummary['protocol'], string> = { kamino: 'Kamino', marginfi: 'marginfi' };
@@ -140,7 +207,7 @@ function where(a: AccountSummary | null): string {
 }
 
 /** The DM for one change, in Telegram HTML. */
-export function formatChange(wallet: string, change: WalletChange, siteUrl: string): string {
+export function formatChange(wallet: string, change: Pick<WalletChange, 'kind' | 'summary'>, siteUrl: string): string {
   const link = `${siteUrl}/positions?address=${wallet}`;
   const a = change.summary;
   if (change.kind === 'blocked' && a) {
@@ -168,22 +235,31 @@ export function formatChange(wallet: string, change: WalletChange, siteUrl: stri
 
 /** The answer to /check: where the wallet stands now. */
 export function formatCheck(wallet: string, summary: WalletSummary, siteUrl: string): string {
-  const lines = [`<b>Wallet ${shortAddress(wallet)}</b>`];
-  if (!summary.accounts.length) {
-    lines.push('No deposits or loans on Kamino or marginfi.');
-  } else {
-    lines.push(`Deposits ${usd(summary.depositsUsd)} · loans ${usd(summary.loansUsd)} · ${summary.accounts.length} loan account(s)`, '');
-    for (const a of summary.accounts) {
-      const status =
-        a.state === 'blocked'
-          ? `🔴 held up: the protocol cannot use the price of ${a.blockers.join(', ')}`
-          : a.state === 'paused'
-            ? `🔵 paused while the US market is closed (${a.blockers.join(', ')})`
-            : '🟢 every price usable';
-      lines.push(`${where(a)}: ${escapeHtml(status)}`);
+  const head = [`<b>Wallet ${shortAddress(wallet)}</b>`];
+  const link = ['', `${siteUrl}/positions?address=${wallet}`];
+  if (!summary.accounts.length) return [...head, 'No deposits or loans on Kamino or marginfi.', ...link].join('\n');
+
+  head.push(`Deposits ${usd(summary.depositsUsd)} · loans ${usd(summary.loansUsd)} · ${summary.accounts.length} loan account(s)`, '');
+  const lines = summary.accounts.map((a) => {
+    const status =
+      a.state === 'blocked'
+        ? `🔴 held up: the protocol cannot use the price of ${a.blockers.join(', ')}`
+        : a.state === 'paused'
+          ? `🔵 paused while the US market is closed (${a.blockers.join(', ')})`
+          : '🟢 every price usable';
+    return `${where(a)}: ${escapeHtml(status)}`;
+  });
+  const tail = summary.unmonitored ? ['', `${summary.unmonitored} position(s) in reserves OracleCanary does not track.`] : [];
+  // Keeps within Telegram's limit for wallets with very many accounts; the link has the full list.
+  const kept: string[] = [];
+  let length = [...head, ...tail, ...link].join('\n').length;
+  for (const line of lines) {
+    if (length + line.length + 40 > MAX_MESSAGE) {
+      kept.push(`… and ${lines.length - kept.length} more on the site.`);
+      break;
     }
-    if (summary.unmonitored) lines.push('', `${summary.unmonitored} position(s) in reserves OracleCanary does not track.`);
+    kept.push(line);
+    length += line.length + 1;
   }
-  lines.push('', `${siteUrl}/positions?address=${wallet}`);
-  return lines.join('\n');
+  return [...head, ...kept, ...tail, ...link].join('\n');
 }
