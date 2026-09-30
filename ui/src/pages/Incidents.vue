@@ -5,7 +5,7 @@ import { fetchAllReserves, fetchConfigChanges, fetchIncidents, type ConfigChange
 import IncidentLog from '@/components/IncidentLog.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import ReserveTags from '@/components/ReserveTags.vue'
-import { dateTime, duration, usd } from '@/lib/format'
+import { dateTime, duration, shortAddress, usd } from '@/lib/format'
 
 const router = useRouter()
 // Empty reserves (under $1, shown as $0) put no money at risk and are left out of incidents.
@@ -17,11 +17,16 @@ const error = ref<string | null>(null)
 
 /** Changes to how listed reserves are priced: new listings, other price sources, other age limits. */
 const changes = ref<ConfigChange[]>([])
+const changesLoading = ref(true)
+const changesError = ref<string | null>(null)
 const CHANGE_LABEL: Record<string, string> = { listed: 'Newly listed', price_source: 'Price source', max_age: 'Age limit' }
 const PROTOCOL_NAME: Record<string, string> = { kamino: 'Kamino', marginfi: 'marginfi', 'jupiter-lend': 'Jupiter Lend' }
 
 onMounted(async () => {
-  fetchConfigChanges(30).then((rows) => (changes.value = rows), () => {})
+  fetchConfigChanges(30)
+    .then((rows) => (changes.value = rows))
+    .catch((e) => (changesError.value = (e as Error).message))
+    .finally(() => (changesLoading.value = false))
   try {
     reserves.value = await fetchAllReserves({ listed: true })
   } catch (e) {
@@ -164,7 +169,9 @@ watch(
           </p>
         </div>
       </div>
-      <div v-if="changes.length" class="ax-table-wrap">
+      <div v-if="changesError" class="ax-card__body"><div class="ax-alert ax-alert--danger" role="alert">{{ changesError }}</div></div>
+      <p v-else-if="changesLoading" class="ax-card__body muted">Loading…</p>
+      <div v-else-if="changes.length" class="ax-table-wrap">
         <table class="ax-table">
           <thead class="ax-table__head">
             <tr>
@@ -179,7 +186,7 @@ watch(
             <tr v-for="c in changes" :key="c.id" class="ax-table__row">
               <td class="ax-table__td muted nowrap">{{ dateTime(c.occurredAt) }}</td>
               <td class="ax-table__td">
-                <RouterLink :to="{ name: 'reserve', params: { address: c.reserve } }">{{ c.asset || c.reserve }}</RouterLink>
+                <RouterLink :to="{ name: 'reserve', params: { address: c.reserve } }">{{ c.asset || shortAddress(c.reserve) }}</RouterLink>
                 <div class="muted">{{ PROTOCOL_NAME[c.protocol] ?? c.protocol }} · {{ c.marketName }}</div>
               </td>
               <td class="ax-table__td">
@@ -193,7 +200,7 @@ watch(
           </tbody>
         </table>
       </div>
-      <p v-else class="ax-card__body muted">No change to a listed reserve's pricing seen since this was switched on (30 Sep 2026).</p>
+      <p v-else class="ax-card__body muted">No change to how a listed reserve is priced has been seen since this check started.</p>
     </section>
   </div>
 </template>

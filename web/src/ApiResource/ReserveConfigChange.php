@@ -80,9 +80,12 @@ final class ReserveConfigChange
     /** The change in one sentence. */
     public string $detail;
 
-    /** The changed fields before, as stored (null for a new listing). */
+    /** The changed fields before, as stored (null for a new listing): an object of fields, or a number for an age limit. */
+    #[ApiProperty(schema: ['type' => ['object', 'number', 'null']])]
     public mixed $before;
 
+    /** The changed fields after, in the same shape. */
+    #[ApiProperty(schema: ['type' => ['object', 'number', 'null']])]
     public mixed $after;
 
     /** Supply in the reserve when the change was seen, in USD. */

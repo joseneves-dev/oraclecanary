@@ -20,6 +20,7 @@ const MARKET_NAME_LENGTH = 120;
 
 /** Tables have no time zone and the web app reads them as UTC; a Date would be written in local time. */
 const utc = (date: Date) => date.toISOString().replace('Z', '');
+const strings = (value: unknown) => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []);
 const finite = (value: number) => (Number.isFinite(value) ? value : 0);
 const asset = (r: MarketOracleConfig) => r.asset.slice(0, ASSET_LENGTH);
 const marketName = (r: MarketOracleConfig) => r.marketName?.slice(0, MARKET_NAME_LENGTH) ?? null;
@@ -100,7 +101,11 @@ async function loadStoredConfigs(client: pg.PoolClient, protocol: Protocol): Pro
         listed: r.market_name !== null && r.status === 'active',
         feeds: r.feeds && typeof r.feeds === 'object' ? (r.feeds as Record<string, unknown>) : {},
         maxAgeSeconds: r.max_age_price_seconds,
-        providers: Array.isArray(r.providers) ? r.providers.filter((p): p is string => typeof p === 'string') : [],
+        providers: strings(
+          r.feeds && typeof r.feeds === 'object' && Array.isArray((r.feeds as { knownProviders?: unknown }).knownProviders)
+            ? (r.feeds as { knownProviders: unknown }).knownProviders
+            : r.providers,
+        ),
       },
     ]),
   );
@@ -176,10 +181,13 @@ export async function saveReserveHealth(
 
     // Unlisted markets hold arbitrary tokens and prices; their history is not worth keeping.
     const listed = rows.filter(({ reserve: r }) => r.marketName);
-    const { transitions, states } = trackChanges(await loadAlertStates(client, protocol), listed, checkedAt, confirmSeconds);
+    const alertStates = await loadAlertStates(client, protocol);
+    const { transitions, states } = trackChanges(alertStates, listed, checkedAt, confirmSeconds);
 
     // Compared before the rows are replaced: how each listed reserve is priced now against last run.
-    const changes = configChanges(await loadStoredConfigs(client, protocol), rows.map(({ reserve, health }) => ({ reserve, providers: health.providers })));
+    // Reserves with alert state were listed within the last week: not "newly listed" if they reappear.
+    const stored = await loadStoredConfigs(client, protocol);
+    const changes = configChanges(stored, rows.map(({ reserve, health }) => ({ reserve, providers: health.providers })), new Set(alertStates.keys()));
     await insertRows(
       client,
       'reserve_config_change',
@@ -198,7 +206,10 @@ export async function saveReserveHealth(
       rows.map(({ reserve: r, health: h }) => [
         r.reserve, r.protocol, r.market, marketName(r), asset(r), r.mint, r.status, finite(r.totalSupplyUsd),
         r.maxAgePriceSeconds, h.priceAgeSeconds, h.score, JSON.stringify(h.providers), JSON.stringify(h.checks),
-        JSON.stringify(storedFeeds(r)), utc(checkedAt),
+        // The last providers read, kept through a run where the oracle could not be read, so a change
+        // made meanwhile is still compared against what was there before.
+        JSON.stringify({ ...storedFeeds(r), knownProviders: h.providers.length ? h.providers : (stored.get(r.reserve)?.providers ?? []) }),
+        utc(checkedAt),
       ]),
       `ON CONFLICT (address) DO UPDATE SET ${updates}`,
     );
