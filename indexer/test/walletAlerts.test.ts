@@ -15,6 +15,7 @@ const position = (reserve: string, side: 'deposit' | 'borrow', usd: number, acco
   account,
   tokens: usd,
   usd,
+  weight: side === 'borrow' ? 1 : 0.8,
 });
 
 const loan = [position('fwdi', 'deposit', 184_000), position('usdc', 'borrow', 25_000)];
