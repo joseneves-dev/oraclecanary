@@ -27,7 +27,8 @@ import {
   TransactionInstruction,
 } from '@solana/web3.js';
 
-import { configAddress, decodeAttestation, ed25519Instruction, ORACLE_GUARD_PROGRAM_ID, verifyAttestation } from './attestation.js';
+import { configAddress, ed25519Instruction, ORACLE_GUARD_PROGRAM_ID } from './attestation.js';
+import { fetchAttestation } from './guard.js';
 
 const DEMO_VAULT_PROGRAM_ID = new PublicKey('HGjvgPmovhBCeXVUrtNkrdQn1LadW6dyKo52A6MnhMi4');
 const BPF_LOADER_UPGRADEABLE = new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111');
@@ -127,28 +128,9 @@ async function rotate(authority: PublicKey): Promise<boolean> {
   return ok;
 }
 
-interface ApiAttestation {
-  score: number;
-  severity: string;
-  priceAgeSeconds: number | null;
-  issuedAt: string;
-  message: string;
-  signature: string;
-  publicKey: string;
-}
-
 async function demo(reserve: PublicKey, amount: bigint): Promise<boolean> {
-  const response = await fetch(`${API_URL}/api/reserves/${reserve.toBase58()}/attestation`, { headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error(`The API answered ${response.status} for the attestation`);
-  const body = (await response.json()) as ApiAttestation;
-
-  const signed = {
-    message: Buffer.from(body.message, 'base64'),
-    signature: Buffer.from(body.signature, 'base64'),
-    publicKey: new PublicKey(body.publicKey),
-  };
-  if (!verifyAttestation(signed)) throw new Error('The API returned a signature that does not verify');
-  const attestation = decodeAttestation(signed.message);
+  // Signature, signer and reserve checked by the same helper integrators use (ts/guard.ts).
+  const { signed, attestation } = await fetchAttestation(reserve, { apiUrl: API_URL });
   const ageSeconds = Math.floor(Date.now() / 1000) - attestation.issuedAt;
   console.log(`Attestation for ${reserve.toBase58()}: score ${attestation.score}, ${attestation.severity}, measured ${ageSeconds}s ago`);
 
