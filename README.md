@@ -81,7 +81,20 @@ cd ../indexer && cp .env.example .env && npm install && npm run check
 npm run positions
 ```
 
-Tests: `cd web && php bin/phpunit` and `cd indexer && npm test`.
+Tests: `cd web && php bin/phpunit`, `cd indexer && npm test`, `cd ui && npm run build` (type-checks) and
+`cd onchain && npm test`.
+
+## Contributing
+
+`main` is protected: changes go through a branch and a pull request, and GitHub Actions
+(`.github/workflows/ci.yml`) must pass (jobs `indexer`, `web`, `ui`, `onchain`) before it can be merged.
+
+```bash
+git switch -c my-change        # work on a branch
+git push -u origin my-change   # then open a pull request on GitHub
+```
+
+The server deploys `main` (`deploy/deploy.sh`), so merging is what ships.
 
 ## Production
 

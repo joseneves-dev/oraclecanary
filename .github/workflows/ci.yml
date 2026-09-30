@@ -1,0 +1,108 @@
+# Runs every test suite on pull requests and on main. Branch protection on main requires these jobs
+# (indexer, web, ui, onchain) to pass before a pull request can be merged.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  indexer:
+    name: indexer
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: indexer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: indexer/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The test environment adds "_test" to the database name (config/packages/doctrine.yaml).
+      DATABASE_URL: postgresql://app:app@127.0.0.1:5432/app?serverVersion=16&charset=utf8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: ctype, iconv, intl, pdo_pgsql, sodium
+          coverage: none
+      - uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ hashFiles('web/composer.lock') }}
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - run: php bin/console doctrine:database:create --env=test --if-not-exists
+      - run: php bin/console doctrine:migrations:migrate --env=test --no-interaction
+      - run: php bin/phpunit
+
+  ui:
+    name: ui
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      # Type-checks with vue-tsc, then builds.
+      - run: npm run build
+
+  onchain:
+    name: onchain
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: onchain
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: onchain/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      # The attestation format tests; the Rust programs' LiteSVM tests need an Anchor build and run locally.
+      - run: npm test
