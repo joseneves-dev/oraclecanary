@@ -63,6 +63,33 @@ services:
       retries: 1
       start_period: 180s
 
+  # The bot's private side: /watch <wallet> in a DM, then a message when a price behind that wallet's
+  # loan accounts can no longer be used, and when it recovers. Idle until TELEGRAM_BOT_TOKEN is set.
+  bot:
+    build: ../indexer
+    restart: unless-stopped
+    depends_on:
+      - api # applies the database migrations on start
+    command: ["npm", "run", "bot"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-oraclecanary}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-oraclecanary}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      RPC_URL: ${RPC_URL:?Set RPC_URL in deploy/.env}
+      POSITIONS_RPC_URL: ${POSITIONS_RPC_URL:-}
+      SITE_URL: ${SITE_URL:-https://oraclecanary.com}
+      # Every watched wallet is read this often; the health check reads the same value.
+      WATCH_INTERVAL_SECONDS: 300
+      CHECK_INTERVAL_SECONDS: 300
+      HEARTBEAT_FILE: /data/bot.heartbeat
+    volumes:
+      - bot_data:/data
+    healthcheck:
+      test: ["CMD", "node", "--import", "tsx", "src/healthcheck.ts"]
+      interval: 60s
+      timeout: 10s
+      retries: 1
+      start_period: 180s
+
   # Reads a wallet's lending positions from the chain for the "My positions" page
   # (GET /api/wallets/{address}/positions, proxied by the api service). Read-only, stores nothing.
   positions:
@@ -139,6 +166,7 @@ services:
         done
 
 volumes:
+  bot_data:
   database_data:
   caddy_data:
   caddy_config:

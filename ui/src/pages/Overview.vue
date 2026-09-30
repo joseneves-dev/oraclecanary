@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { fetchAllReserves, fetchIncidents, fetchReserves, type Reserve, type ReserveIncident, type Severity } from '@/api/client'
+import { fetchAllReserves, fetchIncidents, fetchReserves, fetchStats, type Reserve, type ReserveIncident, type Severity, type Stats } from '@/api/client'
 import ReserveTable from '@/components/ReserveTable.vue'
 import WalletLookup from '@/components/WalletLookup.vue'
 import { time, usd } from '@/lib/format'
+import { TELEGRAM_CHANNEL_URL as TELEGRAM_URL } from '@/lib/links'
 
 const router = useRouter()
 const ATTENTION_ROWS = 10
-const TELEGRAM_URL = 'https://t.me/OracleCanaryAlerts'
 
 const reserves = ref<Reserve[]>([])
 const loading = ref(true)
@@ -17,6 +17,8 @@ const error = ref<string | null>(null)
 /** Reserves still depending on Switchboard, and past incidents: they feed the story cards. */
 const switchboard = ref<Reserve[] | null>(null)
 const incidents = ref<ReserveIncident[]>([])
+/** Wallets people watch through the bot: shown once there are some. */
+const stats = ref<Stats | null>(null)
 
 /** Aborts the requests when leaving the page, so they cannot update it afterwards. */
 const controller = new AbortController()
@@ -30,6 +32,7 @@ onMounted(async () => {
   // The cards are extras: if their data fails to load they are simply not shown.
   fetchReserves({ check: 'DEPRECATED_PROVIDER', itemsPerPage: 500 }, signal).then((rows) => (switchboard.value = rows), () => {})
   fetchIncidents({ itemsPerPage: 200, 'totalSupplyUsd[gte]': STORY_MIN_SUPPLY_USD }, signal).then((rows) => (incidents.value = rows), () => {})
+  fetchStats(signal).then((s) => (stats.value = s), () => {})
   try {
     // Unlisted markets hold junk tokens with arbitrary prices.
     reserves.value = await fetchAllReserves({ listed: true }, signal)
@@ -143,6 +146,9 @@ const lastChecked = computed(() => {
           <span class="live__label">Supply watched</span>
         </div>
       </div>
+      <p v-if="stats?.walletsWatched" class="live__watched">
+        {{ stats.walletsWatched }} {{ stats.walletsWatched === 1 ? 'wallet' : 'wallets' }} watched for personal alerts ({{ usd(stats.valueWatchedUsd) }})
+      </p>
       <a class="ax-btn ax-btn--primary ax-btn--sm live__cta" :href="TELEGRAM_URL" target="_blank" rel="noopener">Get alerts on Telegram</a>
       <nav class="live__links" aria-label="More">
         <RouterLink :to="{ name: 'incidents' }">Incidents →</RouterLink>
@@ -300,6 +306,10 @@ a.live__stat:hover {
   color: var(--ax-warning-500);
 }
 .live__label {
+  font-size: var(--ax-text-xs);
+  color: var(--ax-text-muted);
+}
+.live__watched {
   font-size: var(--ax-text-xs);
   color: var(--ax-text-muted);
 }

@@ -144,3 +144,13 @@ export async function fetchWalletPositions(address: string, signal?: AbortSignal
   if (!response.ok || !body) throw new ApiError(body?.error ?? `Could not load this wallet (HTTP ${response.status})`)
   return body
 }
+
+export type Stats = Complete<components['schemas']['Stats']>
+
+/** How many wallets are watched through the Telegram bot, and the value in them. */
+export async function fetchStats(signal?: AbortSignal): Promise<Stats> {
+  const { data, response } = await api.GET('/api/stats', { signal })
+  const status: number = response.status
+  if (!data) throw new ApiError(`Could not load stats (HTTP ${status})`)
+  return data as Stats
+}

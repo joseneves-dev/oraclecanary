@@ -10,7 +10,8 @@
     "check": "tsx src/run.ts --once",
     "start": "tsx src/run.ts",
     "notify": "tsx src/notify.ts",
-    "positions": "tsx src/positionsServer.ts"
+    "positions": "tsx src/positionsServer.ts",
+    "bot": "tsx src/walletBot.ts"
   },
   "keywords": [],
   "author": "",

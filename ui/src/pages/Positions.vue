@@ -14,6 +14,7 @@ import PositionLegend from '@/components/PositionLegend.vue'
 import ReserveTags from '@/components/ReserveTags.vue'
 import WalletLookup from '@/components/WalletLookup.vue'
 import { shortAddress, usd } from '@/lib/format'
+import { walletAlertsUrl } from '@/lib/links'
 
 /**
  * A wallet's deposits and loans in the monitored protocols, each with the health of the price it
@@ -474,6 +475,17 @@ const others = computed(() => findings.value.slice(1))
         </div>
       </section>
 
+      <section v-if="!loading && rows.length" class="ax-card ax-col--12 alerts-cta" aria-label="Alerts for this wallet">
+        <div>
+          <h2 class="ax-card__title">Get a message when this wallet is held up</h2>
+          <p class="muted">
+            OracleCanary checks it every 5 minutes and messages you on Telegram when a price blocks one of its loan accounts, and when it
+            recovers. Read-only: only the address is shared.
+          </p>
+        </div>
+        <a class="ax-btn ax-btn--primary ax-btn--sm" :href="walletAlertsUrl(address)" target="_blank" rel="noopener">Get Telegram alerts</a>
+      </section>
+
       <section v-if="loading || rows.length" class="ax-card ax-col--12" aria-label="Positions">
         <div class="ax-card__header">
           <div class="ax-card__titles">
@@ -542,6 +554,14 @@ const others = computed(() => findings.value.slice(1))
 </template>
 
 <style scoped>
+.alerts-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ax-space-4);
+  padding: var(--ax-space-5);
+}
 .start {
   gap: var(--ax-space-3);
 }

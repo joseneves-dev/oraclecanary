@@ -48,7 +48,7 @@ To update the web app, replace the contents of `deploy/ui/`; no restart is neede
 | Task | Command |
 |---|---|
 | Status | `docker compose -f deploy/compose.yaml --env-file deploy/.env ps` |
-| Logs | `docker compose -f deploy/compose.yaml --env-file deploy/.env logs -f indexer` (or `alerts`, `positions`, `api`) |
+| Logs | `docker compose -f deploy/compose.yaml --env-file deploy/.env logs -f indexer` (or `alerts`, `bot`, `positions`, `api`) |
 | Health | `curl https://<domain>/api/health`: 200 when every protocol is fresh, 503 otherwise |
 | Restore a backup | `gunzip -c deploy/backups/<file>.sql.gz \| docker compose -f deploy/compose.yaml --env-file deploy/.env exec -T database psql -U oraclecanary oraclecanary` |
 
@@ -58,6 +58,16 @@ losing the server.
 
 Point an uptime monitor (UptimeRobot, Better Stack...) at `https://<domain>/api/health` to be alerted
 when the API is down or the data stops refreshing.
+
+## Personal wallet alerts
+
+The `bot` service answers the Telegram bot's private messages: `/watch <wallet>` (up to 5 per chat),
+`/unwatch`, `/list` and `/check`. Every `WATCH_INTERVAL_SECONDS` (5 min) it reads each watched
+wallet and sends a direct message when one of its Kamino or marginfi loan accounts is held up by a
+price the protocol cannot use, and when it recovers (a tokenized stock paused by its closed market is
+not alerted). The web app's "Get Telegram alerts" button opens the bot with the wallet filled in.
+It uses the same `TELEGRAM_BOT_TOKEN` as `alerts` and `POSITIONS_RPC_URL` (or `RPC_URL`); the
+number of watched wallets and their value is public at `/api/stats`.
 
 ## Wallet positions
 

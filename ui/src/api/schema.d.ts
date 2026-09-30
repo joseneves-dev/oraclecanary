@@ -184,6 +184,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieves a Stats resource.
+         * @description Retrieves a Stats resource.
+         */
+        get: operations["api_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vaults": {
         parameters: {
             query?: never;
@@ -229,6 +249,11 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         CheckState: {
+            code?: string;
+            /** @enum {string} */
+            severity?: "ok" | "info" | "warning" | "critical";
+        };
+        "CheckState.csv": {
             code?: string;
             /** @enum {string} */
             severity?: "ok" | "info" | "warning" | "critical";
@@ -298,6 +323,13 @@ export interface components {
             severity?: "ok" | "info" | "warning" | "critical";
             message?: string;
         };
+        "HealthCheck.csv": {
+            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE, MARKET_CLOSED. */
+            code?: string;
+            /** @enum {string} */
+            severity?: "ok" | "info" | "warning" | "critical";
+            message?: string;
+        };
         "HealthCheck.jsonld": {
             /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE, MARKET_CLOSED. */
             code?: string;
@@ -361,6 +393,12 @@ export interface components {
             /** @description Name shown by the protocol's own app; null for unlisted (permissionless) markets. */
             name?: string | null;
         };
+        "MarketRef.csv": {
+            /** @description Lending market address on Solana. */
+            address?: string;
+            /** @description Name shown by the protocol's own app; null for unlisted (permissionless) markets. */
+            name?: string | null;
+        };
         "MarketRef.jsonld": {
             /** @description Lending market address on Solana. */
             address?: string;
@@ -378,6 +416,18 @@ export interface components {
             oracle?: string | null;
             /** @description Sources of that oracle, each multiplied or divided into the price. */
             sources?: components["schemas"]["OracleSourceRef"][];
+        };
+        "OracleAccounts.csv": {
+            /** @description Scope price account (Kamino's oracle aggregator). */
+            scopePrices?: string | null;
+            /** @description Entries of the Scope price account multiplied together to get the price. */
+            scopeChain?: number[];
+            pyth?: string | null;
+            switchboard?: string | null;
+            /** @description Oracle account that chains several sources (Jupiter Lend). */
+            oracle?: string | null;
+            /** @description Sources of that oracle, each multiplied or divided into the price. */
+            sources?: components["schemas"]["OracleSourceRef.csv"][];
         };
         "OracleAccounts.jsonld": {
             /** @description Scope price account (Kamino's oracle aggregator). */
@@ -397,6 +447,12 @@ export interface components {
             /** @description Source account on Solana. */
             account?: string;
         };
+        "OracleSourceRef.csv": {
+            /** @description Source type as named by the oracle program, e.g. "Chainlink", "Pyth", "StakePool". */
+            type?: string;
+            /** @description Source account on Solana. */
+            account?: string;
+        };
         "OracleSourceRef.jsonld": {
             /** @description Source type as named by the oracle program, e.g. "Chainlink", "Pyth", "StakePool". */
             type?: string;
@@ -404,6 +460,14 @@ export interface components {
             account?: string;
         };
         PriceStatus: {
+            /** @description Age of the oldest price in the reserve's price chain; null when it could not be read. */
+            ageSeconds?: number | null;
+            /** @description The protocol's own limit: older prices are rejected. */
+            maxAgeSeconds?: number;
+            /** @description True when the price is older than the protocol accepts; null when the age is unknown. */
+            isStale?: boolean | null;
+        };
+        "PriceStatus.csv": {
             /** @description Age of the oldest price in the reserve's price chain; null when it could not be read. */
             ageSeconds?: number | null;
             /** @description The protocol's own limit: older prices are rejected. */
@@ -469,6 +533,35 @@ export interface components {
             providers?: string[];
             checks?: components["schemas"]["HealthCheck"][];
             oracleAccounts?: components["schemas"]["OracleAccounts"];
+            /** Format: date-time */
+            checkedAt?: string;
+        };
+        /** @description Lending reserves with their oracle health, filterable and sortable. */
+        "Reserve.csv": {
+            /** @description Reserve / bank account address on Solana. */
+            address?: string;
+            /** @description Lending protocol, e.g. "kamino". */
+            protocol?: string;
+            /** @description Token symbol as configured by the protocol, e.g. "SOL". */
+            asset?: string;
+            mint?: string;
+            market?: components["schemas"]["MarketRef.csv"];
+            /** @description active, obsolete or hidden. */
+            status?: string;
+            /** @description Deposited value (available + borrowed) in USD, at the protocol's last stored price. */
+            totalSupplyUsd?: number;
+            /** @description 0 (broken) to 100 (healthy). */
+            score?: number;
+            /**
+             * @description Worst severity among the failed checks, or "ok" when none failed.
+             * @enum {string}
+             */
+            severity?: "ok" | "info" | "warning" | "critical";
+            price?: components["schemas"]["PriceStatus.csv"];
+            /** @description Oracle providers the price ultimately comes from, e.g. ["PythLazer", "Chainlink"]. */
+            providers?: string[];
+            checks?: components["schemas"]["HealthCheck.csv"][];
+            oracleAccounts?: components["schemas"]["OracleAccounts.csv"];
             /** Format: date-time */
             checkedAt?: string;
         };
@@ -643,6 +736,33 @@ export interface components {
             totalSupplyUsd?: number;
         };
         /** @description Incidents, most recent start first. */
+        "ReserveIncident.csv": {
+            id?: string;
+            /** @description Reserve / bank / vault address on Solana. */
+            reserve?: string;
+            protocol?: string;
+            asset?: string;
+            marketName?: string | null;
+            /** Format: date-time */
+            startedAt?: string;
+            /**
+             * @description True when the reserve was already failing when OracleCanary started tracking it: the start is
+             *     then worked out from the age of its price.
+             */
+            startEstimated?: boolean;
+            /**
+             * Format: date-time
+             * @description Null while the incident is ongoing.
+             */
+            endedAt?: string | null;
+            /** @description Length of the incident in seconds; null while it is ongoing. */
+            durationSeconds?: number | null;
+            /** @description The critical checks when the incident started, plus MARKET_CLOSED (info) if the stock market was closed. */
+            checks?: components["schemas"]["CheckState.csv"][];
+            /** @description Largest supply exposed during the incident, in USD. */
+            totalSupplyUsd?: number;
+        };
+        /** @description Incidents, most recent start first. */
         "ReserveIncident.jsonld": components["schemas"]["HydraItemBaseSchema"] & {
             id?: string;
             /** @description Reserve / bank / vault address on Solana. */
@@ -708,6 +828,20 @@ export interface components {
             priceAgeSeconds?: number | null;
             totalSupplyUsd?: number;
             checks?: components["schemas"]["CheckState.jsonld"][];
+        };
+        /** @description How many wallets are watched through the Telegram bot, and the value in them. */
+        Stats: {
+            /** @description Distinct wallets watched by at least one chat. */
+            walletsWatched?: number;
+            /** @description Deposits plus loans in those wallets at their last check, in USD. */
+            valueWatchedUsd?: number;
+        };
+        /** @description How many wallets are watched through the Telegram bot, and the value in them. */
+        "Stats.jsonld": components["schemas"]["HydraItemBaseSchema"] & {
+            /** @description Distinct wallets watched by at least one chat. */
+            walletsWatched?: number;
+            /** @description Deposits plus loans in those wallets at their last check, in USD. */
+            valueWatchedUsd?: number;
         };
         /** @description Kamino curator vaults, largest first. */
         Vault: {
@@ -875,7 +1009,7 @@ export interface operations {
                 asset?: string;
                 /** @description Reserve status */
                 status?: "active" | "obsolete" | "hidden" | "unknown";
-                /** @description Only reserves failing this check, e.g. DEPRECATED_PROVIDER (still depending on a shut-down oracle such as Switchboard), STALE or PRICE_DEVIATION */
+                /** @description Only reserves failing this check, e.g. DEPRECATED_PROVIDER (still depending on a shut-down oracle such as Switchboard), STALE or NO_FALLBACK */
                 check?: string;
                 /** @description Only reserves whose price depends on this source, as listed in `providers`, e.g. Pyth, PythLazer, Chainlink, ChainlinkDataStreams or SwitchboardOnDemand */
                 provider?: string;
@@ -920,6 +1054,7 @@ export interface operations {
                         member: components["schemas"]["Reserve.jsonld"][];
                     };
                     "application/json": components["schemas"]["Reserve"][];
+                    "text/csv": components["schemas"]["Reserve.csv"][];
                 };
             };
         };
@@ -1112,6 +1247,7 @@ export interface operations {
                         member: components["schemas"]["ReserveIncident.jsonld"][];
                     };
                     "application/json": components["schemas"]["ReserveIncident"][];
+                    "text/csv": components["schemas"]["ReserveIncident.csv"][];
                 };
             };
         };
@@ -1184,6 +1320,27 @@ export interface operations {
                         member: components["schemas"]["ReserveSnapshot.jsonld"][];
                     };
                     "application/json": components["schemas"]["ReserveSnapshot"][];
+                };
+            };
+        };
+    };
+    api_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stats resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["Stats.jsonld"];
+                    "application/json": components["schemas"]["Stats"];
                 };
             };
         };
