@@ -84,6 +84,7 @@ const describe = (sample: ReserveSnapshot) =>
           <!-- Full-height hit area so thin or low bars are easy to hover. -->
           <rect :x="i" y="0" width="1" height="100" fill="transparent" />
           <rect
+            class="ax-chart-bar"
             v-if="slot.sample"
             :x="i + 0.1"
             :y="100 - Math.max(slot.sample.score, 3)"
@@ -95,7 +96,7 @@ const describe = (sample: ReserveSnapshot) =>
         </g>
       </svg>
     </div>
-    <div class="chart__x" aria-hidden="true">
+    <div class="chart__x ax-chart-axis" aria-hidden="true">
       <span v-for="(tick, i) in ticks" :key="i">{{ tick }}</span>
     </div>
 

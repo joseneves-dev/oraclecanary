@@ -1,21 +1,53 @@
 <script setup lang="ts">
-/* The latest incidents and configuration changes, straight from the API. */
+/* The latest incidents (the Telegram bar: $10K or more at stake), and configuration changes. */
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { ConfigChange, ReserveIncident } from '@/api/client'
 import { checkLabel, fmtAgo, fmtInt, fmtSeconds, fmtUsd, protocolName } from '@/composables/useLanding'
 
-defineProps<{
+const props = defineProps<{
   incidents: ReserveIncident[] | null
-  openCount: number | null
+  open: { count: number; atStake: number } | null
   changes: ConfigChange[] | null
   now: number
 }>()
 
-function critical(i: ReserveIncident): string {
-  const codes = i.checks.filter((c) => c.severity === 'critical').map((c) => checkLabel(c.code))
-  const closed = i.checks.some((c) => c.code === 'MARKET_CLOSED')
-  return [...new Set(codes)].join(', ') + (closed ? ' · market closed' : '')
+const MAX_ROWS = 6
+
+interface Group {
+  first: ReserveIncident
+  count: number
+  ongoing: boolean
+  paused: boolean
+  why: string
 }
+
+/** Incidents of the same reserve collapse into one row ("FWDI ×4"), at its most recent one. */
+const groups = computed<Group[] | null>(() => {
+  if (!props.incidents) return null
+  const out: Group[] = []
+  const byReserve = new Map<string, Group>()
+  for (const i of props.incidents) {
+    const seen = byReserve.get(i.reserve)
+    if (seen) {
+      seen.count++
+      if (!i.endedAt) seen.ongoing = true
+      continue
+    }
+    const codes = [...new Set(i.checks.filter((c) => c.severity === 'critical').map((c) => checkLabel(c.code)))]
+    out.push({
+      first: i,
+      count: 1,
+      ongoing: !i.endedAt,
+      paused: i.checks.some((c) => c.code === 'MARKET_CLOSED'),
+      why: codes.join(', '),
+    })
+    byReserve.set(i.reserve, out[out.length - 1]!)
+  }
+  return out.slice(0, MAX_ROWS)
+})
+
+const hasChanges = computed(() => !!props.changes?.length)
 </script>
 
 <template>
@@ -24,46 +56,54 @@ function critical(i: ReserveIncident): string {
       <div class="lp-head lp-head--row">
         <div>
           <span class="lp-kicker">Live from the log</span>
-          <h2 id="feed-title" class="lp-h2">What broke lately.</h2>
+          <h2 id="feed-title" class="lp-h2">Latest incidents</h2>
         </div>
-        <p class="lp-lede">
-          <b class="lp-num open">{{ fmtInt(openCount) }}</b>
-          {{ openCount === 1 ? 'incident is' : 'incidents are' }} open right now.
+        <p class="summary">
+          <template v-if="open">
+            <b class="lp-num" :class="{ hot: open.count > 0 }">{{ fmtInt(open.count) }}</b> open
+            <template v-if="open.count > 0">· <b class="lp-num">{{ fmtInt(open.atStake) }}</b> with $10K+ at stake</template>
+          </template>
+          <template v-else>—</template>
         </p>
       </div>
 
-      <div class="feed">
+      <div class="feed" :class="{ 'feed--solo': !hasChanges }">
         <div class="panel">
           <div class="panel__head">
-            <h3>Incidents</h3>
+            <h3>Reserves holding $10K or more</h3>
             <RouterLink :to="{ name: 'incidents' }" class="lp-link">All incidents →</RouterLink>
           </div>
-          <ul v-if="incidents?.length" class="rows">
-            <li v-for="i in incidents" :key="i.id">
-              <RouterLink :to="{ name: 'reserve', params: { address: i.reserve } }" class="row">
-                <span class="state" :class="i.endedAt ? 'is-ended' : 'is-open'" :title="i.endedAt ? 'Ended' : 'Ongoing'" />
+          <ul v-if="groups?.length" class="rows">
+            <li v-for="g in groups" :key="g.first.id">
+              <RouterLink :to="{ name: 'reserve', params: { address: g.first.reserve } }" class="row">
+                <span class="state" :class="g.paused ? 'is-paused' : g.ongoing ? 'is-open' : 'is-ended'" />
                 <span class="row__main">
-                  <b>{{ i.asset }}</b>
-                  <span class="row__meta">{{ protocolName(i.protocol) }}<template v-if="i.marketName"> · {{ i.marketName }}</template></span>
-                  <span class="row__why">{{ critical(i) }}</span>
+                  <span class="row__title">
+                    <b>{{ g.first.asset }}</b>
+                    <span v-if="g.count > 1" class="times lp-num">×{{ g.count }}</span>
+                    <span v-if="g.paused" class="chip">paused · market closed</span>
+                  </span>
+                  <span class="row__meta">{{ protocolName(g.first.protocol) }}<template v-if="g.first.marketName"> · {{ g.first.marketName }}</template></span>
+                  <span v-if="g.why && !g.paused" class="row__why">{{ g.why }}</span>
                 </span>
                 <span class="row__side lp-num">
-                  <span :class="{ 'is-live': !i.endedAt }">{{ i.endedAt ? fmtSeconds(i.durationSeconds) : 'ongoing' }}</span>
-                  <small>{{ fmtAgo(Date.parse(i.startedAt), now) }} · {{ fmtUsd(i.totalSupplyUsd) }}</small>
+                  <span :class="{ 'is-live': g.ongoing && !g.paused }">{{ g.ongoing ? 'ongoing' : fmtSeconds(g.first.durationSeconds) }}</span>
+                  <small>{{ fmtAgo(Date.parse(g.first.startedAt), now) }} · {{ fmtUsd(g.first.totalSupplyUsd) }}</small>
                 </span>
               </RouterLink>
             </li>
           </ul>
-          <p v-else-if="incidents" class="empty">No incidents recorded yet.</p>
+          <p v-else-if="groups" class="empty">No incident on a reserve holding $10K or more yet.</p>
           <p v-else class="empty lp-num">—</p>
+          <p v-if="changes && !hasChanges" class="note">No oracle configuration change recorded yet.</p>
         </div>
 
-        <div class="panel">
+        <div v-if="hasChanges" class="panel">
           <div class="panel__head">
             <h3>Configuration changes</h3>
             <RouterLink :to="{ name: 'incidents' }" class="lp-link">In the log →</RouterLink>
           </div>
-          <ul v-if="changes?.length" class="rows">
+          <ul class="rows">
             <li v-for="c in changes" :key="c.id">
               <RouterLink :to="{ name: 'reserve', params: { address: c.reserve } }" class="row">
                 <span class="state is-change" />
@@ -79,13 +119,6 @@ function critical(i: ReserveIncident): string {
               </RouterLink>
             </li>
           </ul>
-          <div v-else-if="changes" class="empty empty--quiet">
-            <svg viewBox="0 0 120 24" width="120" height="24" fill="none" aria-hidden="true">
-              <path d="M0 12 H120" stroke="currentColor" stroke-dasharray="2 5" />
-            </svg>
-            <p>No change to how a listed reserve is priced has been recorded yet. When a protocol swaps an oracle, adds a fallback or changes the maximum price age, it shows up here.</p>
-          </div>
-          <p v-else class="empty lp-num">—</p>
         </div>
       </div>
     </div>
@@ -93,14 +126,25 @@ function critical(i: ReserveIncident): string {
 </template>
 
 <style scoped>
-.open {
-  color: var(--lp-crit);
+.summary {
+  margin: 0;
+  font-size: 16px;
+  color: var(--lp-ink-2);
+}
+.summary b {
+  color: var(--lp-ink);
   font-weight: 600;
+}
+.summary b.hot {
+  color: var(--lp-warn-text);
 }
 .feed {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 20px;
+}
+.feed--solo {
+  grid-template-columns: minmax(0, 1fr);
 }
 .panel {
   border: 1px solid var(--lp-line);
@@ -119,12 +163,13 @@ function critical(i: ReserveIncident): string {
 .panel__head h3 {
   margin: 0;
   font-family: var(--lp-display);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--lp-ink);
 }
 .panel__head .lp-link {
   font-size: 13px;
+  white-space: nowrap;
 }
 .rows {
   list-style: none;
@@ -159,6 +204,9 @@ function critical(i: ReserveIncident): string {
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--lp-crit) 22%, transparent);
   animation: lp-live 1.6s ease-in-out infinite;
 }
+.state.is-paused {
+  background: var(--lp-info);
+}
 .state.is-change {
   background: var(--lp-accent);
 }
@@ -168,10 +216,32 @@ function critical(i: ReserveIncident): string {
   gap: 2px;
   min-width: 0;
 }
+.row__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
 .row__main b {
   color: var(--lp-ink);
   font-weight: 600;
   font-size: 15px;
+}
+.times {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lp-ink-2);
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--lp-fill-strong);
+}
+.chip {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--lp-ink-2);
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--lp-line-strong);
 }
 .row__meta,
 .row__why {
@@ -195,7 +265,7 @@ function critical(i: ReserveIncident): string {
   white-space: nowrap;
 }
 .row__side .is-live {
-  color: var(--lp-crit);
+  color: var(--lp-crit-text);
 }
 .row__side small {
   font-size: 11.5px;
@@ -207,16 +277,12 @@ function critical(i: ReserveIncident): string {
   color: var(--lp-ink-3);
   font-size: 14px;
 }
-.empty--quiet {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 28px 20px;
-}
-.empty--quiet p {
+.note {
   margin: 0;
-  max-width: 44ch;
-  line-height: 1.6;
+  padding: 12px 20px;
+  border-top: 1px solid var(--lp-line);
+  font-size: 13px;
+  color: var(--lp-ink-3);
 }
 @keyframes lp-live {
   50% {
@@ -225,7 +291,7 @@ function critical(i: ReserveIncident): string {
 }
 @media (max-width: 900px) {
   .feed {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 480px) {
@@ -235,6 +301,10 @@ function critical(i: ReserveIncident): string {
   }
   .panel__head {
     padding: 14px 16px;
+    align-items: flex-start;
+  }
+  .note {
+    padding: 12px 16px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

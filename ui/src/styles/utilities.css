@@ -39,7 +39,7 @@
   line-height: var(--ax-leading-2xs);
   font-weight: var(--ax-weight-medium);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   color: var(--ax-text-subtle);
 }
 

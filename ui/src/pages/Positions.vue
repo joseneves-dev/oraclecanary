@@ -14,7 +14,7 @@ import AxIcon from '@/components/AxIcon.vue'
 import PositionLegend from '@/components/PositionLegend.vue'
 import ReserveTags from '@/components/ReserveTags.vue'
 import WalletLookup from '@/components/WalletLookup.vue'
-import { shortAddress, usd } from '@/lib/format'
+import { checkMessage, shortAddress, usd } from '@/lib/format'
 import { walletAlertsUrl } from '@/lib/links'
 import { priceState } from '@/lib/priceState'
 
@@ -119,7 +119,7 @@ const error = ref<string | null>(null)
 /** The most telling message of a reserve: its worst check. */
 function mainIssue(checks: Reserve['checks']): string {
   const rank: Record<string, number> = { critical: 3, warning: 2, info: 1 }
-  return [...checks].sort((a, b) => (rank[b.severity] ?? 0) - (rank[a.severity] ?? 0))[0]?.message ?? 'Price is healthy.'
+  return checkMessage([...checks].sort((a, b) => (rank[b.severity] ?? 0) - (rank[a.severity] ?? 0))[0]?.message ?? 'Price is healthy.')
 }
 
 const stateOf = (reserve: Reserve): State => priceState(reserve)
@@ -631,7 +631,7 @@ const others = computed(() => findings.value.slice(1))
             </div>
           </div>
           <div v-else class="ax-table-wrap">
-            <table class="ax-table">
+            <table class="ax-table positions">
               <thead class="ax-table__head">
                 <tr>
                   <th scope="col" class="ax-table__th">Position</th>
@@ -714,7 +714,7 @@ const others = computed(() => findings.value.slice(1))
   align-items: center;
   justify-content: space-between;
   gap: var(--ax-space-4);
-  padding: var(--ax-space-5);
+  padding: var(--ax-space-6);
 }
 .start {
   gap: var(--ax-space-3);
@@ -724,7 +724,7 @@ const others = computed(() => findings.value.slice(1))
   flex-wrap: wrap;
   align-items: center;
   gap: var(--ax-space-3);
-  padding: var(--ax-space-3) var(--ax-space-5);
+  padding: var(--ax-space-3) var(--ax-space-6);
 }
 .walletbar__spacer {
   flex: 1 1 auto;
@@ -931,6 +931,53 @@ th {
   max-width: 60ch;
 }
 .footnote {
-  padding: var(--ax-space-3) var(--ax-space-5);
+  padding: var(--ax-space-3) var(--ax-space-6) var(--ax-space-4);
+}
+/* Phones: each position becomes a card (name and value, then status, then what the price says). */
+@media (max-width: 640px) {
+  .positions thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .positions,
+  .positions tbody,
+  .positions .group,
+  .positions .group__cell {
+    display: block;
+  }
+  .positions .ax-table__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'name value'
+      'status status'
+      'issue issue';
+    gap: var(--ax-space-2) var(--ax-space-3);
+    padding: var(--ax-space-3) var(--ax-space-4);
+    border-bottom: 1px solid var(--ax-border);
+  }
+  .positions .ax-table__row > td {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+    max-width: none;
+  }
+  .positions .ax-table__row > td:nth-child(1) {
+    grid-area: name;
+  }
+  .positions .ax-table__row > td:nth-child(2) {
+    grid-area: value;
+  }
+  .positions .ax-table__row > td:nth-child(3) {
+    grid-area: status;
+  }
+  .positions .ax-table__row > td:nth-child(4) {
+    grid-area: issue;
+    color: var(--ax-text-muted);
+  }
 }
 </style>

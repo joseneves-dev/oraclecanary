@@ -26,22 +26,16 @@ const props = defineProps<{
 const emit = defineEmits<{ retry: [] }>()
 const router = useRouter()
 
-function hash(s: string): number {
-  let h = 2166136261
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return h >>> 0
-}
-
 const ready = computed(() => props.lanes.every((l) => l.rows))
 
-const maxLog = computed(() => {
-  let max = 1
-  for (const l of props.lanes) for (const r of l.rows ?? []) max = Math.max(max, r.totalSupplyUsd ?? 0)
-  return Math.log10(1 + max)
-})
+/** Worst first, so each protocol reads as bands of colour. */
+const SEV_ORDER: Record<Severity, number> = { critical: 0, warning: 1, info: 2, ok: 3 }
+
+/** Height: deposits on a log scale from $1K (floor) to $10B, as a share of the lane. */
+function height(usd: number): number {
+  const t = Math.log10(Math.max(usd, 1e3) / 1e3) / 7
+  return 4 + 92 * Math.min(1, Math.max(0, t))
+}
 
 interface Mark {
   r: Reserve
@@ -52,17 +46,26 @@ interface Mark {
 
 const segments = computed(() =>
   props.lanes.map((l) => {
-    const rows = [...(l.rows ?? [])].sort((a, b) => hash(a.address) - hash(b.address))
+    const rows = [...(l.rows ?? [])].sort(
+      (a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity] || (b.totalSupplyUsd ?? 0) - (a.totalSupplyUsd ?? 0),
+    )
     const marks: Mark[] = rows.map((r, i) => {
-      const h = Math.max(3, 94 * (Math.log10(1 + Math.max(0, r.totalSupplyUsd ?? 0)) / maxLog.value))
+      const h = height(r.totalSupplyUsd ?? 0)
       return { r, i, h, y: 50 - h / 2 }
     })
-    return { ...l, marks, n: Math.max(1, marks.length) }
+    const critical = marks.filter((m) => m.r.severity === 'critical').length
+    return { ...l, marks, critical, n: Math.max(1, marks.length) }
   }),
 )
 
+/** Faint stand-in bars while the reserves load. */
+const placeholder = Array.from({ length: 64 }, (_, i) => {
+  const h = 18 + 50 * Math.abs(Math.sin(i * 1.7) * Math.cos(i * 0.37))
+  return { i, h, y: 50 - h / 2 }
+})
+
 /* ── hover / tap ─────────────────────────────────────────────────── */
-const hover = ref<{ seg: number; idx: number; x: number; y: number } | null>(null)
+const hover = ref<{ seg: number; idx: number; x: number; y: number; touch: boolean } | null>(null)
 const hovered = computed(() => {
   const h = hover.value
   return h ? (segments.value[h.seg]?.marks[h.idx]?.r ?? null) : null
@@ -95,6 +98,7 @@ function pick(e: PointerEvent, seg: number): number | null {
     idx,
     x: Math.min(window.innerWidth - 150, Math.max(150, rect.left + ((idx + 0.5) / n) * rect.width)),
     y: rect.top,
+    touch: e.pointerType !== 'mouse',
   }
   return idx
 }
@@ -126,10 +130,6 @@ function worstCheck(r: Reserve): string | null {
   const c = [...r.checks].sort((a, b) => (order[b.severity] ?? 0) - (order[a.severity] ?? 0))[0]
   return c ? checkLabel(c.code) : null
 }
-
-const critical = computed(() =>
-  segments.value.flatMap((s, si) => s.marks.filter((m) => m.r.severity === 'critical').map((m) => ({ ...m, si, n: s.n }))),
-)
 </script>
 
 <template>
@@ -148,7 +148,7 @@ const critical = computed(() =>
       </ul>
     </header>
 
-    <div class="field__strip" :class="{ 'is-loading': !ready }" ref="strip" @pointerleave="(e: PointerEvent) => { if (e.pointerType === 'mouse') hover = null }">
+    <div class="field__strip" :class="{ 'is-loading': !ready, 'is-failed': failed && !ready }" ref="strip" @pointerleave="(e: PointerEvent) => { if (e.pointerType === 'mouse') hover = null }">
       <!-- base layer -->
       <div class="field__layer">
         <div v-for="(s, si) in segments" :key="s.id" class="seg" :style="{ '--n': s.n }">
@@ -192,8 +192,9 @@ const critical = computed(() =>
                 :class="['bar', `sev-${m.r.severity}`, { 'is-hover': hover && hover.seg === si && hover.idx === m.i }]"
               />
             </svg>
-            <svg v-else viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              <line x1="0" x2="100" y1="50" y2="50" class="axis" vector-effect="non-scaling-stroke" />
+            <svg v-else viewBox="0 0 64 100" preserveAspectRatio="none" aria-hidden="true">
+              <line x1="0" x2="64" y1="50" y2="50" class="axis" vector-effect="non-scaling-stroke" />
+              <rect v-for="p in placeholder" :key="p.i" :x="p.i + 0.2" :y="p.y" width="0.6" :height="p.h" rx="0.3" class="ph-bar" />
             </svg>
           </div>
         </div>
@@ -217,7 +218,7 @@ const critical = computed(() =>
       </div>
       <div class="field__scan" aria-hidden="true" />
 
-      <!-- critical reserves: pulsing beacons, keyboard reachable -->
+      <!-- critical reserves: one pulsing tag per lane over its red band, keyboard reachable -->
       <div class="field__beacons">
         <div v-for="s in segments" :key="s.id" class="seg" :style="{ '--n': s.n }">
           <div class="seg__label" style="visibility: hidden" aria-hidden="true">
@@ -225,13 +226,13 @@ const critical = computed(() =>
           </div>
           <div class="seg__plot seg__plot--beacons">
             <RouterLink
-              v-for="c in critical.filter((c) => c.r.protocol === s.id)"
-              :key="c.r.address"
+              v-if="s.critical"
               class="beacon"
-              :style="{ left: `${((c.i + 0.5) / c.n) * 100}%` }"
-              :to="{ name: 'reserve', params: { address: c.r.address } }"
-              :aria-label="`${c.r.asset} on ${s.name}: critical, score ${c.r.score}`"
-            />
+              :to="{ name: 'reserves', query: { health: 'critical', protocol: s.id } }"
+              :aria-label="`${s.critical} critical ${s.critical === 1 ? 'reserve' : 'reserves'} on ${s.name}`"
+            >
+              <i aria-hidden="true" />{{ s.critical }} critical
+            </RouterLink>
           </div>
         </div>
       </div>
@@ -272,6 +273,7 @@ const critical = computed(() =>
           <dt>Worst check</dt>
           <dd>{{ worstCheck(hovered) ?? 'None failing' }}</dd>
         </dl>
+        <p class="lp-tip__hint">{{ hover.touch ? 'Tap again to open' : 'Click to open' }} →</p>
       </div>
     </Teleport>
   </section>
@@ -369,6 +371,12 @@ const critical = computed(() =>
   border-top: 1px solid rgba(255, 240, 200, 0.1);
   font-family: var(--ax-font-mono, 'IBM Plex Mono', ui-monospace, monospace);
   font-size: 12px;
+}
+.lp-tip__hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fde047;
 }
 .lp-tip__grid dt {
   color: rgba(245, 241, 230, 0.5);
@@ -504,14 +512,14 @@ const critical = computed(() =>
 }
 .seg {
   flex: var(--n) 1 0;
-  min-width: 0;
+  min-width: 22%;
   display: flex;
   flex-direction: column-reverse;
   gap: 10px;
 }
 .seg__plot {
   position: relative;
-  height: 148px;
+  height: 170px;
   cursor: crosshair;
   touch-action: pan-y;
 }
@@ -523,9 +531,10 @@ const critical = computed(() =>
 }
 .seg__label {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 0 8px;
   padding-top: 8px;
   border-top: 1px solid var(--lp-line-strong);
   font-size: 13px;
@@ -594,16 +603,30 @@ const critical = computed(() =>
 }
 .beacon {
   position: absolute;
-  top: -10px;
-  width: 10px;
-  height: 10px;
-  margin-left: -5px;
+  top: -14px;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  background: var(--lp-panel);
+  border: 1px solid color-mix(in srgb, var(--lp-crit) 55%, transparent);
+  color: var(--lp-crit-text);
+  font: 600 11.5px/1.2 var(--lp-mono);
+  white-space: nowrap;
+  text-decoration: none;
+  pointer-events: auto;
+  z-index: 2;
+}
+.beacon i {
+  position: relative;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--lp-crit);
-  box-shadow: 0 0 0 3px var(--lp-panel);
-  pointer-events: auto;
 }
-.beacon::after {
+.beacon i::after {
   content: '';
   position: absolute;
   inset: -3px;
@@ -611,9 +634,29 @@ const critical = computed(() =>
   border: 1.5px solid var(--lp-crit);
   animation: lp-ring 1.8s ease-out infinite;
 }
+.beacon:hover {
+  border-color: var(--lp-crit);
+}
 .beacon:focus-visible {
-  outline: 2px solid var(--lp-accent);
+  outline: 2px solid var(--lp-focus);
   outline-offset: 3px;
+}
+.ph-bar {
+  fill: var(--lp-line-strong);
+  animation: lp-ph 1.6s ease-in-out infinite;
+}
+.is-failed .ph-bar {
+  opacity: 0.3;
+  animation: none;
+}
+.is-failed .field__layer--lit,
+.is-failed .field__scan {
+  display: none;
+}
+@keyframes lp-ph {
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .field__state {
@@ -679,6 +722,7 @@ const critical = computed(() =>
   }
   .seg {
     flex: none;
+    min-width: 0;
     flex-direction: column;
     gap: 6px;
   }
@@ -687,13 +731,12 @@ const critical = computed(() =>
     padding-top: 0;
   }
   .seg__plot {
-    height: 64px;
+    height: 72px;
   }
   .beacon {
-    top: 2px;
-    width: 8px;
-    height: 8px;
-    margin-left: -4px;
+    top: -24px;
+    left: 50%;
+    transform: translateX(-50%);
   }
   .field__scan {
     top: 0;
@@ -713,7 +756,8 @@ const critical = computed(() =>
     display: none;
   }
   .bar.sev-critical,
-  .beacon::after {
+  .beacon i::after,
+  .ph-bar {
     animation: none;
   }
 }

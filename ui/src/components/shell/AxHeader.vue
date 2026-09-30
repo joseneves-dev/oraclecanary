@@ -1,7 +1,9 @@
 <script setup lang="ts">
 /*
- * App header: sidebar toggle, network pill and a way back to the front page on
- * the left; the theme toggle and the Telegram call to action on the right.
+ * App header: sidebar toggle and network pill on the left; the theme toggle and
+ * the Telegram call to action on the right. The way back to the front page is
+ * the canary logo — in the sidebar on desktop, here in the bar on phones (where
+ * the sidebar is a closed drawer).
  */
 import { RouterLink } from 'vue-router'
 import AxIcon from '@/components/AxIcon.vue'
@@ -28,12 +30,14 @@ function onToggle(): void {
       <AxIcon class="ax-icon" name="menu" />
     </button>
 
+    <RouterLink class="oc-header-home" to="/" aria-label="OracleCanary — back to the site">
+      <svg viewBox="0 0 32 32" width="22" height="22" fill="none" aria-hidden="true"><path d="M4 4 H16 A12 12 0 0 1 28 16 V28 H16 A12 12 0 0 1 4 16 V4 Z" fill="#FACC15"/><path d="M28 11 L31 12.5 L28 14 Z" fill="#F97316"/><circle cx="20.5" cy="11.5" r="2.6" fill="#0D0C0A"/></svg>
+    </RouterLink>
+
     <span class="oc-live" title="Reading Solana mainnet">
       <span class="oc-live__dot" aria-hidden="true"></span>
       <span class="oc-live__net">Solana </span>mainnet
     </span>
-
-    <RouterLink class="oc-header-link" to="/"><span aria-hidden="true">←</span> Site</RouterLink>
 
     <span class="ax-header__spacer"></span>
 

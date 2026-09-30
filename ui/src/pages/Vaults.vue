@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter, type LocationQuery } from 'vue-router'
 import { fetchVaults, type Severity, type Vault } from '@/api/client'
+import EmptyState from '@/components/EmptyState.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
 import { usd } from '@/lib/format'
@@ -12,7 +13,9 @@ const vaults = ref<Vault[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 
-onMounted(async () => {
+async function load() {
+  loading.value = true
+  error.value = null
   try {
     vaults.value = await fetchVaults()
   } catch (e) {
@@ -20,7 +23,8 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+onMounted(load)
 
 /** Test and dust vaults hold next to nothing; they are listed only on request. */
 const MIN_VAULT_USD = 10_000
@@ -185,16 +189,22 @@ const ariaSort = (key: SortKey) => (state.value.sortKey === key ? (state.value.s
       </div>
     </div>
 
-    <div v-if="error" class="ax-alert ax-alert--danger" role="alert">{{ error }}</div>
-
+    <section v-if="error" class="ax-card">
+      <EmptyState tone="error" title="Can't reach the API right now">
+        The vaults come from the live API, which did not answer. Try again in a moment.
+        <template #actions>
+          <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="load">Retry</button>
+        </template>
+      </EmptyState>
+    </section>
     <div v-else class="ax-dash-grid" :aria-busy="loading">
-      <KpiCard label="Vaults" :loading="loading" :value="String(shown.length)" icon="users-group" :hint="showSmall ? 'Every Kamino curator vault with deposits' : 'Kamino curator vaults holding $10K or more'" />
-      <KpiCard label="Deposits" :loading="loading" :value="usd(total)" icon="layout-dashboard" />
+      <KpiCard label="Vaults" :loading="loading" :value="String(shown.length)" :hint="showSmall ? 'Every Kamino curator vault with deposits' : 'Kamino curator vaults holding $10K or more'" />
+      <KpiCard label="Deposits" :loading="loading" :value="usd(total)" />
       <KpiCard
         label="At risk now"
         :loading="loading"
         :value="usd(atRisk)"
-        icon="alert-triangle"
+       
         :tone="atRisk > 0 ? 'danger' : undefined"
         :hint="loading ? undefined : atRisk > 0 ? `${share(atRisk, total)} of deposits` : `None of ${usd(total)} is in an unhealthy reserve or market`"
       />
@@ -202,7 +212,7 @@ const ariaSort = (key: SortKey) => (state.value.sortKey === key ? (state.value.s
         label="Vaults exposed"
         :loading="loading"
         :value="String(exposed.length)"
-        icon="bell"
+       
         :tone="exposed.length ? 'danger' : undefined"
         hint="With money in an unhealthy reserve or market"
       />
@@ -264,11 +274,11 @@ const ariaSort = (key: SortKey) => (state.value.sortKey === key ? (state.value.s
                   :class="{ 'ax-table__th--num': col.num }"
                   :aria-sort="ariaSort(col.key)"
                 >
-                  <button type="button" class="sort-button" @click="sortBy(col.key)">
+                  <button type="button" class="sort-button" :class="{ 'sort-button--active': state.sortKey === col.key }" @click="sortBy(col.key)">
                     {{ col.label }}
-                    <svg v-if="state.sortKey !== col.key" class="ax-table__sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity: 0.4"><path d="M8 9l4 -4l4 4" /><path d="M16 15l-4 4l-4 -4" /></svg>
-                    <svg v-else-if="state.sortDir === 'asc'" class="ax-table__sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6 -6l6 6" /></svg>
-                    <svg v-else class="ax-table__sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6l6 -6" /></svg>
+                    <svg v-if="state.sortKey !== col.key" class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 9l4 -4l4 4" /><path d="M16 15l-4 4l-4 -4" /></svg>
+                    <svg v-else-if="state.sortDir === 'asc'" class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6 -6l6 6" /></svg>
+                    <svg v-else class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6l6 -6" /></svg>
                   </button>
                 </th>
               </tr>
@@ -356,9 +366,23 @@ const ariaSort = (key: SortKey) => (state.value.sortKey === key ? (state.value.s
   display: flex;
   gap: var(--ax-space-2);
 }
-/* Numeric headers are right-aligned like their values; the sort arrow goes on the inner side. */
-.ax-table__th--num .sort-button {
-  flex-direction: row-reverse;
+/* The sort arrow sits right of the label, shown on hover and on the active column only. */
+.sort-icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.sort-button:hover .sort-icon,
+.sort-button:focus-visible .sort-icon {
+  opacity: 0.6;
+}
+.sort-button--active {
+  color: var(--ax-accent-text, var(--ax-accent));
+}
+.sort-button--active .sort-icon {
+  opacity: 1;
 }
 .sort-button {
   display: inline-flex;

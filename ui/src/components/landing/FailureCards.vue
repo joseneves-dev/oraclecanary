@@ -2,13 +2,26 @@
 /* What goes wrong with a lending oracle, each with how many listed reserves have it right now. */
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import type { Severity } from '@/api/client'
 import { fmtInt, fmtUsd } from '@/composables/useLanding'
 
 const props = defineProps<{
-  failing: (codes: string[]) => { count: number; usd: number } | null
+  failing: (codes: string[], severity?: Severity) => { count: number; usd: number } | null
 }>()
 
-const cards = [
+interface Card {
+  key: string
+  codes: string[]
+  /** Count only checks at this severity, so the number matches the sentence. */
+  severity?: Severity
+  issue: string
+  tone: 'crit' | 'risk' | 'info'
+  tag?: string
+  title: string
+  body: string
+}
+
+const cards: Card[] = [
   {
     key: 'stale',
     codes: ['STALE'],
@@ -21,25 +34,27 @@ const cards = [
     key: 'fallback',
     codes: ['NO_FALLBACK'],
     issue: 'NO_FALLBACK',
-    tone: 'warn',
+    tone: 'risk',
+    tag: 'Risk, not an outage',
     title: 'No fallback oracle',
-    body: 'One feed and nothing behind it. If that oracle stops updating, the price stops with it.',
+    body: 'Works today; if that one feed stops, the price stops.',
   },
   {
     key: 'shutdown',
     codes: ['DEPRECATED_PROVIDER'],
+    severity: 'critical',
     issue: 'DEPRECATED_PROVIDER',
     tone: 'crit',
     title: 'Shut-down oracle',
-    body: 'Switchboard shut down on 25 Sep 2026. A reserve still priced only by it has no working price.',
+    body: 'Switchboard shut down on 25 Sep 2026. A reserve still reading only its feed has no working price.',
   },
   {
-    key: 'wrong',
-    codes: ['PRICE_DEVIATION', 'SOURCES_DIVERGE', 'WIDE_CONFIDENCE'],
-    issue: 'PRICE_DEVIATION',
-    tone: 'warn',
-    title: 'Price looks wrong',
-    body: 'Far from the market, sources that disagree, or Pyth unsure of its own price: collateral is overvalued, or borrowers are liquidated early.',
+    key: 'diverge',
+    codes: ['SOURCES_DIVERGE', 'WIDE_CONFIDENCE'],
+    issue: 'SOURCES_DIVERGE',
+    tone: 'risk',
+    title: 'Sources disagree',
+    body: 'Two price sources that do not match, or Pyth unsure of its own price: collateral can be overvalued, or borrowers liquidated early.',
   },
   {
     key: 'hours',
@@ -47,16 +62,11 @@ const cards = [
     issue: 'MARKET_CLOSED',
     tone: 'info',
     title: 'Market hours',
-    body: 'Tokenized stocks are priced only while the US market is open. When it closes, their price pauses, and so do their reserves.',
+    body: 'Tokenized-stock prices stop when the US market closes (some feeds run until 20:00 New York time), and so do their reserves.',
   },
-] as const
+]
 
-const rows = computed(() => cards.map((c) => ({ ...c, live: props.failing([...c.codes]) })))
-const also = computed(() => ({
-  near: props.failing(['NEAR_STALE']),
-  fixed: props.failing(['FIXED_PRICE']),
-  none: props.failing(['NO_ORACLE', 'EMPTY_PRICE_ENTRY', 'UNREADABLE_ORACLE']),
-}))
+const rows = computed(() => cards.map((c) => ({ ...c, live: props.failing(c.codes, c.severity) })))
 </script>
 
 <template>
@@ -65,7 +75,7 @@ const also = computed(() => ({
       <div class="lp-head">
         <span class="lp-kicker">What goes wrong</span>
         <h2 id="wrong-title" class="lp-h2">Five ways a price stops being safe to lend against.</h2>
-        <p class="lp-lede">Each one is checked on every listed reserve, every five minutes. The numbers are live.</p>
+        <p class="lp-lede">Checked every five minutes on every listed reserve they apply to. The counts are live.</p>
       </div>
 
       <ol class="cards">
@@ -83,15 +93,14 @@ const also = computed(() => ({
                 <path d="M9 16 H40" />
                 <circle cx="44" cy="16" r="4" fill="currentColor" />
                 <path class="g-ghost" d="M9 16 C 18 16, 20 27, 30 27 H 38" stroke-dasharray="2 4" />
-                <path class="g-ghost" d="M52 11 L58 17 M58 11 L52 17" />
               </template>
               <template v-else-if="c.key === 'shutdown'">
                 <circle cx="32" cy="16" r="10" />
                 <path d="M32 3 V13" />
-                <path class="g-slash" d="M18 28 L46 4" />
+                <path d="M18 28 L46 4" />
               </template>
-              <template v-else-if="c.key === 'wrong'">
-                <path d="M2 20 C 14 20, 20 16, 30 16 S 50 12, 62 10" />
+              <template v-else-if="c.key === 'diverge'">
+                <path d="M2 18 C 14 18, 20 16, 30 16 S 50 12, 62 8" />
                 <path class="g-drift" d="M30 16 C 40 16, 48 22, 62 26" stroke-dasharray="3 3" />
                 <circle cx="30" cy="16" r="2.2" fill="currentColor" />
               </template>
@@ -105,24 +114,26 @@ const also = computed(() => ({
           </div>
           <h3 class="card__title">{{ c.title }}</h3>
           <p class="card__body">{{ c.body }}</p>
+          <span v-if="c.tag" class="card__tag">{{ c.tag }}</span>
           <div class="card__live">
-            <span class="card__count lp-num" :class="{ 'is-zero': c.live?.count === 0 }">{{ c.live ? fmtInt(c.live.count) : '—' }}</span>
-            <span class="card__unit">
-              {{ c.live?.count === 1 ? 'reserve' : 'reserves' }} now · <span class="lp-num">{{ fmtUsd(c.live?.usd) }}</span>
-            </span>
+            <template v-if="!c.live">
+              <span class="card__count lp-num">—</span>
+            </template>
+            <template v-else-if="c.live.count === 0">
+              <span class="card__none">None right now <span aria-hidden="true">✓</span></span>
+            </template>
+            <template v-else>
+              <span class="card__count lp-num">{{ fmtInt(c.live.count) }}</span>
+              <span class="card__unit">
+                {{ c.live.count === 1 ? 'reserve' : 'reserves' }} · <span class="lp-num">{{ fmtUsd(c.live.usd) }}</span>
+              </span>
+            </template>
           </div>
-          <RouterLink :to="{ name: 'reserves', query: { issue: c.issue } }" class="card__link" :aria-label="`See reserves with ${c.title.toLowerCase()}`">
+          <RouterLink :to="{ name: 'reserves', query: { issue: c.issue } }" class="card__link" :aria-label="`See reserves: ${c.title.toLowerCase()}`">
             <span aria-hidden="true">→</span>
           </RouterLink>
         </li>
       </ol>
-
-      <p class="also">
-        Also checked:
-        <span>close to stale <b class="lp-num">{{ fmtInt(also.near?.count) }}</b></span>
-        <span>fixed price <b class="lp-num">{{ fmtInt(also.fixed?.count) }}</b></span>
-        <span>no readable oracle <b class="lp-num">{{ fmtInt(also.none?.count) }}</b></span>
-      </p>
     </div>
   </section>
 </template>
@@ -154,18 +165,21 @@ const also = computed(() => ({
 }
 .tone-crit {
   --tone: var(--lp-crit);
+  --tone-text: var(--lp-crit-text);
 }
-.tone-warn {
-  --tone: var(--lp-warn);
+.tone-risk {
+  --tone: color-mix(in srgb, var(--lp-warn) 70%, var(--lp-ink-3));
+  --tone-text: var(--lp-ink);
 }
 .tone-info {
   --tone: var(--lp-info);
+  --tone-text: var(--lp-ink);
 }
 .card__top {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .card__no {
   font-size: 12px;
@@ -179,16 +193,24 @@ const also = computed(() => ({
 .g-ghost {
   opacity: 0.45;
 }
-.g-slash {
-  stroke: var(--lp-crit);
-}
 .g-flat {
   animation: lp-dash 1.8s linear infinite;
+}
+.card__tag {
+  align-self: flex-start;
+  padding: 2px 8px;
+  font-family: var(--lp-sans);
+  letter-spacing: 0;
+  border-radius: 999px;
+  border: 1px solid var(--lp-line-strong);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--lp-ink-2);
 }
 .card__title {
   margin: 0;
   font-family: var(--lp-display);
-  font-size: 19px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.015em;
   color: var(--lp-ink);
@@ -202,27 +224,31 @@ const also = computed(() => ({
 }
 .card__live {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 14px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-height: 46px;
+  padding: 14px 22px 0 0;
   margin-top: 6px;
   border-top: 1px dashed var(--lp-line-strong);
-  padding-right: 22px;
 }
 .card__count {
-  font-size: 30px;
+  font-size: 28px;
   font-weight: 600;
   line-height: 1;
-  color: var(--tone);
+  color: var(--tone-text);
   letter-spacing: -0.03em;
 }
-.card__count.is-zero {
-  color: var(--lp-ok);
-}
 .card__unit {
-  white-space: nowrap;
   font-size: 12.5px;
   color: var(--lp-ink-3);
+  white-space: nowrap;
+}
+.card__none {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lp-ok-text);
+  line-height: 28px;
 }
 .card__link {
   position: absolute;
@@ -240,22 +266,9 @@ const also = computed(() => ({
   color: var(--lp-accent-text);
 }
 .card__link:focus-visible {
-  outline: 2px solid var(--lp-accent);
+  outline: 2px solid var(--lp-focus);
   outline-offset: -4px;
   border-radius: 12px;
-}
-.also {
-  margin: 18px 0 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 22px;
-  font-size: 13.5px;
-  color: var(--lp-ink-3);
-}
-.also b {
-  color: var(--lp-ink);
-  font-weight: 600;
-  margin-inline-start: 4px;
 }
 @keyframes lp-dash {
   to {
@@ -264,15 +277,39 @@ const also = computed(() => ({
 }
 @media (max-width: 1180px) {
   .cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .card:first-child {
-    grid-column: 1 / -1;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
-@media (max-width: 620px) {
+@media (max-width: 900px) {
   .cards {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  /* a swipeable row */
+  .cards {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 82%;
+    gap: 12px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    background: none;
+    border: 0;
+    border-radius: 0;
+    margin-inline: -16px;
+    padding: 0 16px 8px;
+    scroll-padding-inline: 16px;
+    scrollbar-width: none;
+  }
+  .cards::-webkit-scrollbar {
+    display: none;
+  }
+  .card {
+    scroll-snap-align: start;
+    border: 1px solid var(--lp-line);
+    border-radius: 16px;
+    background: var(--lp-panel);
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -7,6 +7,7 @@ import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { fmtAgo, fmtInt, fmtUsd, useLanding } from '@/composables/useLanding'
 import LandingNav from '@/components/landing/LandingNav.vue'
+import HeroWallet from '@/components/landing/HeroWallet.vue'
 import ReserveField from '@/components/landing/ReserveField.vue'
 import FailureCards from '@/components/landing/FailureCards.vue'
 import HowSteps from '@/components/landing/HowSteps.vue'
@@ -16,7 +17,7 @@ import GetStarted from '@/components/landing/GetStarted.vue'
 import LandingFooter from '@/components/landing/LandingFooter.vue'
 
 const L = useLanding()
-const { reservesFailed, reserves, incidents, openIncidents, changes, now, totalUsd, bySeverity, lastChecked, protocols, failing } = L
+const { reservesFailed, reserves, incidents, changes, now, totalUsd, bySeverity, lastChecked, protocols, failing, unusable, open } = L
 
 function retry() {
   reservesFailed.value = false
@@ -52,17 +53,15 @@ const sample = computed(() => {
           <h1 id="hero-title" class="hero__title">
             When a lending oracle fails, withdrawals and liquidations <em>silently stop.</em>
           </h1>
-          <div class="hero__row">
-            <p class="hero__lede">
-              OracleCanary reads the oracle behind every reserve of Kamino, marginfi and Jupiter Lend from Solana mainnet every five minutes,
-              scores its price, and tells you when one breaks. Independent, open source and free.
-            </p>
-            <div class="hero__cta">
-              <RouterLink :to="{ name: 'overview' }" class="lp-btn lp-btn--primary lp-btn--lg">
-                Open app <span aria-hidden="true">→</span>
-              </RouterLink>
-              <RouterLink :to="{ name: 'positions' }" class="lp-btn lp-btn--ghost lp-btn--lg">Check a wallet</RouterLink>
-            </div>
+          <p class="hero__lede">
+            OracleCanary reads the oracle behind every reserve of Kamino, marginfi and Jupiter Lend from Solana mainnet every five minutes,
+            scores its price, and tells you when one breaks. Independent, open source and free.
+          </p>
+          <div class="hero__cta">
+            <RouterLink :to="{ name: 'overview' }" class="lp-btn lp-btn--primary lp-btn--lg">
+              Open app <span aria-hidden="true">→</span>
+            </RouterLink>
+            <HeroWallet />
           </div>
         </div>
 
@@ -78,12 +77,19 @@ const sample = computed(() => {
                 <dd class="lp-num">{{ fmtUsd(totalUsd) }}</dd>
               </div>
               <div>
-                <dt>Critical now</dt>
-                <dd class="lp-num" :class="{ crit: (bySeverity?.critical ?? 0) > 0 }">{{ bySeverity ? fmtInt(bySeverity.critical) : '—' }}</dd>
+                <dt>Price unusable now</dt>
+                <dd v-if="!unusable" class="lp-num">—</dd>
+                <dd v-else-if="unusable.blockedUsd === 0" class="lp-num calm">$0 <small>every price usable</small></dd>
+                <dd v-else class="lp-num crit">{{ fmtUsd(unusable.blockedUsd) }}</dd>
+                <p v-if="unusable && unusable.pausedUsd > 0" class="readout__note">+{{ fmtUsd(unusable.pausedUsd) }} paused, market closed</p>
+                <p v-else-if="unusable && unusable.blockedCount > 0" class="readout__note">
+                  in {{ unusable.blockedCount }} {{ unusable.blockedCount === 1 ? 'reserve' : 'reserves' }}
+                </p>
               </div>
               <div>
                 <dt>Open incidents</dt>
-                <dd class="lp-num" :class="{ crit: (openIncidents?.length ?? 0) > 0 }">{{ openIncidents ? fmtInt(openIncidents.length) : '—' }}</dd>
+                <dd class="lp-num" :class="{ warn: (open?.count ?? 0) > 0 }">{{ open ? fmtInt(open.count) : '—' }}</dd>
+                <p v-if="open && open.count > 0" class="readout__note">{{ open.atStake }} with $10K+ at stake</p>
               </div>
             </dl>
           </ReserveField>
@@ -91,8 +97,8 @@ const sample = computed(() => {
       </section>
 
       <FailureCards :failing="failing" />
-      <HowSteps />
-      <LiveFeed :incidents="incidents" :open-count="openIncidents ? openIncidents.length : null" :changes="changes" :now="now" />
+      <HowSteps :lanes="protocols" :reserves="reserves" :incidents="incidents" :last-checked="lastChecked" :now="now" />
+      <LiveFeed :incidents="incidents" :open="open" :changes="changes" :now="now" />
       <GuardApi :sample="sample" />
       <GetStarted />
     </main>
@@ -107,6 +113,7 @@ const sample = computed(() => {
   --lp-display: 'Inter', system-ui, sans-serif;
   --lp-sans: 'Inter', system-ui, sans-serif;
   --lp-mono: var(--ax-font-mono, 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace);
+  --lp-section: clamp(80px, 10vw, 128px);
 
   --lp-bg: #f5f0e4;
   --lp-bg-deep: #ede6d5;
@@ -118,20 +125,25 @@ const sample = computed(() => {
   --lp-fill: rgba(58, 44, 12, 0.05);
   --lp-fill-strong: rgba(58, 44, 12, 0.09);
   --lp-ink: #1c1810;
-  --lp-ink-2: #4a4232;
-  --lp-ink-3: #7a705c;
+  --lp-ink-2: #463e2f;
+  --lp-ink-3: #6b614e;
   --lp-accent: #facc15;
-  --lp-accent-text: #a16207;
-  --lp-accent-line: rgba(161, 98, 7, 0.45);
+  --lp-accent-text: var(--ax-accent-text, #8a5306);
+  --lp-accent-line: rgba(138, 83, 6, 0.45);
   --lp-accent-glow: rgba(234, 179, 8, 0.45);
-  --lp-ok: #16a34a;
-  --lp-info: #5b7ea3;
-  --lp-warn: #ea580c;
-  --lp-crit: #dc2626;
+  --lp-accent-ring: rgba(234, 179, 8, 0.25);
+  --lp-focus: var(--ax-focus-ring, #a16207);
+  --lp-ok: var(--ax-sev-ok, #16a34a);
+  --lp-ok-text: var(--ax-sev-ok-text, #13703a);
+  --lp-info: var(--ax-sev-info, #5b7ea3);
+  --lp-warn: var(--ax-sev-warn, #ea580c);
+  --lp-warn-text: var(--ax-sev-warn-text, #b23f07);
+  --lp-crit: var(--ax-sev-crit, #dc2626);
+  --lp-crit-text: var(--ax-sev-crit-text, #b91c1c);
   --lp-lamp: rgba(250, 204, 21, 0.28);
   --lp-strata: rgba(58, 44, 12, 0.07);
-  --lp-bar-ok: 0.5;
-  --lp-bar-warn: 0.62;
+  --lp-bar-ok: 0.55;
+  --lp-bar-warn: 0.66;
   --lp-em-ink: var(--lp-ink);
   --lp-em-glow: none;
   --lp-em-mark: linear-gradient(180deg, transparent 60%, #facc15 60%, #facc15 88%, transparent 88%);
@@ -155,20 +167,25 @@ const sample = computed(() => {
   --lp-fill: rgba(255, 240, 200, 0.04);
   --lp-fill-strong: rgba(255, 240, 200, 0.08);
   --lp-ink: #f5f0e2;
-  --lp-ink-2: #bdb5a2;
-  --lp-ink-3: #827a68;
+  --lp-ink-2: #c2baa7;
+  --lp-ink-3: #8f8672;
   --lp-accent: #facc15;
-  --lp-accent-text: #facc15;
+  --lp-accent-text: var(--ax-accent-text, #facc15);
   --lp-accent-line: rgba(250, 204, 21, 0.45);
   --lp-accent-glow: rgba(250, 204, 21, 0.35);
-  --lp-ok: #4ade80;
-  --lp-info: #8fb3d9;
-  --lp-warn: #fb923c;
-  --lp-crit: #f87171;
+  --lp-accent-ring: rgba(250, 204, 21, 0.18);
+  --lp-focus: var(--ax-focus-ring, #facc15);
+  --lp-ok: var(--ax-sev-ok, #4ade80);
+  --lp-ok-text: var(--ax-sev-ok-text, #4ade80);
+  --lp-info: var(--ax-sev-info, #8fb3d9);
+  --lp-warn: var(--ax-sev-warn, #fb923c);
+  --lp-warn-text: var(--ax-sev-warn-text, #fb923c);
+  --lp-crit: var(--ax-sev-crit, #f87171);
+  --lp-crit-text: var(--ax-sev-crit-text, #f87171);
   --lp-lamp: rgba(250, 204, 21, 0.16);
   --lp-strata: rgba(255, 240, 200, 0.05);
-  --lp-bar-ok: 0.3;
-  --lp-bar-warn: 0.5;
+  --lp-bar-ok: 0.34;
+  --lp-bar-warn: 0.55;
   --lp-em-ink: #facc15;
   --lp-em-glow: 0 0 44px rgba(250, 204, 21, 0.35);
   --lp-em-mark: none;
@@ -199,17 +216,17 @@ const sample = computed(() => {
   color: var(--lp-accent-text);
 }
 .landing .lp-section {
-  padding: 112px 0 0;
+  padding-top: var(--lp-section);
 }
-.landing .lp-section--start {
-  padding-bottom: 112px;
+.landing .lp-section--last {
+  padding-bottom: var(--lp-section);
 }
 .landing .lp-head {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   max-width: 760px;
-  margin-bottom: 44px;
+  margin-bottom: 40px;
 }
 .landing .lp-head--row {
   max-width: none;
@@ -217,18 +234,18 @@ const sample = computed(() => {
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 14px 40px;
+  gap: 12px 40px;
 }
 .landing .lp-head--row > div {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 .landing .lp-h2 {
   margin: 0;
   font-family: var(--lp-display);
-  font-size: clamp(30px, 4vw, 46px);
-  line-height: 1.06;
+  font-size: clamp(28px, 3.4vw, 40px);
+  line-height: 1.1;
   font-weight: 600;
   letter-spacing: -0.03em;
   color: var(--lp-ink);
@@ -294,18 +311,12 @@ const sample = computed(() => {
 .landing .lp-btn:focus-visible,
 .landing .lp-link:focus-visible,
 .landing a:focus-visible {
-  outline: 2px solid var(--lp-accent);
+  outline: 2px solid var(--lp-focus);
   outline-offset: 3px;
 }
 @media (max-width: 640px) {
   .landing .lp-wrap {
     padding-inline: 16px;
-  }
-  .landing .lp-section {
-    padding-top: 80px;
-  }
-  .landing .lp-section--start {
-    padding-bottom: 80px;
   }
   .landing .lp-head {
     margin-bottom: 28px;
@@ -319,7 +330,7 @@ const sample = computed(() => {
 <style scoped>
 .hero {
   position: relative;
-  padding: 56px 0 0;
+  padding: 28px 0 0;
   isolation: isolate;
 }
 .hero__lamp {
@@ -350,8 +361,8 @@ const sample = computed(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
-  margin: 0 0 26px;
-  padding: 6px 14px 6px 12px;
+  margin: 0 0 18px;
+  padding: 5px 14px 5px 12px;
   border-radius: 999px;
   border: 1px solid var(--lp-line-strong);
   background: color-mix(in srgb, var(--lp-panel) 70%, transparent);
@@ -379,12 +390,11 @@ const sample = computed(() => {
 }
 .hero__title {
   margin: 0;
-  max-width: 19ch;
   font-family: var(--lp-display);
-  font-size: clamp(40px, 5.7vw, 80px);
-  line-height: 0.98;
+  font-size: clamp(38px, 4.1vw, 60px);
+  line-height: 1;
   font-weight: 600;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.042em;
   color: var(--lp-ink);
   text-wrap: balance;
 }
@@ -396,39 +406,35 @@ const sample = computed(() => {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
-.hero__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px 48px;
-  margin-top: 30px;
-}
 .hero__lede {
-  margin: 0;
-  max-width: 58ch;
+  margin: 18px 0 0;
+  max-width: 92ch;
+  text-wrap: pretty;
   font-size: 18px;
-  line-height: 1.6;
+  line-height: 1.55;
   color: var(--lp-ink-2);
 }
 .hero__cta {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: 12px;
+  margin-top: 24px;
 }
 .hero__field {
-  margin-top: 48px;
+  margin-top: 30px;
 }
 
 /* readouts, shown at the top of the field panel */
 .readout {
-  margin: -20px -24px 20px;
+  margin: -20px -24px 18px;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border-bottom: 1px solid var(--lp-line);
 }
 .readout > div {
-  padding: 16px 24px 18px;
+  padding: 12px 24px 12px;
+  min-width: 0;
 }
 .readout > div + div {
   border-inline-start: 1px solid var(--lp-line);
@@ -443,14 +449,36 @@ const sample = computed(() => {
 }
 .readout dd {
   margin: 6px 0 0;
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 600;
   line-height: 1.05;
   color: var(--lp-ink);
   letter-spacing: -0.035em;
 }
 .readout dd.crit {
-  color: var(--lp-crit);
+  color: var(--lp-crit-text);
+}
+.readout dd.warn {
+  color: var(--lp-warn-text);
+}
+.readout dd.calm {
+  color: var(--lp-ok-text);
+}
+.readout dd small {
+  font-family: var(--lp-sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--lp-ok-text);
+  margin-inline-start: 6px;
+}
+.readout__note {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--lp-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @keyframes lp-beat {
@@ -462,13 +490,14 @@ const sample = computed(() => {
   }
 }
 
-@media (max-width: 760px) {
-  .readout {
-    margin: -16px -14px 16px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@media (max-width: 1024px) {
+  .readout dd {
+    font-size: 26px;
   }
-  .readout > div {
-    padding: 12px 14px 14px;
+}
+@media (max-width: 900px) {
+  .readout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .readout > div:nth-child(3) {
     border-inline-start: 0;
@@ -477,15 +506,31 @@ const sample = computed(() => {
     border-top: 1px solid var(--lp-line);
   }
   .readout dd {
-    font-size: 24px;
+    font-size: 22px;
+  }
+  .readout dd small {
+    display: block;
+    margin: 4px 0 0;
+    font-size: 12px;
+  }
+  .readout__note {
+    white-space: normal;
+  }
+}
+@media (max-width: 760px) {
+  .readout {
+    margin: -16px -14px 16px;
+  }
+  .readout > div {
+    padding: 12px 14px;
   }
 }
 @media (max-width: 640px) {
   .hero {
-    padding-top: 32px;
+    padding-top: 28px;
   }
   .status {
-    margin-bottom: 20px;
+    margin-bottom: 18px;
     font-size: 12px;
   }
   .status__sep,
@@ -493,24 +538,21 @@ const sample = computed(() => {
     display: none;
   }
   .hero__title {
-    font-size: clamp(36px, 10.4vw, 48px);
-    line-height: 1.02;
-  }
-  .hero__row {
-    margin-top: 20px;
+    font-size: clamp(34px, 10vw, 44px);
+    line-height: 1.03;
   }
   .hero__lede {
     font-size: 16px;
+    margin-top: 16px;
   }
   .hero__cta {
-    width: 100%;
+    margin-top: 22px;
   }
   .hero__cta .lp-btn {
-    flex: 1 1 0;
-    padding-inline: 12px;
+    width: 100%;
   }
   .hero__field {
-    margin-top: 36px;
+    margin-top: 32px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

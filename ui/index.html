@@ -16,9 +16,18 @@
     try { theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; } catch (e) { theme = "light"; }
   }
   D.setAttribute("data-ax-theme", theme);
-  if (get("oc:sidebar-collapsed") === "1") D.setAttribute("data-ax-collapsed", "");
-  /* Settings of the removed theme customizer. */
-  try { if (LS) Object.keys(LS).forEach(function (k) { if (k.indexOf("ax:") === 0) LS.removeItem(k); }); } catch (e) {}
+  /* Sidebar: the viewer's choice wins ("1" collapsed, "0" open); with no choice
+     the rail starts as icons between 768 and 1279px so tables get the room. */
+  var KEY = "oc:sidebar-collapsed", pref = get(KEY), band = false;
+  try { band = window.matchMedia("(min-width: 768px) and (max-width: 1279.98px)").matches; } catch (e) {}
+  if (pref === "1" || (pref !== "0" && band)) D.setAttribute("data-ax-collapsed", "");
+  /* useTheme.ts stores "1" or clears the key; record an explicit "open" as "0"
+     so the band default doesn't re-collapse a rail the viewer opened. */
+  try {
+    new MutationObserver(function () {
+      try { if (!D.hasAttribute("data-ax-collapsed") && LS) LS.setItem(KEY, "0"); } catch (e) {}
+    }).observe(D, { attributes: true, attributeFilter: ["data-ax-collapsed"] });
+  } catch (e) {}
 })();
 </script>
 
@@ -41,8 +50,8 @@
 <meta name="twitter:title" content="OracleCanary — oracle health for Solana lending" />
 <meta name="twitter:description" content="Live health of every oracle behind Kamino, marginfi and Jupiter Lend, with Telegram alerts and an on-chain guard (devnet)." />
 <meta name="twitter:image" content="https://oraclecanary.com/og.png" />
-<meta name="theme-color" content="#0A0A0B" media="(prefers-color-scheme: dark)" />
-<meta name="theme-color" content="#F6F3EA" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0D0C0A" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#F5F0E4" media="(prefers-color-scheme: light)" />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
 <!-- Google Fonts — Inter (text and headings) · IBM Plex Mono (numbers and labels) -->

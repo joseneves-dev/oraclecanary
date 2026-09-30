@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import AxIcon from '@/components/AxIcon.vue'
 
+const ICON = { clear: 'check', none: 'search', error: 'alert-triangle' } as const
+
 /**
  * What a list shows when it has nothing in it. `clear` is good news (nothing is broken) and
- * carries a check in the success colour; `none` is a neutral "no results".
+ * carries a check in the success colour; `none` is a neutral "no results"; `error` is data that
+ * could not be loaded (pair it with a Retry action).
  */
-withDefaults(defineProps<{ title: string; tone?: 'clear' | 'none'; compact?: boolean }>(), { tone: 'clear', compact: false })
+withDefaults(defineProps<{ title: string; tone?: 'clear' | 'none' | 'error'; compact?: boolean }>(), { tone: 'clear', compact: false })
 </script>
 
 <template>
-  <div class="empty" :class="[`empty--${tone}`, { 'empty--compact': compact }]" role="status">
-    <span class="empty__icon" aria-hidden="true"><AxIcon :name="tone === 'clear' ? 'check' : 'search'" :size="18" /></span>
+  <div class="empty" :class="[`empty--${tone}`, { 'empty--compact': compact }]" :role="tone === 'error' ? 'alert' : 'status'">
+    <span class="empty__icon" aria-hidden="true"><AxIcon :name="ICON[tone]" :size="18" /></span>
     <p class="empty__title">{{ title }}</p>
     <p v-if="$slots.default" class="empty__text"><slot /></p>
     <div v-if="$slots.actions" class="empty__actions"><slot name="actions" /></div>
@@ -45,6 +48,11 @@ withDefaults(defineProps<{ title: string; tone?: 'clear' | 'none'; compact?: boo
   color: var(--ax-success-500);
   background: color-mix(in srgb, var(--ax-success-500) 12%, transparent);
   border-color: color-mix(in srgb, var(--ax-success-500) 30%, transparent);
+}
+.empty--error .empty__icon {
+  color: var(--ax-danger-500);
+  background: color-mix(in srgb, var(--ax-danger-500) 10%, transparent);
+  border-color: color-mix(in srgb, var(--ax-danger-500) 25%, transparent);
 }
 .empty__title {
   margin: 0;

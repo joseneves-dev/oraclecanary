@@ -8,7 +8,7 @@ import PriceAgeChart from '@/components/PriceAgeChart.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import ReserveTags from '@/components/ReserveTags.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
-import { SEVERITY_TONE, dateTime, protocolName, duration, shortAddress, solscanAccount, usd } from '@/lib/format'
+import { SEVERITY_TONE, checkMessage, dateTime, protocolName, duration, shortAddress, solscanAccount, usd } from '@/lib/format'
 
 const props = defineProps<{ address: string }>()
 
@@ -126,16 +126,16 @@ const accountRows = (r: Reserve) =>
       </div>
 
       <div class="ax-dash-grid">
-        <KpiCard label="Health score" :value="`${reserve.score} / 100`" icon="layout-dashboard" :tone="SEVERITY_TONE[reserve.severity]" />
-        <KpiCard label="Supply" :value="usd(reserve.totalSupplyUsd)" icon="table" />
+        <KpiCard label="Health score" :value="`${reserve.score} / 100`" :tone="SEVERITY_TONE[reserve.severity]" />
+        <KpiCard label="Supply" :value="usd(reserve.totalSupplyUsd)" />
         <KpiCard
           label="Price age"
           :value="duration(reserve.price.ageSeconds)"
-          icon="history"
+         
           :tone="reserve.price.isStale ? 'danger' : undefined"
           :hint="`The protocol rejects prices older than ${duration(reserve.price.maxAgeSeconds)}`"
         />
-        <KpiCard label="Oracle providers" :value="String(reserve.providers.length)" icon="book" :hint="reserve.providers.join(', ') || 'None found'" />
+        <KpiCard label="Oracle providers" :value="String(reserve.providers.length)" :hint="reserve.providers.join(', ') || 'None found'" />
 
         <section class="ax-card ax-col--12" aria-label="Health history">
           <div class="ax-card__header">
@@ -203,7 +203,7 @@ const accountRows = (r: Reserve) =>
                 <SeverityBadge :severity="c.severity" />
                 <div>
                   <b class="ax-mono checks__code">{{ c.code }}</b>
-                  <p class="checks__message">{{ c.message }}</p>
+                  <p class="checks__message">{{ checkMessage(c.message) }}</p>
                 </div>
               </li>
             </ul>

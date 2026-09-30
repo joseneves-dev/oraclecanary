@@ -7,6 +7,7 @@ import KpiCard from '@/components/KpiCard.vue'
 import ReserveTable from '@/components/ReserveTable.vue'
 import WalletLookup from '@/components/WalletLookup.vue'
 import { time, usd } from '@/lib/format'
+import { openIncidents } from '@/lib/incidents'
 import { priceState } from '@/lib/priceState'
 
 const router = useRouter()
@@ -29,8 +30,10 @@ onBeforeUnmount(() => controller.abort())
 /** Only closures with this much at stake are worth telling as a story. */
 const STORY_MIN_SUPPLY_USD = 100_000
 
-onMounted(async () => {
+async function load() {
   const { signal } = controller
+  loading.value = true
+  error.value = null
   // The cards are extras: if their data fails to load they are simply not shown.
   fetchReserves({ check: 'DEPRECATED_PROVIDER', itemsPerPage: 500 }, signal).then((rows) => (switchboard.value = rows), () => {})
   fetchIncidents({ itemsPerPage: 200, 'totalSupplyUsd[gte]': STORY_MIN_SUPPLY_USD }, signal).then((rows) => (incidents.value = rows), () => {})
@@ -43,7 +46,8 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+onMounted(load)
 
 const noFallback = computed(() => reserves.value.filter((r) => r.checks.some((c) => c.code === 'NO_FALLBACK')))
 const noFallbackSupply = computed(() => noFallback.value.reduce((sum, r) => sum + r.totalSupplyUsd, 0))
@@ -64,7 +68,8 @@ const switchboardUnlisted = computed(() => switchboard.value?.filter((r) => !r.m
 
 const totalSupply = computed(() => reserves.value.reduce((sum, r) => sum + r.totalSupplyUsd, 0))
 const protocolCount = computed(() => new Set(reserves.value.map((r) => r.protocol)).size)
-const critical = computed(() => reserves.value.filter((r) => r.severity === 'critical'))
+/** Same definition as the Incidents page and the front page. */
+const openNow = computed(() => openIncidents(reserves.value))
 const warnings = computed(() => reserves.value.filter((r) => r.severity === 'warning'))
 /**
  * Deposits whose price the protocol cannot use right now, apart from stocks paused by their closed
@@ -75,8 +80,14 @@ const blocked = computed(() => reserves.value.filter((r) => r.totalSupplyUsd >= 
 const paused = computed(() => reserves.value.filter((r) => r.totalSupplyUsd >= BLOCKED_MIN_USD && priceState(r) === 'paused'))
 const supplyOf = (list: Reserve[]) => list.reduce((sum, r) => sum + r.totalSupplyUsd, 0)
 
-/** The colour of the live status dot: the worst health among listed reserves. */
-const statusTone = computed(() => (critical.value.length ? 'danger' : warnings.value.length ? 'warning' : 'success'))
+/** The plain-language answer at the top of the page, from the same figures as the tiles. */
+const verdict = computed(() => {
+  const n = blocked.value.length
+  const head = n
+    ? `${n} listed ${n === 1 ? 'reserve' : 'reserves'} holding ${usd(supplyOf(blocked.value))} ${n === 1 ? 'has' : 'have'} a price the protocol can't use right now`
+    : 'No listed reserve is blocked by a broken price right now'
+  return paused.value.length ? `${head}; ${usd(supplyOf(paused.value))} is paused while the US market is closed.` : `${head}.`
+})
 
 const SEVERITY_RANK: Record<Severity, number> = { ok: 0, info: 1, warning: 2, critical: 3 }
 
@@ -108,12 +119,14 @@ const providerShare = computed(() => {
     .slice(0, 8)
 })
 
-const lastChecked = computed(() => {
-  const latest = Math.max(...reserves.value.map((r) => Date.parse(r.checkedAt)))
-  return Number.isFinite(latest) ? time(latest) : null
-})
+const latestCheck = computed(() => Math.max(...reserves.value.map((r) => Date.parse(r.checkedAt))))
+const lastChecked = computed(() => (Number.isFinite(latestCheck.value) ? time(latestCheck.value) : null))
+/** Checks run every 5 minutes; three missed runs in a row mean the figures are no longer live. */
+const STALE_AFTER_MS = 15 * 60_000
+const fresh = computed(() => Number.isFinite(latestCheck.value) && Date.now() - latestCheck.value < STALE_AFTER_MS)
+/** The status dot tells whether the data is live; the health of reserves is in the tiles. */
+const statusTone = computed(() => (error.value || loading.value ? 'muted' : fresh.value ? 'success' : 'warning'))
 </script>
-
 
 <template>
   <!-- One root: the layout pads each top-level block, so separate blocks would stack their padding. -->
@@ -122,66 +135,66 @@ const lastChecked = computed(() => {
       <div class="ax-page-head__row">
         <div>
           <h1 class="ax-page-head__title">Overview</h1>
-          <p class="status" :aria-busy="loading">
-            <span class="status__dot" :class="`status__dot--${error ? 'muted' : statusTone}`" aria-hidden="true"></span>
-            <template v-if="error">Live data could not be loaded right now</template>
+          <p class="ax-page-head__subtitle verdict" aria-live="polite">
+            <span v-if="loading" class="ax-skeleton ax-skeleton--line verdict__skeleton" aria-hidden="true"></span>
+            <template v-else-if="error">Live data could not be loaded right now.</template>
+            <template v-else>{{ verdict }}</template>
+          </p>
+          <p class="status">
+            <span class="status__dot" :class="`status__dot--${statusTone}`" aria-hidden="true"></span>
+            <template v-if="error">Offline</template>
             <template v-else-if="loading">Loading the latest check…</template>
             <template v-else>
-              Live · {{ reserves.length }} listed reserves on {{ protocolCount }} protocols, checked every 5 minutes<template v-if="lastChecked"
+              {{ fresh ? 'Live' : 'Not updated recently' }} · {{ reserves.length }} listed reserves on {{ protocolCount }} protocols, checked every 5
+              minutes<template v-if="lastChecked"
                 >, last at <span class="ax-num">{{ lastChecked }}</span></template
               >
             </template>
           </p>
         </div>
-        <div class="ax-page-head__actions">
-          <a class="ax-btn ax-btn--ghost ax-btn--sm" href="/api/docs" target="_blank" rel="noopener">Public API</a>
-        </div>
       </div>
     </header>
 
-    <div v-if="error" class="ax-alert ax-alert--danger" role="alert">{{ error }}</div>
-
     <div class="ax-dash-grid" :aria-busy="loading">
-      <template v-if="!error">
-        <KpiCard
-          label="Deposits watched"
-          icon="layout-dashboard"
-          :loading="loading"
-          :value="usd(totalSupply)"
-          :hint="`In ${reserves.length} listed reserves on Kamino, marginfi and Jupiter Lend`"
-          :to="{ name: 'reserves' }"
-        />
-        <KpiCard
-          label="Critical"
-          icon="alert-triangle"
-          :loading="loading"
-          :value="String(critical.length)"
-          :tone="critical.length ? 'danger' : undefined"
-          hint="Listed reserves with a critical issue"
-          :to="{ name: 'incidents' }"
-        />
-        <KpiCard
-          label="Warnings"
-          icon="bell"
-          :loading="loading"
-          :value="String(warnings.length)"
-          :tone="warnings.length ? 'warning' : undefined"
-          hint="Listed reserves with a warning"
-          :to="{ name: 'reserves', query: { health: 'issues' } }"
-        />
-        <KpiCard
-          label="Can't be priced now"
-          icon="lock"
-          :loading="loading"
-          :value="usd(supplyOf(blocked))"
-          :tone="blocked.length ? 'danger' : undefined"
-          :to="{ name: 'reserves', query: { health: 'critical' } }"
-        >
+      <!-- Only tiles whose link opens a list of exactly what they count are links. -->
+      <KpiCard
+        label="Deposits watched"
+        :loading="loading"
+        :value="error ? '—' : usd(totalSupply)"
+        :hint="error ? null : `In ${reserves.length} listed reserves on Kamino, marginfi and Jupiter Lend`"
+        :to="error ? undefined : { name: 'reserves' }"
+      />
+      <KpiCard
+        label="Open incidents"
+        :loading="loading"
+        :value="error ? '—' : String(openNow.length)"
+        :tone="openNow.length ? 'danger' : undefined"
+        :hint="error ? null : 'Listed reserves with a critical issue and money in them'"
+        :to="error ? undefined : { name: 'incidents' }"
+      />
+      <KpiCard
+        label="Warnings"
+        :loading="loading"
+        :value="error ? '—' : String(warnings.length)"
+        :tone="warnings.length ? 'warning' : undefined"
+        :hint="error ? null : 'Listed reserves whose worst issue is a warning'"
+      />
+      <KpiCard label="Can't be priced now" :loading="loading" :value="error ? '—' : usd(supplyOf(blocked))" :tone="blocked.length ? 'danger' : undefined">
+        <template v-if="!error">
           <template v-if="blocked.length">In {{ blocked.length }} {{ blocked.length === 1 ? 'reserve' : 'reserves' }}</template>
-          <template v-else>Every listed reserve has a usable price</template>
+          <template v-else>No listed reserve is blocked</template>
           <template v-if="paused.length">; {{ usd(supplyOf(paused)) }} paused while the US market is closed</template>
-        </KpiCard>
-      </template>
+        </template>
+      </KpiCard>
+
+      <section v-if="error" class="ax-card ax-col--12">
+        <EmptyState tone="error" title="Can't reach the API right now">
+          The figures on this page come from the live API, which did not answer. Try again in a moment.
+          <template #actions>
+            <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="load">Retry</button>
+          </template>
+        </EmptyState>
+      </section>
 
       <!-- The one action a depositor comes for. -->
       <section class="ax-card ax-col--12 wallet" aria-labelledby="wallet-title">
@@ -248,8 +261,12 @@ const lastChecked = computed(() => {
           </div>
           <div class="ax-card__body">
             <ul v-if="loading" class="providers" aria-hidden="true">
-              <li v-for="n in 6" :key="n">
-                <span class="ax-skeleton ax-skeleton--line" :style="{ width: `${90 - n * 8}%` }"></span>
+              <li v-for="n in 8" :key="n">
+                <div class="providers__row">
+                  <span class="ax-skeleton ax-skeleton--line" :style="{ width: `${48 - n * 3}%` }"></span>
+                  <span class="ax-skeleton ax-skeleton--line" style="width: 22%"></span>
+                </div>
+                <div class="providers__bar"></div>
               </li>
             </ul>
             <ul v-else class="providers">
@@ -274,9 +291,18 @@ const lastChecked = computed(() => {
 .ax-card__subtitle {
   max-width: 72ch;
 }
+.verdict {
+  max-width: 72ch;
+  color: var(--ax-text-strong);
+}
+.verdict__skeleton {
+  display: block;
+  width: min(520px, 90%);
+  height: 1.1em;
+}
 .status {
-  margin-block-start: var(--ax-space-1);
-  font-size: var(--ax-text-sm);
+  margin-block-start: var(--ax-space-2);
+  font-size: var(--ax-text-xs);
   color: var(--ax-text-muted);
 }
 .status__dot {

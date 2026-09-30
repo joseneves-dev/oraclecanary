@@ -30,9 +30,9 @@
 .ax-sidebar__section {
   margin: var(--ax-space-4) var(--ax-space-3) var(--ax-space-1);
   font-family: var(--ax-font-mono);
-  font-size: 10.5px;
+  font-size: var(--ax-text-2xs);
   font-weight: var(--ax-weight-medium);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ax-text-subtle);
   user-select: none;
@@ -351,7 +351,7 @@
   font-family: var(--ax-font-mono);
   font-size: var(--ax-text-2xs);
   font-weight: var(--ax-weight-medium);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ax-text-muted);
 }
@@ -363,7 +363,7 @@
   margin-inline-end: 8px;
   vertical-align: 1px;
   border-radius: 50%;
-  background: var(--ax-success-500);
+  background: var(--ax-sev-ok);
 }
 .ax-sidebar__foot .ax-sidebar__user-mail {
   margin-block-start: 2px;

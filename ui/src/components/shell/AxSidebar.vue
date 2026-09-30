@@ -9,7 +9,9 @@ import { useRoute, RouterLink } from 'vue-router'
 import AxIcon from '@/components/AxIcon.vue'
 import { buildSidebar, resolveActive } from '@/composables/useNav'
 import { currentSlug } from '@/lib/manifest'
+import { useTheme } from '@/composables/useTheme'
 
+const theme = useTheme()
 const sections = buildSidebar()
 const route = useRoute()
 
@@ -40,6 +42,7 @@ const activeId = computed(() => resolveActive(slug.value).activeId)
           v-bind="leaf.external ? { href: leaf.href, target: '_blank', rel: 'noopener' } : { to: leaf.href }"
           :class="{ 'ax-nav__item--active is-active': activeId === leaf.id }"
           :aria-current="activeId === leaf.id ? 'page' : undefined"
+          :title="theme.state.collapsed ? leaf.title : undefined"
         >
           <span class="ax-nav__bar" aria-hidden="true"></span>
           <AxIcon class="ax-nav__icon" :name="leaf.icon || 'layout-grid'" />

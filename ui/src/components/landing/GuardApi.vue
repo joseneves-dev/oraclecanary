@@ -8,19 +8,19 @@ const props = defineProps<{ sample: Reserve | null }>()
 
 const REPO = 'https://github.com/joseneves-dev/oraclecanary'
 
-const sampleLines = computed(() => {
+/** The live lowest-scoring reserve, trimmed to a few fields, in the API's own shape. */
+const sample = computed(() => {
   const r = props.sample
   if (!r) return null
-  const short = r.address.length > 14 ? `${r.address.slice(0, 6)}…${r.address.slice(-4)}` : r.address
-  return [
-    ['address', `"${short}"`, 's'],
-    ['protocol', `"${r.protocol}"`, 's'],
-    ['asset', `"${r.asset}"`, 's'],
-    ['score', String(r.score), 'n'],
-    ['severity', `"${r.severity}"`, r.severity === 'critical' ? 'x' : 's'],
-    ['price.ageSeconds', r.price?.ageSeconds == null ? 'null' : String(r.price.ageSeconds), 'n'],
-    ['checks[0].code', r.checks[0] ? `"${r.checks[0].code}"` : 'null', 's'],
-  ] as const
+  return {
+    address: r.address.length > 14 ? `${r.address.slice(0, 6)}…${r.address.slice(-4)}` : r.address,
+    protocol: r.protocol,
+    asset: r.asset,
+    score: r.score,
+    severity: r.severity,
+    age: r.price?.ageSeconds ?? null,
+    check: r.checks[0]?.code ?? null,
+  }
 })
 </script>
 
@@ -39,18 +39,26 @@ const sampleLines = computed(() => {
             <span class="code-card__file">borrow.ts</span>
             <span class="tag">Devnet only</span>
           </header>
-          <pre class="code"><code><span class="k">const</span> ixs = <span class="k">await</span> <span class="f">withOracleGuard</span>([borrowIx], {
-  reserves: [collateral, debt], <span class="c">// what the borrow relies on</span>
-  maxSeverity: <span class="s">'warning'</span>,    <span class="c">// single-source prices pass</span>
-})
-
-<span class="c">// A price with a critical issue makes the whole</span>
-<span class="c">// transaction fail on-chain, before borrowIx runs.</span></code></pre>
+          <div class="code-body">
+          <pre class="code"><code><span class="c">// Throws if a price is already broken;</span>
+<span class="c">// on-chain, oracle_guard then rejects</span>
+<span class="c">// the transaction before borrowIx runs.</span>
+<span class="k">const</span> ixs = <span class="k">await</span> <span class="f">withOracleGuard</span>([borrowIx], {
+  reserves: [collateral, debt],
+  maxSeverity: <span class="s">'warning'</span>,
+})</code></pre>
+            <ol class="tx" aria-label="The transaction, in order">
+              <li><span class="tx__n">1</span><b>Ed25519 verify</b><small>OracleCanary's signed attestations</small></li>
+              <li><span class="tx__n">2</span><b>oracle_guard</b><small>rejects the transaction if one fails</small></li>
+              <li><span class="tx__n">3</span><b>borrowIx</b><small>runs only if every price passes</small></li>
+            </ol>
+          </div>
           <div class="code-card__text">
             <h3>oracle_guard</h3>
             <p>
-              OracleCanary signs each reserve's latest health as an attestation. The Anchor program checks the signature, the reserve and how
-              recent it is, and stops the transaction when the health is worse than you allow. Nothing is on mainnet.
+              OracleCanary signs each reserve's latest health as an attestation. <code class="inline">withOracleGuard</code> adds them to your
+              transaction and throws before it is built if one is already too unhealthy or too old; on-chain, the Anchor program rejects any
+              transaction carrying a failing attestation. Nothing is on mainnet.
             </p>
             <div class="links">
               <RouterLink to="/how-it-works#guard" class="lp-link">How the guard works →</RouterLink>
@@ -65,17 +73,30 @@ const sampleLines = computed(() => {
             <span class="code-card__file">terminal</span>
             <span class="tag tag--ok">Free · public</span>
           </header>
-          <pre class="code"><code><span class="p">$</span> curl <span class="s">"https://oraclecanary.com/api/reserves?listed=true&amp;order[score]=asc"</span>
-<template v-if="sampleLines"><span class="c">// lowest score right now (live)</span>
-{
-<template v-for="([k, v, t], i) in sampleLines" :key="k">  <span class="a">"{{ k }}"</span>: <span :class="t">{{ v }}</span>{{ i < sampleLines.length - 1 ? ',' : '' }}
-</template>}</template><template v-else><span class="c">// —</span></template></code></pre>
+          <div class="code code--api">
+            <pre class="cmd"><code><span class="p">$</span> curl -G https://oraclecanary.com/api/reserves \
+    -H <span class="s">"Accept: application/json"</span> \
+    -d listed=true -d itemsPerPage=1 \
+    -d <span class="s">"order[score]=asc"</span></code></pre>
+            <pre class="out"><code><span class="c">// lowest score right now (live, trimmed)</span>
+<template v-if="sample">[{
+  <span class="a">"address"</span>: <span class="s">"{{ sample.address }}"</span>,
+  <span class="a">"protocol"</span>: <span class="s">"{{ sample.protocol }}"</span>,
+  <span class="a">"asset"</span>: <span class="s">"{{ sample.asset }}"</span>,
+  <span class="a">"score"</span>: <span class="n">{{ sample.score }}</span>,
+  <span class="a">"severity"</span>: <span :class="sample.severity === 'critical' ? 'x' : 's'">"{{ sample.severity }}"</span>,
+  <span class="a">"price"</span>: { <span class="a">"ageSeconds"</span>: <span class="n">{{ sample.age ?? 'null' }}</span>, … },
+  <span class="a">"checks"</span>: [<template v-if="sample.check">{ <span class="a">"code"</span>: <span class="s">"{{ sample.check }}"</span>, … }</template>],
+  …
+}]</template><template v-else>—</template></code></pre>
+          </div>
           <div class="code-card__text">
             <h3>Public API</h3>
             <p>
-              Every reserve, incident and configuration change, in JSON or CSV (<code>Accept: text/csv</code>). Each reserve also has a signed
-              attestation of its health at <code>/api/reserves/{address}/attestation</code>.
+              Every reserve, incident and configuration change in JSON; reserves and incidents also as CSV (<code class="inline">Accept: text/csv</code>).
+              Each reserve has a signed attestation of its health at
             </p>
+            <code class="path">/api/reserves/{address}/attestation</code>
             <div class="links">
               <a href="/api/docs" class="lp-link">API docs →</a>
             </div>
@@ -111,7 +132,7 @@ const sampleLines = computed(() => {
   border-bottom: 1px solid rgba(255, 240, 200, 0.08);
   font-family: var(--lp-mono);
   font-size: 12px;
-  color: rgba(233, 228, 214, 0.55);
+  color: rgba(233, 228, 214, 0.62);
 }
 .dots {
   display: inline-flex;
@@ -127,29 +148,92 @@ const sampleLines = computed(() => {
   margin-inline-start: auto;
   padding: 3px 9px;
   border-radius: 999px;
-  border: 1px solid rgba(251, 146, 60, 0.45);
+  border: 1px solid rgba(251, 146, 60, 0.5);
   color: #fdba74;
   font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .tag--ok {
-  border-color: rgba(250, 204, 21, 0.4);
+  border-color: rgba(250, 204, 21, 0.45);
   color: #fde047;
 }
 .code {
   margin: 0;
   padding: 20px 20px 22px;
   font-family: var(--lp-mono);
-  font-size: 13.5px;
+  font-size: 13px;
   line-height: 1.75;
   overflow-x: auto;
   white-space: pre;
   flex: 1;
-  min-height: 230px;
-  background:
-    radial-gradient(ellipse 60% 80% at 0% 0%, rgba(250, 204, 21, 0.07), transparent 70%),
-    transparent;
+  background: radial-gradient(ellipse 60% 80% at 0% 0%, rgba(250, 204, 21, 0.07), transparent 70%);
+}
+.code-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(ellipse 60% 80% at 0% 0%, rgba(250, 204, 21, 0.07), transparent 70%);
+}
+.code-body .code {
+  flex: none;
+  background: none;
+}
+.tx {
+  list-style: none;
+  margin: auto 20px 20px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.tx li {
+  display: grid;
+  grid-template-columns: 22px auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 240, 200, 0.1);
+  background: rgba(255, 240, 200, 0.03);
+}
+.tx li:nth-child(2) {
+  border-color: rgba(250, 204, 21, 0.4);
+}
+.tx__n {
+  font-family: var(--lp-mono);
+  font-size: 11px;
+  color: rgba(233, 228, 214, 0.6);
+}
+.tx b {
+  font-family: var(--lp-mono);
+  font-weight: 600;
+  color: #e9e4d6;
+}
+.tx li:nth-child(2) b {
+  color: #fde047;
+}
+.tx small {
+  font-size: 12.5px;
+  color: rgba(233, 228, 214, 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.code--api {
+  white-space: normal;
+  overflow: hidden;
+}
+.code--api pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre;
+}
+.code--api .cmd {
+  overflow-x: auto;
+  padding-bottom: 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px dashed rgba(255, 240, 200, 0.1);
 }
 .code code {
   font: inherit;
@@ -170,13 +254,13 @@ const sampleLines = computed(() => {
   color: #e9e4d6;
 }
 .c {
-  color: rgba(233, 228, 214, 0.42);
+  color: rgba(233, 228, 214, 0.6);
 }
 .x {
-  color: #f87171;
+  color: #fca5a5;
 }
 .p {
-  color: rgba(233, 228, 214, 0.42);
+  color: rgba(233, 228, 214, 0.6);
 }
 .code-card__text {
   padding: 18px 20px 20px;
@@ -191,18 +275,29 @@ const sampleLines = computed(() => {
 }
 .code-card__text p {
   margin: 0 0 12px;
-  color: rgba(233, 228, 214, 0.72);
+  color: rgba(233, 228, 214, 0.78);
   font-size: 14px;
   line-height: 1.6;
 }
-.code-card__text code {
+.inline,
+.path {
   font-family: var(--lp-mono);
   font-size: 12.5px;
   color: #e9e4d6;
   background: rgba(255, 240, 200, 0.08);
-  padding: 1px 5px;
   border-radius: 5px;
-  word-break: break-all;
+  white-space: nowrap;
+}
+.inline {
+  padding: 1px 5px;
+}
+.path {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 6px 10px;
+  margin: -4px 0 14px;
 }
 .links {
   display: flex;
@@ -217,11 +312,30 @@ const sampleLines = computed(() => {
     grid-template-columns: 1fr;
   }
 }
-@media (max-width: 480px) {
+@media (max-width: 600px) {
+  .tx {
+    margin: 0 16px 16px;
+  }
+  .tx li {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+  .tx small {
+    grid-column: 2;
+    white-space: normal;
+  }
   .code {
-    font-size: 12px;
+    font-size: 11px;
     padding: 16px;
-    min-height: 0;
+    white-space: pre-wrap;
+  }
+  .code--api .out {
+    white-space: pre-wrap;
+  }
+  .code--api .cmd {
+    font-size: 11px;
+  }
+  .code-card__text {
+    padding: 16px;
   }
 }
 </style>

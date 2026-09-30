@@ -26,7 +26,7 @@
   position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
   background: radial-gradient(60% 420px at 58% -120px, var(--ax-glow-1), transparent 70%);
 }
-.ax-ambient i { display: none; }
+
 
 /* ════════════════ CARD ════════════════
    Flat opaque panel, hairline border, a 1px inset top highlight. */
@@ -112,23 +112,27 @@
 
 /* ════════════════ NAV ACTIVE ROW ════════════════
    A quiet fill, strong ink, and a short canary bar on the rail edge. */
-.ax-nav__item.is-active {
+.ax-sidebar .ax-nav__item.is-active {
   color: var(--ax-text-strong);
   background: var(--ax-fill-hover);
 }
-.ax-nav__item.is-active::before {
+.ax-sidebar .ax-nav__item.is-active::before {
   content: ""; position: absolute; inset-inline-start: -12px; top: 50%;
   transform: translateY(-50%); width: 3px; height: 18px;
   border-radius: 0 2px 2px 0; background: var(--ax-accent);
 }
-.ax-nav__item.is-active svg { color: var(--ax-accent-text); opacity: 1; }
+.ax-sidebar .ax-nav__item.is-active svg { color: var(--ax-accent-text); opacity: 1; }
 
 /* ════════════════ FOCUS RING ════════════════
-   Generic outline for tabbables without a bespoke focus style. Form fields are
-   excluded: they own an accent border + soft halo in components.css. */
-:where(a, button, [tabindex], [role="button"]):focus-visible {
-  outline: 2px solid var(--ax-focus-ring); outline-offset: 2px;
-  border-radius: inherit;
+   One ring for every focusable: 2px in the focus colour, 2px off the element.
+   --ax-focus-ring is the canary itself in dark mode (#FACC15, 11:1 on the
+   canvas) and the deep canary #A16207 on paper, because pure canary is only
+   1.9:1 there — below the 3:1 a focus indicator needs. Text fields keep their
+   own accent border + halo (components.css), so they are left out here;
+   checkboxes, radios and sliders take the ring. */
+:focus-visible:not(input:is(:not([type]), [type="text"], [type="search"], [type="email"], [type="url"], [type="number"], [type="password"]), select, textarea) {
+  outline: 2px solid var(--ax-focus-ring);
+  outline-offset: 2px;
 }
 
 /* ════════════════ REDUCED MOTION ════════════════ */

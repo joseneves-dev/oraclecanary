@@ -22,10 +22,24 @@ watch(
   (value) => (input.value = value),
 )
 
+/** A Solana address: 32 to 44 base58 characters. */
+const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
+/** Said next to the field instead of a greyed-out button, which reads as broken. */
+const inputError = ref<string | null>(null)
+watch(input, () => (inputError.value = null))
+
 function submit(value = input.value) {
   const trimmed = value.trim()
   input.value = trimmed
-  if (trimmed) emit('lookup', trimmed)
+  if (!trimmed) {
+    inputError.value = 'Paste a wallet address first, or connect a wallet.'
+    return
+  }
+  if (!ADDRESS.test(trimmed)) {
+    inputError.value = 'That is not a Solana address. It is 32 to 44 letters and digits, like the one in your wallet.'
+    return
+  }
+  emit('lookup', trimmed)
 }
 
 const { available } = useSolanaWallets()
@@ -75,11 +89,13 @@ async function connect(wallet: WalletOption) {
         :class="large ? 'ax-input--lg' : 'ax-input--sm'"
         placeholder="Paste a Solana wallet address"
         aria-label="Wallet address"
+        :aria-invalid="inputError ? true : undefined"
+        :aria-describedby="inputError ? 'lookup-error' : undefined"
         autocomplete="off"
         spellcheck="false"
       />
       <div class="lookup__buttons">
-        <button type="submit" class="ax-btn ax-btn--primary" :class="large ? 'ax-btn--lg' : 'ax-btn--sm'" :disabled="!input.trim()">
+        <button type="submit" class="ax-btn ax-btn--primary" :class="large ? 'ax-btn--lg' : 'ax-btn--sm'">
           Check my wallet
         </button>
         <button type="button" class="ax-btn ax-btn--secondary" :class="large ? 'ax-btn--lg' : 'ax-btn--sm'" :disabled="connecting" @click="connectWallet">
@@ -87,6 +103,7 @@ async function connect(wallet: WalletOption) {
         </button>
       </div>
     </form>
+    <p v-if="inputError" id="lookup-error" class="lookup__error" role="alert">{{ inputError }}</p>
     <div v-if="choices.length" class="lookup__row" role="group" aria-label="Choose a wallet">
       <span class="muted">Which wallet?</span>
       <button v-for="w in choices" :key="w.name" type="button" class="ax-btn ax-btn--secondary ax-btn--sm lookup__choice" :disabled="connecting" @click="connect(w)">
@@ -121,6 +138,11 @@ async function connect(wallet: WalletOption) {
 /* iOS zooms into inputs under 16px. */
 .lookup--large .lookup__input {
   font-size: max(16px, var(--ax-text-md, 1rem));
+}
+.lookup__error {
+  margin: 0;
+  font-size: var(--ax-text-sm);
+  color: var(--ax-danger-500);
 }
 .lookup__buttons {
   display: flex;

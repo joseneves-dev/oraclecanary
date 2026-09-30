@@ -76,8 +76,8 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
           <div class="ax-card__titles">
             <h2 id="checks" class="ax-card__title">2. The checks and the score</h2>
             <p class="ax-card__subtitle">
-              Each reserve starts at 100 and loses points for every check it fails, down to 0; its level is its worst check. Both are recorded
-              every 5 minutes and kept as history. The rules are in
+              Each reserve starts at 100 and loses points for every check it fails, down to 0; its level is its worst check. Both are worked
+              out every 5 minutes, and for listed markets the worst of each hour is kept as history. The rules are in
               <a :href="`${REPO}/blob/main/indexer/src/health.ts`" target="_blank" rel="noopener">health.ts</a>.
             </p>
           </div>
@@ -102,8 +102,8 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
                     :class="{
                       'ax-badge--danger': c.severity === 'Critical',
                       'ax-badge--warning': c.severity === 'Warning',
-                      'ax-badge--info': c.severity === 'Info',
-                      'ax-badge--neutral': c.severity === 'Context',
+                      'ax-badge--neutral': c.severity === 'Info',
+                      'ax-badge--outline': c.severity === 'Context',
                     }"
                     >{{ c.severity }}</span
                   >
@@ -173,7 +173,7 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
           <h2 id="open" class="ax-card__title">Open source and free</h2>
           <p>
             The indexer, the API and the guard are open source under the MIT license, and the
-            <a href="/api/docs" target="_blank" rel="noopener">public API</a> (JSON and CSV) is free to use.
+            <a href="/api/docs" target="_blank" rel="noopener">public API</a> (JSON, with CSV for reserves and incidents) is free to use.
             <a :href="REPO" target="_blank" rel="noopener">Code on GitHub</a> ·
             <a href="https://x.com/OracleCanary_" target="_blank" rel="noopener">@OracleCanary_ on X</a> ·
             <a href="mailto:hello@oraclecanary.com">hello@oraclecanary.com</a>
@@ -210,6 +210,9 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
 }
 .prose {
   display: grid;
+  /* A bounded track, so the code snippet scrolls inside the card instead of widening it. */
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: var(--ax-space-3);
   color: var(--ax-text);
   max-width: 90ch;

@@ -20,8 +20,9 @@ watch(() => route.fullPath, () => drawer.closeDrawer())
 </script>
 
 <template>
+  <a class="oc-skip" href="#ax-main">Skip to content</a>
   <AxLoader />
-  <div class="ax-ambient" aria-hidden="true"><i></i></div>
+  <div class="ax-ambient" aria-hidden="true"></div>
   <div class="ax-layout">
     <AxSidebar />
     <!-- Drawer scrim — a SIBLING of .ax-sidebar, inside the isolated .ax-layout
@@ -37,7 +38,7 @@ watch(() => route.fullPath, () => drawer.closeDrawer())
     ></div>
     <div class="ax-shell">
       <AxHeader />
-      <main class="ax-main" id="ax-main">
+      <main class="ax-main" id="ax-main" tabindex="-1">
         <RouterView />
       </main>
       <AxFooter />

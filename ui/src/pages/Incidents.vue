@@ -6,11 +6,10 @@ import EmptyState from '@/components/EmptyState.vue'
 import IncidentLog from '@/components/IncidentLog.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import ReserveTags from '@/components/ReserveTags.vue'
-import { dateTime, duration, protocolName, shortAddress, usd } from '@/lib/format'
+import { checkMessage, dateTime, duration, protocolName, shortAddress, usd } from '@/lib/format'
+import { MIN_EXPOSED_USD, openIncidents } from '@/lib/incidents'
 
 const router = useRouter()
-// Empty reserves (under $1, shown as $0) put no money at risk and are left out of incidents.
-const MIN_EXPOSED_USD = 1
 
 const reserves = ref<Reserve[]>([])
 const loading = ref(true)
@@ -22,11 +21,9 @@ const changesLoading = ref(true)
 const changesError = ref<string | null>(null)
 const CHANGE_LABEL: Record<string, string> = { listed: 'Newly listed', price_source: 'Price source', max_age: 'Age limit' }
 
-onMounted(async () => {
-  fetchConfigChanges(30)
-    .then((rows) => (changes.value = rows))
-    .catch((e) => (changesError.value = (e as Error).message))
-    .finally(() => (changesLoading.value = false))
+async function loadReserves() {
+  loading.value = true
+  error.value = null
   try {
     reserves.value = await fetchAllReserves({ listed: true })
   } catch (e) {
@@ -34,15 +31,29 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+function loadChanges() {
+  changesLoading.value = true
+  changesError.value = null
+  fetchConfigChanges(30)
+    .then((rows) => (changes.value = rows))
+    .catch((e) => (changesError.value = (e as Error).message))
+    .finally(() => (changesLoading.value = false))
+}
+
+onMounted(() => {
+  loadChanges()
+  loadReserves()
 })
 
-const open = computed(() => reserves.value.filter((r) => r.severity === 'critical' && r.totalSupplyUsd >= MIN_EXPOSED_USD).sort((a, b) => b.totalSupplyUsd - a.totalSupplyUsd))
+const open = computed(() => openIncidents(reserves.value))
 const openSupply = computed(() => open.value.reduce((sum, r) => sum + r.totalSupplyUsd, 0))
 /** How long the oldest open incident has lasted, from the age of its price. */
 const longestOpen = computed(() => Math.max(0, ...open.value.map((r) => r.price.ageSeconds ?? 0)))
 
 /** The most telling message of a reserve: its critical check. */
-const mainIssue = (r: Reserve) => (r.checks.find((c) => c.severity === 'critical') ?? r.checks[0])?.message ?? ''
+const mainIssue = (r: Reserve) => checkMessage((r.checks.find((c) => c.severity === 'critical') ?? r.checks[0])?.message ?? '')
 
 const LOG_SIZE = 100
 const LOG_FILTERS = [
@@ -55,9 +66,12 @@ const logFilter = shallowRef<(typeof LOG_FILTERS)[number]>(LOG_FILTERS[0])
 const incidents = ref<ReserveIncident[]>([])
 const logError = ref<string | null>(null)
 
+/** Bumped by Retry, to load the same list again. */
+const logReload = ref(0)
+
 watch(
-  logFilter,
-  async (filter, _previous, onCleanup) => {
+  [logFilter, logReload],
+  async ([filter], _previous, onCleanup) => {
     const controller = new AbortController()
     onCleanup(() => controller.abort())
     logError.value = null
@@ -86,13 +100,33 @@ watch(
       </div>
     </div>
 
-    <div v-if="error" class="ax-alert ax-alert--danger" role="alert">{{ error }}</div>
-
-    <div v-else class="ax-dash-grid" :aria-busy="loading">
-      <KpiCard label="Open incidents" :loading="loading" :tone="open.length ? 'danger' : undefined" :value="String(open.length)" icon="alert-triangle" hint="Listed reserves with a critical check" />
-      <KpiCard label="Supply affected" :loading="loading" :tone="openSupply > 0 ? 'danger' : undefined" :value="usd(openSupply)" icon="table" hint="Deposits in those reserves" />
-      <KpiCard label="Longest open" :loading="loading" :value="open.length ? duration(longestOpen) : '—'" icon="history" hint="Age of the oldest price among open incidents" />
-      <KpiCard label="Markets watched" :loading="loading" :value="String(reserves.length)" icon="layout-dashboard" hint="Listed reserves on Kamino, marginfi and Jupiter Lend" />
+    <div class="ax-dash-grid" :aria-busy="loading">
+      <KpiCard
+        label="Open incidents"
+        :loading="loading"
+        :tone="open.length ? 'danger' : undefined"
+        :value="error ? '—' : String(open.length)"
+        :hint="error ? null : 'Listed reserves with a critical issue and money in them'"
+      />
+      <KpiCard
+        label="Supply affected"
+        :loading="loading"
+        :tone="openSupply > 0 ? 'danger' : undefined"
+        :value="error ? '—' : usd(openSupply)"
+        :hint="error ? null : 'Deposits in those reserves'"
+      />
+      <KpiCard
+        label="Longest open"
+        :loading="loading"
+        :value="!error && open.length ? duration(longestOpen) : '—'"
+        :hint="error ? null : 'Age of the oldest price among open incidents'"
+      />
+      <KpiCard
+        label="Reserves watched"
+        :loading="loading"
+        :value="error ? '—' : String(reserves.length)"
+        :hint="error ? null : 'Listed reserves on Kamino, marginfi and Jupiter Lend'"
+      />
 
       <section class="ax-card ax-col--12" aria-label="Open incidents">
         <div class="ax-card__header">
@@ -101,7 +135,13 @@ watch(
             <p class="ax-card__subtitle">Borrowing and liquidations are blocked until these prices recover</p>
           </div>
         </div>
-        <EmptyState v-if="!loading && !open.length" title="No open incident">Every listed reserve has a price the protocol can use.</EmptyState>
+        <EmptyState v-if="error" tone="error" title="Can't reach the API right now">
+          The open incidents come from the live API, which did not answer. Try again in a moment.
+          <template #actions>
+            <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="loadReserves">Retry</button>
+          </template>
+        </EmptyState>
+        <EmptyState v-else-if="!loading && !open.length" title="No open incident">Every listed reserve has a price the protocol can use.</EmptyState>
         <div v-else class="ax-table-wrap">
           <table class="ax-table ax-table--hover ax-table--compact open">
             <thead class="ax-table__head">
@@ -154,7 +194,11 @@ watch(
             </button>
           </div>
         </div>
-        <div v-if="logError" class="ax-card__body"><div class="ax-alert ax-alert--danger" role="alert">{{ logError }}</div></div>
+        <EmptyState v-if="logError" tone="error" title="Can't reach the API right now" compact>
+          <template #actions>
+            <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="logReload++">Retry</button>
+          </template>
+        </EmptyState>
         <template v-else-if="incidents.length">
           <IncidentLog :incidents="incidents" />
           <p class="footnote">≈ marks a start worked out from the price age, for reserves already failing when tracking began on 27 Sep 2026.</p>
@@ -169,7 +213,11 @@ watch(
             <p class="ax-card__subtitle">New listings and changes to how listed reserves are priced</p>
           </div>
         </div>
-        <div v-if="changesError" class="ax-card__body"><div class="ax-alert ax-alert--danger" role="alert">{{ changesError }}</div></div>
+        <EmptyState v-if="changesError" tone="error" title="Can't reach the API right now" compact>
+          <template #actions>
+            <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="loadChanges">Retry</button>
+          </template>
+        </EmptyState>
         <div v-else-if="changesLoading" class="ax-card__body skeleton-rows" aria-hidden="true">
           <span v-for="n in 3" :key="n" class="ax-skeleton ax-skeleton--line"></span>
         </div>
@@ -263,5 +311,44 @@ watch(
 .skeleton-rows {
   display: grid;
   gap: var(--ax-space-3);
+}
+/* Phones: headers wrap under their titles; open incidents become cards. */
+@media (max-width: 640px) {
+  .ax-card__header {
+    flex-wrap: wrap;
+  }
+  .open thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .open,
+  .open tbody {
+    display: block;
+  }
+  .open tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'reserve age'
+      'issue issue'
+      'tags supply';
+    gap: var(--ax-space-1) var(--ax-space-3);
+    padding: var(--ax-space-3) var(--ax-space-4);
+    border-bottom: 1px solid var(--ax-border);
+  }
+  .open td {
+    display: block;
+    padding: 0;
+    border: 0;
+    max-width: none;
+  }
+  .open td:nth-child(1) { grid-area: reserve; }
+  .open td:nth-child(2) { grid-area: issue; }
+  .open td:nth-child(3) { grid-area: tags; }
+  .open td:nth-child(4) { grid-area: age; }
+  .open td:nth-child(5) { grid-area: supply; }
 }
 </style>

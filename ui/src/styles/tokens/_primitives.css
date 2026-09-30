@@ -161,72 +161,86 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   §2 — NEUTRAL RAMPS + STROKE/FILL ALPHAS + SEMANTIC RAMPS
+   §2 — NEUTRAL RAMPS + STROKE/FILL ALPHAS + SEVERITY
+   One palette with the front page (Landing.vue --lp-*): warm paper by day,
+   warm mine-black by night.
    ═══════════════════════════════════════════════════════════════════════ */
 :root {
-  /* LIGHT — warm paper. Stone-family ink; every step used as text clears
-     WCAG AA (4.5:1) on the subtle surface (#EFEADF). */
+  /* LIGHT — warm paper. Every step used as text clears WCAG AA (4.5:1) on the
+     subtle surface (#F3EEE2) as well as on panels. */
   --ax-neutral-0:    #FFFFFF;
-  --ax-neutral-25:   #F6F3EA;  /* app canvas */
-  --ax-neutral-50:   #EFEADF;  /* subtle surface, table header */
-  --ax-neutral-100:  #E7E1D4;  /* muted panel */
-  --ax-neutral-150:  #DDD6C8;  /* hairline (opaque equivalent) */
-  --ax-neutral-200:  #CFC7B7;  /* strong border, divider */
-  --ax-neutral-300:  #B5AC9C;  /* disabled border, track */
-  --ax-neutral-400:  #9C9486;  /* placeholder, disabled text */
-  --ax-neutral-500:  #6B645A;  /* tertiary text, captions (4.9:1 on subtle) */
-  --ax-neutral-600:  #57514A;  /* secondary text */
-  --ax-neutral-700:  #3F3A35;  /* body text */
-  --ax-neutral-800:  #292524;  /* strong text */
-  --ax-neutral-900:  #1C1917;  /* ink: headings, key numbers */
-  --ax-neutral-1000: #0C0A09;
+  --ax-neutral-25:   #F5F0E4;  /* app canvas (= --lp-bg) */
+  --ax-neutral-50:   #F3EEE2;  /* subtle surface: table header, wells */
+  --ax-neutral-100:  #EBE4D4;  /* muted panel */
+  --ax-neutral-150:  #E0D8C6;  /* hairline (opaque equivalent) */
+  --ax-neutral-200:  #D3CAB6;  /* strong border, divider */
+  --ax-neutral-300:  #B9AF99;  /* disabled border, track */
+  --ax-neutral-400:  #9A907B;  /* disabled text */
+  --ax-neutral-500:  #6B614E;  /* tertiary text, captions (5.3:1 on subtle) */
+  --ax-neutral-600:  #5B5241;  /* secondary text */
+  --ax-neutral-700:  #4A4232;  /* body text (= --lp-ink-2) */
+  --ax-neutral-800:  #2C261B;
+  --ax-neutral-900:  #1C1810;  /* ink (= --lp-ink) */
+  --ax-neutral-1000: #0D0C0A;
 
-  /* DARK — deep near-black, neutral greys. 50 = lightest text. */
-  --ax-dark-1000: #050506;
-  --ax-dark-950:  #0A0A0B;  /* app canvas */
-  --ax-dark-900:  #0E0E10;  /* header / sidebar */
-  --ax-dark-850:  #161618;  /* card surface */
-  --ax-dark-800:  #1C1C1F;  /* subtle surface, inputs, table header */
-  --ax-dark-750:  #232326;  /* popover / floating surface */
-  --ax-dark-700:  #2C2C30;
-  --ax-dark-600:  #5A5A61;  /* disabled text */
-  --ax-dark-500:  #8A8A92;  /* tertiary text, captions (5:1 on subtle) */
-  --ax-dark-400:  #95959C;
-  --ax-dark-300:  #A8A8AF;  /* muted text, idle icons */
-  --ax-dark-200:  #C4C4CA;
-  --ax-dark-100:  #DEDEE2;  /* body text */
-  --ax-dark-50:   #F4F4F5;  /* strong text, headings */
+  /* DARK — warm mine black. 50 = lightest text. */
+  --ax-dark-1000: #080706;
+  --ax-dark-950:  #0D0C0A;  /* app canvas (= --lp-bg) */
+  --ax-dark-900:  #100E0B;  /* header / sidebar */
+  --ax-dark-850:  #15130F;  /* card surface (= --lp-panel) */
+  --ax-dark-800:  #1B1814;  /* subtle surface: table header, inputs */
+  --ax-dark-750:  #221E19;  /* popover / floating surface */
+  --ax-dark-700:  #2C2720;
+  --ax-dark-600:  #5E5749;  /* disabled text */
+  --ax-dark-500:  #8F8672;  /* tertiary text, captions (4.9:1 on subtle) */
+  --ax-dark-400:  #A0977F;
+  --ax-dark-300:  #BDB5A2;  /* muted text (= --lp-ink-2) */
+  --ax-dark-200:  #D2CBB9;
+  --ax-dark-100:  #E4DECF;  /* body text */
+  --ax-dark-50:   #F5F0E2;  /* ink (= --lp-ink) */
 
-  /* DARK strokes/fills — alpha hairlines that read on any dark surface. */
-  --ax-dark-panel:      #161618;
-  --ax-dark-panel-2:    #1C1C1F;
-  --ax-dark-glass-hi:   rgba(255, 255, 255, 0.035);
-  --ax-dark-stroke:     rgba(255, 255, 255, 0.07);
-  --ax-dark-stroke-2:   rgba(255, 255, 255, 0.13);
-  --ax-dark-fill-1:     rgba(255, 255, 255, 0.045);
-  --ax-dark-fill-2:     rgba(255, 255, 255, 0.09);
+  /* DARK strokes/fills — warm-white alpha (= --lp-line / --lp-fill). */
+  --ax-dark-panel:      #15130F;
+  --ax-dark-panel-2:    #1B1814;
+  --ax-dark-glass-hi:   rgba(255, 240, 200, 0.04);
+  --ax-dark-stroke:     rgba(255, 240, 200, 0.08);
+  --ax-dark-stroke-2:   rgba(255, 240, 200, 0.16);
+  --ax-dark-fill-1:     rgba(255, 240, 200, 0.04);
+  --ax-dark-fill-2:     rgba(255, 240, 200, 0.08);
 
-  /* LIGHT strokes/fills — warm ink at low alpha. */
-  --ax-light-panel:     #FFFDF8;
-  --ax-light-panel-2:   #FFFFFF;
+  /* LIGHT strokes/fills — warm-ink alpha (= --lp-line / --lp-fill). */
+  --ax-light-panel:     #FBF8F0;  /* = --lp-panel */
+  --ax-light-panel-2:   #FFFDF7;
   --ax-light-glass-hi:  rgba(255, 255, 255, 0.70);
-  --ax-light-stroke:    rgba(28, 25, 23, 0.10);
-  --ax-light-stroke-2:  rgba(28, 25, 23, 0.17);
-  --ax-light-fill-1:    rgba(28, 25, 23, 0.045);
-  --ax-light-fill-2:    rgba(28, 25, 23, 0.085);
+  --ax-light-stroke:    rgba(58, 44, 12, 0.12);
+  --ax-light-stroke-2:  rgba(58, 44, 12, 0.22);
+  --ax-light-fill-1:    rgba(58, 44, 12, 0.05);
+  --ax-light-fill-2:    rgba(58, 44, 12, 0.09);
 
-  /* SEMANTIC ramps. 500 is used as TEXT as well as fill, so every light 500
-     clears 4.5:1 on the card, the subtle surface and its own 50 wash. Warning is
-     ORANGE on purpose: canary yellow is the brand, not a severity. */
-  --ax-success-50: #E9F6EC; --ax-success-200: #A7D8B5; --ax-success-500: #137638;
-  --ax-warning-50: #FFF1E6; --ax-warning-200: #FDC9A0; --ax-warning-500: #B63C0A;
-  --ax-danger-50:  #FEECEC; --ax-danger-200:  #F6B4B4; --ax-danger-500:  #C81E1E;
-  --ax-info-50:    #EAF1FB; --ax-info-200:    #AFC8EE; --ax-info-500:    #1D63C4;
+  /* ── SEVERITY — the one scale used by badges, bars, dots, charts and the
+     front page. Each level has a FILL (bars, dots, chart marks), a -text
+     (AA as text on panels and on its own -wash) and a -wash (badge ground).
+     Warning is orange so it never reads as the canary brand yellow. ── */
+  --ax-sev-crit: #DC2626;  --ax-sev-crit-text: #C81E1E;  --ax-sev-crit-wash: #FDECEA;
+  --ax-sev-warn: #EA580C;  --ax-sev-warn-text: #C2410C;  --ax-sev-warn-wash: #FFF1E6;
+  --ax-sev-ok:   #16A34A;  --ax-sev-ok-text:   #137638;  --ax-sev-ok-wash:   #EAF5EC;
+  --ax-sev-info: #4A6F96;  --ax-sev-info-text: #4A6F96;  --ax-sev-info-wash: #EDF2F7;
+
+  /* Legacy semantic ramps, derived from the severity scale. */
+  --ax-success-50: var(--ax-sev-ok-wash);   --ax-success-200: #A9D6B4; --ax-success-500: var(--ax-sev-ok-text);
+  --ax-warning-50: var(--ax-sev-warn-wash); --ax-warning-200: #FBC9A2; --ax-warning-500: var(--ax-sev-warn-text);
+  --ax-danger-50:  var(--ax-sev-crit-wash); --ax-danger-200:  #F4B4B0; --ax-danger-500:  var(--ax-sev-crit-text);
+  --ax-info-50:    var(--ax-sev-info-wash); --ax-info-200:    #B7C9DD; --ax-info-500:    var(--ax-sev-info-text);
 }
 
 [data-ax-theme="dark"] {
-  --ax-success-50: #0F2417; --ax-success-200: #1F5A34; --ax-success-500: #4ADE80;
-  --ax-warning-50: #2A1A0E; --ax-warning-200: #6A3413; --ax-warning-500: #FB923C;
-  --ax-danger-50:  #2A1414; --ax-danger-200:  #6B2323; --ax-danger-500:  #F87171;
-  --ax-info-50:    #0F1D30; --ax-info-200:    #22467A; --ax-info-500:    #60A5FA;
+  --ax-sev-crit: #F87171;  --ax-sev-crit-text: #F87171;  --ax-sev-crit-wash: #2B1614;
+  --ax-sev-warn: #FB923C;  --ax-sev-warn-text: #FB923C;  --ax-sev-warn-wash: #2A1B0E;
+  --ax-sev-ok:   #4ADE80;  --ax-sev-ok-text:   #4ADE80;  --ax-sev-ok-wash:   #102417;
+  --ax-sev-info: #8FB3D9;  --ax-sev-info-text: #8FB3D9;  --ax-sev-info-wash: #18212B;
+
+  --ax-success-200: #1F5A34;
+  --ax-warning-200: #6A3413;
+  --ax-danger-200:  #6B2323;
+  --ax-info-200:    #2C4460;
 }

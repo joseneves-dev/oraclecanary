@@ -1,39 +1,54 @@
 <script setup lang="ts">
-/* How it works, as a descent down the shaft: five numbered steps, each with a small moving diagram. */
+/* How it works in three steps, each with a small diagram drawn from live data. */
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import type { Reserve, ReserveIncident, Severity } from '@/api/client'
+import { checkLabel, fmtAgo, fmtInt, fmtUsd, protocolName } from '@/composables/useLanding'
 
-const steps = [
-  {
-    key: 'read',
-    title: 'Read the chain',
-    body: 'Every five minutes, OracleCanary reads from Solana mainnet the oracle configuration and the price accounts behind every reserve of Kamino, marginfi and Jupiter Lend.',
-    link: { label: 'How the checks work', to: '/how-it-works' },
-  },
-  {
-    key: 'score',
-    title: 'Score each price',
-    body: 'Each reserve gets a price-health score from 0 to 100. Every failing check takes points off; the worst one sets its colour.',
-    link: { label: 'Browse the reserves', to: '/reserves' },
-  },
-  {
-    key: 'alert',
-    title: 'Open an incident, send an alert',
-    body: 'When a price breaks, an incident opens and the public Telegram channel gets a message. Changes to how a reserve is priced are recorded too.',
-    link: { label: 'Join the alert channel', href: 'https://t.me/OracleCanaryAlerts' },
-  },
-  {
-    key: 'wallet',
-    title: 'Check your own positions',
-    body: 'Paste a wallet: see which Kamino and marginfi deposits and loans rely on a broken price, and the liquidation price of each loan. The bot can watch it for you.',
-    link: { label: 'Check a wallet', to: '/positions' },
-  },
-  {
-    key: 'guard',
-    title: 'Stop the transaction',
-    body: 'The oracle_guard program makes a transaction fail on-chain, before your borrow runs, when a price it relies on is broken. Live on devnet only.',
-    link: { label: 'See the guard', to: '/how-it-works#guard' },
-  },
-] as const
+const props = defineProps<{
+  lanes: { id: string; name: string; count: number | null }[]
+  reserves: Reserve[] | null
+  incidents: ReserveIncident[] | null
+  lastChecked: number | null
+  now: number
+}>()
+
+/** Scores in ten bins (0–9 … 90–100), each split by severity. */
+const SEV: Severity[] = ['critical', 'warning', 'info', 'ok']
+const bins = computed(() => {
+  if (!props.reserves) return null
+  const out = Array.from({ length: 10 }, () => ({ critical: 0, warning: 0, info: 0, ok: 0, total: 0 }))
+  for (const r of props.reserves) {
+    const b = out[Math.min(9, Math.floor(r.score / 10))]!
+    b[r.severity]++
+    b.total++
+  }
+  return out
+})
+/** Square-root scale, so the few low scores stay visible next to the many healthy ones. */
+const maxRoot = computed(() => Math.sqrt(Math.max(1, ...(bins.value ?? []).map((b) => b.total))))
+function segs(b: { critical: number; warning: number; info: number; ok: number; total: number }) {
+  const h = b.total ? 6 + 70 * (Math.sqrt(b.total) / maxRoot.value) : 0
+  let y = 96
+  return SEV.filter((s) => b[s] > 0).map((s) => {
+    const sh = (b[s] / b.total) * h
+    y -= sh
+    return { s, y, h: sh }
+  })
+}
+
+/** The latest real break; a market-hours pause only if nothing else is in the log. */
+const latest = computed(() => {
+  const list = props.incidents ?? []
+  return list.find((i) => !i.checks.some((c) => c.code === 'MARKET_CLOSED')) ?? list[0] ?? null
+})
+const latestPaused = computed(() => !!latest.value?.checks.some((c) => c.code === 'MARKET_CLOSED'))
+const latestWhy = computed(() => {
+  const i = latest.value
+  if (!i) return ''
+  if (latestPaused.value) return 'paused, market closed'
+  return [...new Set(i.checks.filter((c) => c.severity === 'critical').map((c) => checkLabel(c.code)))].join(', ')
+})
 </script>
 
 <template>
@@ -44,129 +59,114 @@ const steps = [
         <h2 id="how-title" class="lp-h2">From a price account on-chain to a message on your phone.</h2>
       </div>
 
-      <ol class="shaft">
-        <li v-for="(s, i) in steps" :key="s.key" class="step">
-          <div class="step__depth" aria-hidden="true">
-            <span class="step__no lp-num">{{ String(i + 1).padStart(2, '0') }}</span>
+      <ol class="steps">
+        <!-- 01 -->
+        <li class="step">
+          <span class="step__no lp-num" aria-hidden="true">01</span>
+          <h3 class="step__title">Read the chain</h3>
+          <p class="step__body">
+            Every five minutes, OracleCanary reads from Solana mainnet the oracle configuration and price accounts behind every listed reserve.
+          </p>
+          <div class="viz" aria-hidden="true">
+            <svg viewBox="0 0 300 132" fill="none">
+              <g v-for="(l, k) in lanes" :key="l.id">
+                <text x="8" :y="30 + k * 38" class="v-label">{{ l.name }}</text>
+                <text x="8" :y="44 + k * 38" class="v-num">{{ fmtInt(l.count) }} reserves</text>
+                <path :d="`M120 ${34 + k * 38} C 170 ${34 + k * 38}, 190 66, 236 66`" class="v-wire" />
+                <circle r="3" class="v-pulse" :style="{ offsetPath: `path('M120 ${34 + k * 38} C 170 ${34 + k * 38}, 190 66, 236 66')`, animationDelay: `${k * 0.5}s` }" />
+              </g>
+              <circle cx="252" cy="66" r="16" class="v-node" />
+              <g transform="translate(241 55) scale(0.7)">
+                <path d="M4 4 H16 A12 12 0 0 1 28 16 V28 H16 A12 12 0 0 1 4 16 V4 Z" class="v-canary" />
+                <circle cx="20.5" cy="11.5" r="2.6" fill="#0A0C11" />
+              </g>
+            </svg>
+            <p class="viz__cap lp-num">last read {{ fmtAgo(lastChecked, now) }}</p>
           </div>
-          <div class="step__text">
-            <h3 class="step__title">{{ s.title }}</h3>
-            <p class="step__body">{{ s.body }}</p>
-            <a v-if="'href' in s.link" :href="s.link.href" target="_blank" rel="noopener" class="lp-link">{{ s.link.label }} →</a>
-            <RouterLink v-else :to="s.link.to" class="lp-link">{{ s.link.label }} →</RouterLink>
+        </li>
+
+        <!-- 02 -->
+        <li class="step">
+          <span class="step__no lp-num" aria-hidden="true">02</span>
+          <h3 class="step__title">Score each price</h3>
+          <p class="step__body">Each reserve gets a price-health score from 0 to 100. Every failing check takes points off; the worst one sets its colour.</p>
+          <div class="viz" aria-hidden="true">
+            <svg viewBox="0 0 300 132" fill="none">
+              <line x1="10" x2="290" y1="96.5" y2="96.5" class="v-axis" />
+              <template v-if="bins">
+                <g v-for="(b, k) in bins" :key="k">
+                  <rect v-for="p in segs(b)" :key="p.s" :x="14 + k * 28" :y="p.y" width="20" :height="p.h" :class="`v-sev v-${p.s}`" />
+                  <text v-if="b.total" :x="24 + k * 28" :y="(segs(b)[segs(b).length - 1]?.y ?? 96) - 5" text-anchor="middle" class="v-num">{{ b.total }}</text>
+                </g>
+              </template>
+              <text x="14" y="114" class="v-num">0</text>
+              <text x="286" y="114" text-anchor="end" class="v-num">100</text>
+              <text x="150" y="114" text-anchor="middle" class="v-num">score</text>
+            </svg>
+            <p class="viz__cap lp-num">{{ reserves ? fmtInt(reserves.length) : '—' }} scores right now</p>
           </div>
-          <div class="step__viz" aria-hidden="true">
-            <!-- 01 read: blocks pass under a read head -->
-            <svg v-if="s.key === 'read'" viewBox="0 0 240 120" fill="none">
-              <g class="d-blocks">
-                <rect v-for="k in 9" :key="k" :x="(k - 1) * 34 - 20" y="62" width="26" height="26" rx="5" class="d-block" />
-              </g>
-              <path d="M120 22 V52" class="d-accent" stroke-width="2" />
-              <path d="M110 52 H130 L120 62 Z" class="d-accent-fill" />
-              <circle cx="120" cy="18" r="5" class="d-accent-fill d-blink" />
-              <text x="146" y="22" class="d-label">every 5 min</text>
-              <path d="M0 100 H240" class="d-line" stroke-dasharray="2 5" />
-            </svg>
+        </li>
 
-            <!-- 02 score: a gauge -->
-            <svg v-else-if="s.key === 'score'" viewBox="0 0 240 120" fill="none">
-              <path d="M50 100 A70 70 0 0 1 190 100" class="d-line" stroke-width="10" stroke-linecap="butt" />
-              <path d="M50 100 A70 70 0 0 1 71 50.5" class="d-crit" stroke-width="10" />
-              <path d="M71 50.5 A70 70 0 0 1 120 30" class="d-warn" stroke-width="10" />
-              <path d="M120 30 A70 70 0 0 1 190 100" class="d-ok" stroke-width="10" />
-              <g class="d-needle">
-                <path d="M120 100 L120 42" class="d-ink" stroke-width="2.5" stroke-linecap="round" />
-              </g>
-              <circle cx="120" cy="100" r="6" class="d-ink-fill" />
-              <text x="44" y="116" class="d-label">0</text>
-              <text x="180" y="116" class="d-label">100</text>
+        <!-- 03 -->
+        <li class="step">
+          <span class="step__no lp-num" aria-hidden="true">03</span>
+          <h3 class="step__title">Open an incident, send an alert</h3>
+          <p class="step__body">
+            When a price breaks, an incident opens and, for reserves holding $10K or more, the public Telegram channel gets a message.
+          </p>
+          <div class="viz" aria-hidden="true">
+            <svg viewBox="0 0 300 132" fill="none">
+              <path d="M0 104 H70 L78 96 L86 110 L94 104 H120 L128 80 L135 124 L142 104 H300" class="v-trace" />
+              <path d="M120 104 L128 80 L135 124 L142 104" class="v-spike" />
+              <circle cx="128" cy="80" r="4" class="v-crit-fill v-blink" />
             </svg>
-
-            <!-- 03 alert: the trace breaks and a message goes out -->
-            <svg v-else-if="s.key === 'alert'" viewBox="0 0 240 120" fill="none">
-              <path d="M0 84 H40 L48 74 L56 90 L64 84 H96 L104 60 L110 100 L116 84 H240" class="d-line" stroke-width="1.6" />
-              <path d="M96 84 L104 60 L110 100 L116 84" class="d-crit" stroke-width="2" />
-              <circle cx="104" cy="60" r="4" class="d-crit-fill d-blink" />
-              <g class="d-msg">
-                <rect x="138" y="16" width="92" height="44" rx="10" class="d-card" />
-                <path d="M150 60 L146 70 L160 60" class="d-card" />
-                <circle cx="154" cy="31" r="4" class="d-crit-fill" />
-                <rect x="164" y="28" width="52" height="6" rx="3" class="d-ink-fill" opacity="0.8" />
-                <rect x="150" y="42" width="66" height="5" rx="2.5" class="d-ink-fill" opacity="0.35" />
-              </g>
-            </svg>
-
-            <!-- 04 wallet: one position depends on a broken price -->
-            <svg v-else-if="s.key === 'wallet'" viewBox="0 0 240 120" fill="none">
-              <rect x="40" y="10" width="160" height="100" rx="12" class="d-card" />
-              <rect x="56" y="24" width="60" height="7" rx="3.5" class="d-ink-fill" opacity="0.7" />
-              <g v-for="(row, k) in [0, 1, 2]" :key="k">
-                <rect x="56" :y="44 + row * 20" width="10" height="10" rx="3" :class="row === 1 ? 'd-row-alert' : 'd-ok-fill'" />
-                <rect x="74" :y="46 + row * 20" :width="[70, 52, 62][row]" height="6" rx="3" class="d-ink-fill" opacity="0.35" />
-                <rect x="160" :y="46 + row * 20" width="26" height="6" rx="3" class="d-ink-fill" opacity="0.5" />
-              </g>
-              <rect x="50" y="59" width="142" height="20" rx="6" class="d-row-ring" />
-            </svg>
-
-            <!-- 05 guard: a transaction meets the gate -->
-            <svg v-else viewBox="0 0 240 120" fill="none">
-              <path d="M10 70 H230" class="d-line" stroke-dasharray="2 5" />
-              <rect x="150" y="30" width="8" height="70" rx="2" class="d-ink-fill" />
-              <rect class="d-gate" x="140" y="30" width="6" height="40" rx="2" />
-              <g class="d-tx">
-                <rect x="0" y="58" width="44" height="24" rx="6" class="d-accent-fill" />
-                <text x="22" y="74" text-anchor="middle" class="d-tx-label">borrow</text>
-              </g>
-              <text x="154" y="20" text-anchor="middle" class="d-label">oracle_guard</text>
-              <text x="200" y="74" text-anchor="middle" class="d-label d-label--crit d-refused">refused</text>
-              <text x="154" y="116" text-anchor="middle" class="d-label">price broken</text>
-            </svg>
+            <div v-if="latest" class="msg">
+              <span class="msg__dot" :class="{ 'is-ended': !!latest.endedAt, 'is-paused': latestPaused }" />
+              <span class="msg__text">
+                <b>{{ latest.asset }}</b> · {{ latestWhy || 'Critical' }}
+                <small class="lp-num">{{ protocolName(latest.protocol) }} · {{ fmtUsd(latest.totalSupplyUsd) }} · {{ fmtAgo(Date.parse(latest.startedAt), now) }}</small>
+              </span>
+            </div>
+            <p class="viz__cap lp-num">latest incident</p>
           </div>
         </li>
       </ol>
+
+      <p class="more">
+        <RouterLink to="/how-it-works" class="lp-link">How the checks work →</RouterLink>
+        <a href="https://t.me/OracleCanaryAlerts" target="_blank" rel="noopener" class="lp-link">Join the alert channel ↗</a>
+      </p>
     </div>
   </section>
 </template>
 
 <style scoped>
-.shaft {
+.steps {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
   position: relative;
+}
+.steps::before {
+  /* the shaft, laid on its side: a depth rule with ticks joining the three steps */
+  content: '';
+  position: absolute;
+  top: 20px;
+  left: 21px;
+  right: 0;
+  height: 10px;
+  border-top: 1px solid var(--lp-line-strong);
+  background: repeating-linear-gradient(90deg, var(--lp-line-strong) 0 1px, transparent 1px 14px);
+  -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+  mask-image: linear-gradient(90deg, #000 85%, transparent);
 }
 .step {
   position: relative;
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) minmax(0, 300px);
-  gap: 32px;
-  align-items: center;
-  padding: 34px 0;
-  border-top: 1px solid var(--lp-line);
-}
-.step:last-child {
-  border-bottom: 1px solid var(--lp-line);
-}
-.step__depth {
-  align-self: stretch;
-  position: relative;
-}
-.step__depth::before {
-  /* the shaft: a depth gauge with ticks */
-  content: '';
-  position: absolute;
-  top: -34px;
-  bottom: -34px;
-  left: 20px;
-  width: 12px;
-  background: repeating-linear-gradient(180deg, var(--lp-line-strong) 0 1px, transparent 1px 12px);
-  border-left: 1px solid var(--lp-line-strong);
-}
-.step:first-child .step__depth::before {
-  top: 0;
-}
-.step:last-child .step__depth::before {
-  bottom: 0;
+  display: flex;
+  flex-direction: column;
 }
 .step__no {
   position: relative;
@@ -181,278 +181,216 @@ const steps = [
   font-size: 13px;
   font-weight: 600;
   box-shadow: 0 0 0 6px var(--lp-bg), 0 0 24px -4px var(--lp-accent-glow);
+  margin-bottom: 22px;
 }
 .step__title {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   font-family: var(--lp-display);
-  font-size: 26px;
+  font-size: 21px;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--lp-ink);
 }
 .step__body {
-  margin: 0 0 14px;
-  max-width: 56ch;
+  margin: 0 0 18px;
   color: var(--lp-ink-2);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.6;
+  flex: 1;
 }
-.step__viz {
+.viz {
+  position: relative;
   border: 1px solid var(--lp-line);
   border-radius: 16px;
   background: var(--lp-panel);
-  padding: 14px;
-  overflow: hidden;
+  padding: 14px 14px 10px;
 }
-.step__viz svg {
+.viz svg {
   display: block;
   width: 100%;
   height: auto;
 }
+.viz__cap {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--lp-ink-3);
+  text-align: end;
+}
+.more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 28px 0 0;
+}
 
 /* diagram palette */
-.d-line {
+.v-label {
+  fill: var(--lp-ink);
+  font: 600 12px var(--lp-sans);
+}
+.v-num {
+  fill: var(--lp-ink-3);
+  font: 500 10.5px var(--lp-mono);
+}
+.v-wire {
   stroke: var(--lp-line-strong);
+  stroke-width: 1.2;
 }
-.d-block {
-  fill: var(--lp-fill-strong);
-  stroke: var(--lp-line-strong);
+.v-pulse {
+  fill: var(--lp-accent);
+  offset-distance: 0%;
+  animation: v-travel 2.4s ease-in infinite;
 }
-.d-accent {
-  stroke: var(--lp-accent);
+.v-node {
+  fill: var(--lp-bg);
+  stroke: var(--lp-accent-line);
 }
-.d-accent-fill {
+.v-canary {
   fill: var(--lp-accent);
 }
-.d-ink {
-  stroke: var(--lp-ink);
-}
-.d-ink-fill {
-  fill: var(--lp-ink);
-}
-.d-crit {
-  stroke: var(--lp-crit);
-}
-.d-crit-fill {
-  fill: var(--lp-crit);
-}
-.d-warn {
-  stroke: var(--lp-warn);
-}
-.d-ok {
-  stroke: var(--lp-ok);
-}
-.d-ok-fill {
-  fill: var(--lp-ok);
-}
-.d-card {
-  fill: var(--lp-bg);
+.v-axis {
   stroke: var(--lp-line-strong);
 }
-.d-label {
-  fill: var(--lp-ink-3);
-  font-family: var(--lp-mono);
-  font-size: 11px;
+.v-sev {
+  rx: 2px;
 }
-.d-label--crit {
+.v-critical {
   fill: var(--lp-crit);
 }
-.d-tx-label {
-  fill: #1a1400;
-  font-family: var(--lp-mono);
-  font-size: 10px;
-  font-weight: 600;
+.v-warning {
+  fill: var(--lp-warn);
 }
-
-/* motion */
-.d-blocks {
-  animation: d-slide 2.4s linear infinite;
+.v-info {
+  fill: var(--lp-info);
 }
-.d-blink {
-  animation: d-blink 2.4s ease-in-out infinite;
-}
-.d-needle {
-  transform-origin: 120px 100px;
-  animation: d-needle 6s ease-in-out infinite;
-}
-.d-msg {
-  transform-origin: 150px 60px;
-  animation: d-pop 4s ease-out infinite;
-}
-.d-row-alert {
+.v-ok {
   fill: var(--lp-ok);
-  animation: d-alert 4s steps(1) infinite;
 }
-.d-row-ring {
-  fill: none;
-  stroke: var(--lp-crit);
+.v-trace {
+  stroke: var(--lp-line-strong);
   stroke-width: 1.5;
-  animation: d-ring 4s ease-out infinite;
 }
-.d-gate {
+.v-spike {
+  stroke: var(--lp-crit);
+  stroke-width: 2;
+}
+.v-crit-fill {
   fill: var(--lp-crit);
-  transform-origin: 143px 70px;
-  animation: d-gate 5s ease-in-out infinite;
 }
-.d-refused {
-  animation: d-refused 5s ease-in-out infinite;
+.v-blink {
+  animation: v-blink 2.4s ease-in-out infinite;
 }
-.d-tx {
-  animation: d-tx 5s ease-in-out infinite;
+.msg {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  left: 36%;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: var(--lp-bg);
+  border: 1px solid var(--lp-line-strong);
+  box-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.5);
+}
+.msg__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--lp-crit);
+}
+.msg__dot.is-paused {
+  background: var(--lp-info);
+}
+.msg__dot.is-ended {
+  background: var(--lp-ink-3);
+}
+.msg__text {
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--lp-ink-2);
+}
+.msg__text b {
+  color: var(--lp-ink);
+}
+.msg__text small {
+  display: block;
+  font-size: 11px;
+  color: var(--lp-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-@keyframes d-slide {
-  to {
-    transform: translateX(34px);
+@keyframes v-travel {
+  from {
+    offset-distance: 0%;
+    opacity: 0;
   }
-}
-@keyframes d-blink {
-  0%,
-  100% {
+  15% {
     opacity: 1;
   }
+  to {
+    offset-distance: 100%;
+    opacity: 0.2;
+  }
+}
+@keyframes v-blink {
   50% {
     opacity: 0.25;
   }
 }
-@keyframes d-needle {
-  0%,
-  100% {
-    transform: rotate(62deg);
-  }
-  40% {
-    transform: rotate(54deg);
-  }
-  60% {
-    transform: rotate(-58deg);
-  }
-  75% {
-    transform: rotate(-50deg);
-  }
-}
-@keyframes d-pop {
-  0%,
-  30% {
+@keyframes v-pop {
+  from {
     opacity: 0;
-    transform: scale(0.85) translateY(6px);
-  }
-  40%,
-  90% {
-    opacity: 1;
-    transform: none;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-@keyframes d-alert {
-  0% {
-    fill: var(--lp-ok);
-  }
-  35% {
-    fill: var(--lp-crit);
-  }
-}
-@keyframes d-ring {
-  0%,
-  35% {
-    opacity: 0;
-  }
-  45%,
-  90% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-@keyframes d-gate {
-  0%,
-  20% {
-    transform: rotate(-90deg);
-  }
-  35%,
-  85% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(-90deg);
-  }
-}
-@keyframes d-tx {
-  0% {
-    transform: translateX(-50px);
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  45%,
-  80% {
-    transform: translateX(90px);
-    opacity: 1;
-  }
-  95%,
-  100% {
-    transform: translateX(90px);
-    opacity: 0;
+    transform: translateY(6px);
   }
 }
 
-@keyframes d-refused {
-  0%,
-  44% {
-    opacity: 0;
+@media (max-width: 960px) {
+  .steps {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 36px;
   }
-  50%,
-  82% {
-    opacity: 1;
+  .steps::before {
+    display: none;
   }
-  92%,
-  100% {
-    opacity: 0;
-  }
-}
-
-@media (max-width: 900px) {
   .step {
-    grid-template-columns: 56px minmax(0, 1fr);
-    gap: 16px 18px;
-    align-items: start;
-  }
-  .step__depth::before {
-    left: 20px;
-  }
-  .step__viz {
-    grid-column: 2;
-    max-width: 360px;
-  }
-  .step__title {
-    font-size: 22px;
-  }
-  .step__body {
-    font-size: 15px;
-  }
-}
-@media (max-width: 480px) {
-  .step {
-    grid-template-columns: 44px minmax(0, 1fr);
-    padding: 26px 0;
-  }
-  .step__depth::before {
-    left: 13px;
-    top: -26px;
-    bottom: -26px;
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    column-gap: 18px;
   }
   .step__no {
-    width: 34px;
-    height: 34px;
-    font-size: 12px;
+    grid-row: span 3;
+    margin: 0;
+  }
+  .viz {
+    grid-column: 2;
+    max-width: 420px;
+  }
+}
+@media (max-width: 600px) {
+  .viz {
+    display: none;
+  }
+  .step__body {
+    margin-bottom: 0;
+  }
+  .steps {
+    gap: 24px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .step__viz * {
+  .viz *,
+  .msg {
     animation: none !important;
+  }
+  .v-pulse {
+    display: none;
   }
 }
 </style>

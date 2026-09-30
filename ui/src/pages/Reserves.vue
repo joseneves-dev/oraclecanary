@@ -271,7 +271,12 @@ function sortBy(key: SortKey) {
           </label>
         </div>
 
-        <div v-if="error" class="ax-card__body"><div class="ax-alert ax-alert--danger" role="alert">{{ error }}</div></div>
+        <EmptyState v-if="error" tone="error" title="Can't reach the API right now">
+          The reserves come from the live API, which did not answer. Try again in a moment.
+          <template #actions>
+            <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="load(state)">Retry</button>
+          </template>
+        </EmptyState>
         <EmptyState v-else-if="!loading && !rows.length" tone="none" title="No reserves match these filters">
           Try a broader search, or clear the filters to see every reserve.
           <template v-if="filtered" #actions>

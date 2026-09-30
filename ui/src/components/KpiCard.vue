@@ -1,21 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
-import AxIcon from '@/components/AxIcon.vue'
 
 /**
- * One figure on a dashboard. The icon stays neutral; the value is coloured only when it is bad
- * news (`tone`), so colour on a page always means something.
+ * One figure on a dashboard: a micro-label, the value and an optional line under it. The value is
+ * coloured only when it is bad news (`tone`), so colour on a page always means something.
  */
 const props = defineProps<{
   label: string
   value: string
-  icon: string
   tone?: 'danger' | 'warning' | 'success'
-  hint?: string
-  /** Shows a placeholder instead of the value. */
+  /** A line under the value; left out while loading so it never states a placeholder figure. */
+  hint?: string | null
+  /** Shows a placeholder instead of the value (and hides the hint). */
   loading?: boolean
-  /** Makes the whole tile a link. */
+  /** Makes the whole tile a link: only when the page it opens lists exactly what the tile counts. */
   to?: RouteLocationRaw
   /** Grid columns (of 12) the tile spans on wide screens. */
   cols?: 2 | 3 | 4 | 6
@@ -35,13 +34,15 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
     :aria-busy="loading || undefined"
   >
     <div class="kpi__head">
-      <span class="kpi__icon"><AxIcon :name="icon" :size="16" /></span>
-      <span class="kpi__label">{{ label }}</span>
+      <span class="ax-kpi__label kpi__label">{{ label }}</span>
       <svg v-if="to" class="kpi__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6l-6 6" /></svg>
     </div>
     <span v-if="loading" class="ax-skeleton ax-skeleton--line kpi__skeleton" aria-hidden="true"></span>
-    <div v-else class="kpi__value ax-num" :class="tone && `kpi__value--${tone}`">{{ value }}</div>
-    <p v-if="$slots.default || hint" class="kpi__hint"><slot>{{ hint }}</slot></p>
+    <div v-else class="ax-kpi__value kpi__value" :class="tone && `kpi__value--${tone}`">{{ value }}</div>
+    <template v-if="!loading">
+      <p v-if="$slots.default || hint" class="ax-kpi__caption kpi__hint"><slot>{{ hint }}</slot></p>
+    </template>
+    <span v-else class="ax-skeleton ax-skeleton--line kpi__hint-skeleton" aria-hidden="true"></span>
   </component>
 </template>
 
@@ -50,7 +51,7 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
   display: flex;
   flex-direction: column;
   gap: var(--ax-space-2);
-  padding: var(--ax-space-4) var(--ax-space-5);
+  padding: var(--ax-space-5) var(--ax-space-6);
   min-width: 0;
   color: inherit;
   text-decoration: none;
@@ -62,7 +63,7 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
   border-color: var(--ax-border-strong);
 }
 .kpi--link:focus-visible {
-  outline: 2px solid var(--ax-accent);
+  outline: 2px solid var(--ax-focus-ring, var(--ax-accent));
   outline-offset: 2px;
 }
 .kpi__head {
@@ -71,24 +72,7 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
   gap: var(--ax-space-2);
   min-width: 0;
 }
-.kpi__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  border-radius: var(--ax-radius-sm);
-  color: var(--ax-text-muted);
-  background: var(--ax-surface-subtle);
-  border: 1px solid var(--ax-border);
-}
 .kpi__label {
-  font-size: var(--ax-text-xs);
-  font-weight: var(--ax-weight-semibold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ax-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -104,13 +88,6 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
   color: var(--ax-text-strong);
 }
 .kpi__value {
-  font-family: var(--ax-font-mono);
-  font-size: var(--ax-text-2xl);
-  line-height: 1.15;
-  font-weight: var(--ax-weight-semibold);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-  color: var(--ax-text-strong);
   overflow-wrap: anywhere;
 }
 .kpi__value--danger {
@@ -125,7 +102,13 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
 .kpi__skeleton {
   width: 55%;
   height: 1.75rem;
-  margin-block: 1px;
+}
+.kpi__hint {
+  margin: 0;
+  line-height: 1.45;
+}
+.kpi__hint-skeleton {
+  width: 80%;
 }
 /* Phones: two tiles a row instead of a tall stack. */
 @media (max-width: 576px) {
@@ -133,22 +116,13 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
     grid-column: span 6;
   }
   .kpi {
-    padding: var(--ax-space-3) var(--ax-space-4);
-  }
-  .kpi__value {
-    font-size: var(--ax-text-xl);
-  }
-  .kpi__icon {
-    display: none;
+    padding: var(--ax-space-4);
   }
   .kpi__label {
     white-space: normal;
   }
-}
-.kpi__hint {
-  margin: 0;
-  font-size: var(--ax-text-xs);
-  line-height: 1.45;
-  color: var(--ax-text-subtle);
+  .kpi__value {
+    font-size: var(--ax-text-xl);
+  }
 }
 </style>

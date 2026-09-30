@@ -37,5 +37,6 @@ export const router = createRouter({
       ],
     },
   ],
-  scrollBehavior: () => ({ top: 0 }),
+  // A link to a section (/how-it-works#guard) lands on it, below the sticky header.
+  scrollBehavior: (to) => (to.hash ? { el: to.hash, top: 80 } : { top: 0 }),
 })

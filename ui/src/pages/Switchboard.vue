@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { fetchAllReserves, type Reserve } from '@/api/client'
+import EmptyState from '@/components/EmptyState.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import ReserveTable from '@/components/ReserveTable.vue'
 import { protocolName, usd } from '@/lib/format'
@@ -13,7 +14,9 @@ const reserves = ref<Reserve[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 
-onMounted(async () => {
+async function load() {
+  loading.value = true
+  error.value = null
   try {
     reserves.value = (await fetchAllReserves({ check: 'DEPRECATED_PROVIDER' })).sort((a, b) => b.totalSupplyUsd - a.totalSupplyUsd)
   } catch (e) {
@@ -21,7 +24,14 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+onMounted(load)
+
+/** Pages of 25, like the Reserves list, so a long tail of near-identical rows does not fill the page. */
+const PAGE_SIZE = 25
+const page = ref(1)
+const pageCount = computed(() => Math.max(1, Math.ceil(reserves.value.length / PAGE_SIZE)))
+const pageRows = computed(() => reserves.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
 
 const listed = computed(() => reserves.value.filter((r) => r.market.name))
 const unlisted = computed(() => reserves.value.filter((r) => !r.market.name))
@@ -51,33 +61,31 @@ const byProtocol = computed(() =>
       </div>
     </div>
 
-    <div v-if="error" class="ax-alert ax-alert--danger" role="alert">{{ error }}</div>
-
-    <div v-else class="ax-dash-grid" :aria-busy="loading">
+    <div class="ax-dash-grid" :aria-busy="loading">
       <KpiCard
         label="Listed markets"
         :loading="loading"
-        :value="String(listed.length)"
-        icon="layout-dashboard"
+        :value="error ? '—' : String(listed.length)"
+       
         :tone="listed.length ? 'danger' : undefined"
-        :hint="loading ? undefined : listed.length ? `${usd(sum(listed))} supplied still depends on Switchboard` : 'Every listed market has migrated'"
+        :hint="error ? null : listed.length ? `${usd(sum(listed))} supplied still depends on Switchboard` : 'Every listed market has migrated'"
       />
       <KpiCard
         label="Unlisted markets"
         :loading="loading"
-        :value="String(unlisted.length)"
-        icon="table"
-        :hint="loading ? undefined : `${usd(sum(unlisted))} supplied, at market prices`"
+        :value="error ? '—' : String(unlisted.length)"
+       
+        :hint="error ? null : `${usd(sum(unlisted))} supplied, at market prices`"
       />
       <KpiCard
         label="Price cannot be produced"
         :loading="loading"
-        :value="String(broken.length)"
-        icon="alert-triangle"
+        :value="error ? '—' : String(broken.length)"
+       
         :tone="broken.length ? 'danger' : undefined"
         hint="Nothing else can replace Switchboard: critical"
       />
-      <KpiCard label="By protocol" :loading="loading" :value="String(reserves.length)" icon="book" :hint="loading ? undefined : byProtocol || 'None'" />
+      <KpiCard label="By protocol" :loading="loading" :value="error ? '—' : String(reserves.length)" :hint="error ? null : byProtocol || 'None'" />
 
       <section class="ax-card ax-col--12" aria-label="Reserves that still depend on Switchboard">
         <div class="ax-card__header">
@@ -88,8 +96,25 @@ const byProtocol = computed(() =>
             </p>
           </div>
         </div>
-        <ReserveTable v-if="loading || reserves.length" :rows="reserves" />
-        <p v-else class="empty">No reserve depends on Switchboard any more.</p>
+        <EmptyState v-if="error" tone="error" title="Can't reach the API right now">
+          This list comes from the live API, which did not answer. Try again in a moment.
+          <template #actions>
+            <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="load">Retry</button>
+          </template>
+        </EmptyState>
+        <ReserveTable v-else-if="loading || reserves.length" :rows="pageRows" :loading-rows="loading ? 8 : 0" />
+        <EmptyState v-else title="No reserve depends on Switchboard any more" />
+        <div v-if="!error && pageCount > 1" class="ax-card__footer pager">
+          <span class="ax-num muted">Page {{ page }} of {{ pageCount }} · {{ reserves.length }} reserves</span>
+          <nav class="ax-pagination" aria-label="Pagination">
+            <button type="button" class="ax-pagination__prev" :disabled="page <= 1" aria-label="Previous page" @click="page--">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6l6 6" /></svg>
+            </button>
+            <button type="button" class="ax-pagination__next" :disabled="page >= pageCount" aria-label="Next page" @click="page++">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6l-6 6" /></svg>
+            </button>
+          </nav>
+        </div>
       </section>
 
       <p class="sources ax-col--12">
@@ -115,10 +140,14 @@ const byProtocol = computed(() =>
 .page > .ax-page-head {
   margin-block-end: 0;
 }
-.empty {
-  padding: var(--ax-space-8);
-  text-align: center;
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.muted {
   color: var(--ax-text-muted);
+  font-size: var(--ax-text-sm);
 }
 .sources {
   color: var(--ax-text-muted);

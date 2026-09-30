@@ -73,6 +73,7 @@ const ticks = computed(() => {
         <g v-for="(slot, i) in slots" :key="i" @mouseenter="hovered = i">
           <rect :x="i" y="0" width="1" height="100" fill="transparent" />
           <rect
+            class="ax-chart-bar"
             v-if="slot.sample && slot.sample.priceAgeSeconds !== null"
             :x="i + 0.1"
             :y="100 - Math.max(2, Math.min(100, (slot.sample.priceAgeSeconds / ceiling) * 100))"
@@ -84,7 +85,7 @@ const ticks = computed(() => {
         </g>
       </svg>
     </div>
-    <div class="chart__x" aria-hidden="true">
+    <div class="chart__x ax-chart-axis" aria-hidden="true">
       <span v-for="(tick, i) in ticks" :key="i">{{ tick }}</span>
     </div>
     <p class="chart__detail" aria-live="polite">

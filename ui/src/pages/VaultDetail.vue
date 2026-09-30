@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import { fetchVault, type Vault } from '@/api/client'
 import KpiCard from '@/components/KpiCard.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
-import { dateTime, shortAddress, solscanAccount, usd } from '@/lib/format'
+import { checkMessage, dateTime, shortAddress, solscanAccount, usd } from '@/lib/format'
 
 const props = defineProps<{ address: string }>()
 
@@ -73,16 +73,16 @@ const percent = (share: number) => `${(share * 100).toFixed(share < 0.1 ? 1 : 0)
       </div>
 
       <div class="ax-dash-grid">
-        <KpiCard label="Deposits" :value="usd(vault.totalUsd)" icon="layout-dashboard" :hint="`${usd(vault.idleUsd)} not lent out`" />
+        <KpiCard label="Deposits" :value="usd(vault.totalUsd)" :hint="`${usd(vault.idleUsd)} not lent out`" />
         <KpiCard
           label="At risk now"
           :value="usd(vault.atRiskUsd)"
-          icon="alert-triangle"
+         
           :tone="vault.atRiskUsd > 0 ? 'danger' : undefined"
           :hint="vault.totalUsd ? `${percent(vault.atRiskUsd / vault.totalUsd)} of deposits` : undefined"
         />
-        <KpiCard label="With warnings" :value="usd(vault.warningUsd)" icon="bell" :tone="vault.warningUsd > 0 ? 'warning' : undefined" hint="Mostly single-oracle prices" />
-        <KpiCard label="Reserves" :value="String(vault.allocations.length)" icon="table" hint="Where the deposits are lent" />
+        <KpiCard label="With warnings" :value="usd(vault.warningUsd)" :tone="vault.warningUsd > 0 ? 'warning' : undefined" :hint="vault.warningUsd > 0 ? 'Mostly single-oracle prices' : null" />
+        <KpiCard label="Reserves" :value="String(vault.allocations.length)" hint="Where the deposits are lent" />
 
         <section class="ax-card ax-col--12" aria-label="Allocations">
           <div class="ax-card__header">
@@ -124,7 +124,7 @@ const percent = (share: number) => `${(share * 100).toFixed(share < 0.1 ? 1 : 0)
                     <span class="ax-num">{{ percent(a.share) }}</span>
                     <span class="bar"><span :style="{ width: `${Math.max(2, a.share * 100)}%` }"></span></span>
                   </td>
-                  <td class="ax-table__td muted issue">{{ a.mainIssue ?? 'No issues found' }}</td>
+                  <td class="ax-table__td muted issue">{{ a.mainIssue ? checkMessage(a.mainIssue) : 'No issues found' }}</td>
                   <td class="ax-table__td issue">
                     <ul v-if="a.collateralIssues.length" class="collateral">
                       <li v-for="c in a.collateralIssues" :key="c">{{ c }}</li>

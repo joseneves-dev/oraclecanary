@@ -13,6 +13,9 @@ import {
   type ReserveIncident,
   type Severity,
 } from '@/api/client'
+import { priceState } from '@/lib/priceState'
+import { usd } from '@/lib/format'
+import { openIncidents as listOpenIncidents } from '@/lib/incidents'
 
 export const PROTOCOLS = [
   { id: 'kamino', name: 'Kamino' },
@@ -44,7 +47,6 @@ const FEED_MIN_USD = 10_000
 export function useLanding() {
   const reserves = shallowRef<Reserve[] | null>(null)
   const incidents = shallowRef<ReserveIncident[] | null>(null)
-  const openIncidents = shallowRef<ReserveIncident[] | null>(null)
   const changes = shallowRef<ConfigChange[] | null>(null)
   const now = ref(Date.now())
   /** The reserves could not be read (the last attempt failed and none are shown). */
@@ -74,8 +76,7 @@ export function useLanding() {
           reservesFailed.value = false
         },
       ),
-      keep(fetchIncidents({ itemsPerPage: 6, 'totalSupplyUsd[gte]': FEED_MIN_USD }, signal), (v) => (incidents.value = v)),
-      keep(fetchIncidents({ resolved: false, itemsPerPage: 100 }, signal), (v) => (openIncidents.value = v)),
+      keep(fetchIncidents({ itemsPerPage: 30, 'totalSupplyUsd[gte]': FEED_MIN_USD }, signal), (v) => (incidents.value = v)),
       keep(fetchConfigChanges(5, signal), (v) => (changes.value = v)),
     ])
   }
@@ -115,18 +116,47 @@ export function useLanding() {
   })
 
   /** Reserves failing any of `codes`, and the deposits in them. */
-  function failing(codes: string[]): { count: number; usd: number } | null {
+  function failing(codes: string[], severity?: Severity): { count: number; usd: number } | null {
     if (!reserves.value) return null
     let count = 0
     let usd = 0
     for (const r of reserves.value) {
-      if (r.checks.some((c) => codes.includes(c.code))) {
+      if (r.checks.some((c) => codes.includes(c.code) && (!severity || c.severity === severity))) {
         count++
         usd += r.totalSupplyUsd ?? 0
       }
     }
     return { count, usd }
   }
+
+  /**
+   * Deposits whose price the protocol refuses right now (same rule as the dashboard: a blocking
+   * check, reserves of $1K or more), and those only paused because their stock market is closed.
+   */
+  const unusable = computed(() => {
+    if (!reserves.value) return null
+    const out = { blockedUsd: 0, blockedCount: 0, pausedUsd: 0, pausedCount: 0 }
+    for (const r of reserves.value) {
+      const usd = r.totalSupplyUsd ?? 0
+      if (usd < 1000) continue
+      const state = priceState(r)
+      if (state === 'blocked') {
+        out.blockedUsd += usd
+        out.blockedCount++
+      } else if (state === 'paused') {
+        out.pausedUsd += usd
+        out.pausedCount++
+      }
+    }
+    return out
+  })
+
+  /** Open incidents, as the app's Incidents page counts them: listed reserves that are critical now, holding $1 or more. */
+  const open = computed(() => {
+    if (!reserves.value) return null
+    const rows = listOpenIncidents(reserves.value)
+    return { count: rows.length, atStake: rows.filter((r) => (r.totalSupplyUsd ?? 0) >= FEED_MIN_USD).length }
+  })
 
   const protocols = computed(() =>
     PROTOCOLS.map((p) => {
@@ -140,21 +170,16 @@ export function useLanding() {
     }),
   )
 
-  return { reservesFailed, reserves, incidents, openIncidents, changes, now, totalUsd, bySeverity, lastChecked, protocols, failing, reload: load }
+  return { open, unusable, reservesFailed, reserves, incidents, changes, now, totalUsd, bySeverity, lastChecked, protocols, failing, reload: load }
 }
 
 /* ── formatting (null → "—") ─────────────────────────────────────────── */
 
 export const DASH = '—'
 
+/** Money as the app shows it (lib/format usd), "—" when unknown. */
 export function fmtUsd(v: number | null | undefined): string {
-  if (v == null || !Number.isFinite(v)) return DASH
-  const a = Math.abs(v)
-  if (a >= 1e9) return `$${(v / 1e9).toFixed(2)}B`
-  if (a >= 1e6) return `$${(v / 1e6).toFixed(a >= 1e8 ? 0 : 1)}M`
-  if (a >= 1e3) return `$${(v / 1e3).toFixed(0)}K`
-  if (a >= 1) return `$${v.toFixed(0)}`
-  return a === 0 ? '$0' : '<$1'
+  return v == null || !Number.isFinite(v) ? DASH : usd(v)
 }
 
 export function fmtInt(v: number | null | undefined): string {
