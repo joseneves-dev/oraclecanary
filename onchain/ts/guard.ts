@@ -12,6 +12,7 @@
 import { PublicKey, TransactionInstruction } from '@solana/web3.js';
 
 import {
+  SEVERITIES,
   assertOracleHealthyInstruction,
   decodeAttestation,
   ed25519Instruction,
@@ -29,9 +30,13 @@ export const ORACLE_CANARY_SIGNER = new PublicKey('3MB4DxhySyKrywoNZfvLZeUPqkUpF
 export interface GuardOptions {
   /** Reserves (Kamino reserve, marginfi bank, Jupiter Lend vault) whose price the instructions rely on. */
   reserves: (PublicKey | string)[];
-  /** Worst health accepted; "warning" lets single-source prices through but stops broken ones. */
+  /** Worst health accepted; "warning" lets single-source prices through but refuses any critical issue. */
   maxSeverity?: Severity;
-  /** Oldest attestation accepted, in seconds, counted from when the health was measured. */
+  /**
+   * Oldest attestation accepted, in seconds, counted from when the health was measured; 900 by
+   * default. The indexer measures every 5 minutes, so much below 600 fails often. It is also how long
+   * an older "healthy" attestation can still be presented after a newer one says otherwise.
+   */
   maxAttestationAgeSeconds?: number;
   apiUrl?: string;
   programId?: PublicKey;
@@ -57,7 +62,10 @@ export async function fetchAttestation(
     headers: { Accept: 'application/json' },
   });
   if (!response.ok) throw new Error(`No attestation for ${address.toBase58()}: the API answered ${response.status}`);
-  const body = (await response.json()) as ApiAttestation;
+  const body = (await response.json()) as Partial<ApiAttestation>;
+  if (typeof body.message !== 'string' || typeof body.signature !== 'string' || typeof body.publicKey !== 'string') {
+    throw new Error(`The API answered without a signed attestation for ${address.toBase58()}`);
+  }
   const signed: SignedAttestation = {
     message: Buffer.from(body.message, 'base64'),
     signature: Buffer.from(body.signature, 'base64'),
@@ -73,13 +81,29 @@ export async function fetchAttestation(
 
 /**
  * The caller's instructions, preceded by an Ed25519 instruction and an oracle guard check per
- * reserve. Each reserve costs about 250 bytes of transaction size.
+ * reserve. The first reserve adds about 350 bytes to the transaction (its accounts included), each
+ * further one about 220: with a lending instruction's own accounts, two reserves is close to the
+ * 1232-byte limit.
+ *
+ * Throws, before anything is sent, when an attestation already fails the check the program would
+ * make (too unhealthy, or too old), so no fee is paid for a transaction certain to fail.
  */
 export async function withOracleGuard(instructions: TransactionInstruction[], options: GuardOptions): Promise<TransactionInstruction[]> {
   const maxSeverity = options.maxSeverity ?? 'warning';
-  const maxAttestationAgeSeconds = options.maxAttestationAgeSeconds ?? 600;
+  const maxAttestationAgeSeconds = options.maxAttestationAgeSeconds ?? 900;
   const programId = options.programId ?? ORACLE_GUARD_PROGRAM_ID;
-  const fetched = await Promise.all(options.reserves.map((reserve) => fetchAttestation(reserve, options)));
+  // A reserve listed twice would only cost another 220 bytes.
+  const reserves = [...new Map(options.reserves.map((r) => [new PublicKey(r).toBase58(), new PublicKey(r)])).values()];
+  const fetched = await Promise.all(reserves.map((reserve) => fetchAttestation(reserve, options)));
+  const now = Math.floor(Date.now() / 1000);
+  for (const { attestation: a } of fetched) {
+    if (SEVERITIES.indexOf(a.severity) > SEVERITIES.indexOf(maxSeverity)) {
+      throw new Error(`${a.reserve.toBase58()} is ${a.severity} (score ${a.score}), worse than the ${maxSeverity} allowed`);
+    }
+    if (now - a.issuedAt > maxAttestationAgeSeconds) {
+      throw new Error(`The attestation for ${a.reserve.toBase58()} is ${now - a.issuedAt}s old, over the ${maxAttestationAgeSeconds}s allowed`);
+    }
+  }
   return [
     ...fetched.map(({ signed }) => ed25519Instruction(signed)),
     ...fetched.map(({ attestation }) => assertOracleHealthyInstruction({ reserve: attestation.reserve, maxSeverity, maxAttestationAgeSeconds, programId })),

@@ -89,3 +89,10 @@ test('assert_oracle_healthy instruction layout', () => {
   assert.equal(ix.data[40], 2);
   assert.equal(ix.data.readUInt32LE(41), 120);
 });
+
+test('the assert_oracle_healthy discriminator matches Anchor: the first 8 bytes of sha256("global:assert_oracle_healthy")', async () => {
+  const { createHash } = await import('node:crypto');
+  const { ASSERT_ORACLE_HEALTHY_DISCRIMINATOR } = await import('./attestation.js');
+  const expected = createHash('sha256').update('global:assert_oracle_healthy').digest().subarray(0, 8);
+  assert.deepEqual([...ASSERT_ORACLE_HEALTHY_DISCRIMINATOR], [...expected]);
+});
