@@ -27,10 +27,15 @@ const slots = computed(() => {
   return Array.from({ length: props.hours }, (_, i) => ({ hour: new Date((first + i) * HOUR_MS), sample: byHour.get(first + i) ?? null }))
 })
 
-const color = (age: number) =>
-  age > props.maxAgeSeconds ? 'var(--ax-viz-red)' : age > props.maxAgeSeconds * 0.8 ? 'var(--ax-viz-amber)' : 'var(--ax-viz-emerald)'
+/**
+ * Coloured from the checks recorded that hour, not from the age alone: a fixed price reports an age
+ * but never goes stale, so it is never shown as rejected.
+ */
+const isStale = (s: ReserveSnapshot) => s.checks.some((c) => c.code === 'STALE')
+const color = (s: ReserveSnapshot) =>
+  isStale(s) ? 'var(--ax-viz-red)' : s.checks.some((c) => c.code === 'NEAR_STALE') ? 'var(--ax-viz-amber)' : 'var(--ax-viz-emerald)'
 
-const hoursPastLimit = computed(() => props.samples.filter((s) => (s.priceAgeSeconds ?? 0) > props.maxAgeSeconds).length)
+const hoursPastLimit = computed(() => props.samples.filter(isStale).length)
 const withAge = computed(() => props.samples.filter((s) => s.priceAgeSeconds !== null).length)
 
 const hovered = ref<number | null>(null)
@@ -50,7 +55,7 @@ const ticks = computed(() => {
     <p class="chart__summary">
       <span class="chart__legend"><i style="background: var(--ax-viz-red)" />Past the limit {{ hoursPastLimit }}h</span>
       <span class="chart__legend"><i class="chart__dash" />Limit: {{ duration(maxAgeSeconds) }}</span>
-      <span class="muted">of {{ withAge }}h recorded, sampled hourly (the oldest price seen in each hour)</span>
+      <span class="muted">of {{ withAge }}h recorded, sampled hourly (the oldest price seen in each hour; the limit shown is today's)</span>
     </p>
     <div class="chart__plot">
       <div class="chart__y" aria-hidden="true">
@@ -73,7 +78,7 @@ const ticks = computed(() => {
             :y="100 - Math.max(2, Math.min(100, (slot.sample.priceAgeSeconds / ceiling) * 100))"
             width="0.8"
             :height="Math.max(2, Math.min(100, (slot.sample.priceAgeSeconds / ceiling) * 100))"
-            :fill="color(slot.sample.priceAgeSeconds)"
+            :fill="color(slot.sample)"
             :opacity="hovered === null || hovered === i ? 1 : 0.45"
           />
         </g>
@@ -85,7 +90,7 @@ const ticks = computed(() => {
     <p class="chart__detail" aria-live="polite">
       <template v-if="shown?.sample && shown.sample.priceAgeSeconds !== null">
         <b>{{ dateTime(shown.hour) }}</b> · price up to {{ duration(shown.sample.priceAgeSeconds) }} old
-        {{ shown.sample.priceAgeSeconds > maxAgeSeconds ? '· past the limit: the protocol rejects it' : '' }}
+        {{ isStale(shown.sample) ? '· past the limit: the protocol rejects it' : '' }}
       </template>
       <template v-else-if="shown">{{ dateTime(shown.hour) }} · not recorded</template>
       <template v-else>No price age recorded for this range yet.</template>
