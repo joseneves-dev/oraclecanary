@@ -168,3 +168,44 @@ export function summaryDue(now: Date, hourUtc: number, lastSent: string | null):
   const today = now.toISOString().slice(0, 10);
   return now.getUTCHours() >= hourUtc && lastSent !== today ? today : null;
 }
+
+/** A row of reserve_config_change, as read by the notifier. */
+export interface ConfigChangeEvent {
+  id: string;
+  address: string;
+  protocol: string;
+  asset: string;
+  marketName: string | null;
+  kind: 'listed' | 'price_source' | 'max_age';
+  detail: string;
+  totalSupplyUsd: number;
+}
+
+/**
+ * Whether a configuration change is worth a post: every new listing (a thin token listed without
+ * notice is how some lending exploits start, and a new reserve holds little at first), and other
+ * changes to reserves holding at least `minSupplyUsd`.
+ */
+export function announceConfigChange(change: ConfigChangeEvent, minSupplyUsd: number): boolean {
+  return change.kind === 'listed' || change.totalSupplyUsd >= minSupplyUsd;
+}
+
+const CONFIG_HEADLINES: Record<ConfigChangeEvent['kind'], string> = {
+  listed: '🆕 Newly listed',
+  price_source: '🔧 Price source changed',
+  max_age: '🔧 Price age limit changed',
+};
+
+/** The configuration change as a Telegram message in HTML parse mode. */
+export function formatConfigChange(change: ConfigChangeEvent, siteUrl: string): string {
+  const where = [PROTOCOL_NAMES[change.protocol] ?? change.protocol, change.marketName].filter(Boolean).join(' · ');
+  return [
+    `<b>${CONFIG_HEADLINES[change.kind]}: ${escapeHtml(change.asset || change.address)}</b>`,
+    escapeHtml(where),
+    '',
+    escapeHtml(change.detail),
+    `Supply: ${usd(change.totalSupplyUsd)}`,
+    '',
+    `${siteUrl}/reserves/${change.address}`,
+  ].join('\n');
+}

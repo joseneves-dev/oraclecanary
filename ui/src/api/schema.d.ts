@@ -84,6 +84,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieves the collection of ReserveConfigChange resources.
+         * @description Retrieves the collection of ReserveConfigChange resources.
+         */
+        get: operations["api_config-changes_get_collection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/config-changes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieves a ReserveConfigChange resource.
+         * @description Retrieves a ReserveConfigChange resource.
+         */
+        get: operations["api_config-changes_id_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events": {
         parameters: {
             query?: never;
@@ -644,6 +684,46 @@ export interface components {
             /** @description Signing key, Base58: must match the authority in oracle_guard's config. */
             publicKey?: string;
         };
+        /** @description Configuration changes, most recent first. */
+        ReserveConfigChange: {
+            id?: string;
+            /** @description Reserve / bank / vault address on Solana. */
+            reserve?: string;
+            protocol?: string;
+            asset?: string;
+            marketName?: string | null;
+            /** Format: date-time */
+            occurredAt?: string;
+            /** @description "listed", "price_source" or "max_age". */
+            kind?: string;
+            /** @description The change in one sentence. */
+            detail?: string;
+            /** @description The changed fields before, as stored (null for a new listing). */
+            before?: string | null;
+            after?: string | null;
+            /** @description Supply in the reserve when the change was seen, in USD. */
+            totalSupplyUsd?: number;
+        };
+        /** @description Configuration changes, most recent first. */
+        "ReserveConfigChange.jsonld": components["schemas"]["HydraItemBaseSchema"] & {
+            id?: string;
+            /** @description Reserve / bank / vault address on Solana. */
+            reserve?: string;
+            protocol?: string;
+            asset?: string;
+            marketName?: string | null;
+            /** Format: date-time */
+            occurredAt?: string;
+            /** @description "listed", "price_source" or "max_age". */
+            kind?: string;
+            /** @description The change in one sentence. */
+            detail?: string;
+            /** @description The changed fields before, as stored (null for a new listing). */
+            before?: string | null;
+            after?: string | null;
+            /** @description Supply in the reserve when the change was seen, in USD. */
+            totalSupplyUsd?: number;
+        };
         /** @description Health changes, newest first. */
         ReserveEvent: {
             id?: string;
@@ -1129,6 +1209,75 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    "api_config-changes_get_collection": {
+        parameters: {
+            query?: {
+                /** @description The collection page number */
+                page?: number;
+                /** @description The number of items per page */
+                itemsPerPage?: number;
+                /** @description Lending protocol */
+                protocol?: "kamino" | "marginfi" | "jupiter-lend";
+                /** @description listed, price_source or max_age */
+                kind?: "listed" | "price_source" | "max_age";
+                /** @description Reserve address */
+                reserve?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ReserveConfigChange collection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["HydraCollectionBaseSchema"] & {
+                        member: components["schemas"]["ReserveConfigChange.jsonld"][];
+                    };
+                    "application/json": components["schemas"]["ReserveConfigChange"][];
+                };
+            };
+        };
+    };
+    "api_config-changes_id_get": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ReserveConfigChange identifier */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ReserveConfigChange resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["ReserveConfigChange.jsonld"];
+                    "application/json": components["schemas"]["ReserveConfigChange"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["Error.jsonld"];
+                    "application/problem+json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };

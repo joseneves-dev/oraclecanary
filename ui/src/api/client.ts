@@ -154,3 +154,13 @@ export async function fetchStats(signal?: AbortSignal): Promise<Stats> {
   if (!data) throw new ApiError(`Could not load stats (HTTP ${status})`)
   return data as Stats
 }
+
+export type ConfigChange = Complete<components['schemas']['ReserveConfigChange']>
+
+/** Changes to how listed reserves are priced, most recent first. */
+export async function fetchConfigChanges(itemsPerPage: number, signal?: AbortSignal): Promise<ConfigChange[]> {
+  const { data, response } = await api.GET('/api/config-changes', { params: { query: { itemsPerPage } }, signal })
+  const status: number = response.status
+  if (!data) throw new ApiError(`Could not load configuration changes (HTTP ${status})`)
+  return data as ConfigChange[]
+}

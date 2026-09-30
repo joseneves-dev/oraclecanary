@@ -108,6 +108,10 @@ const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Cont
           <a href="https://t.me/OracleCanaryAlerts" target="_blank" rel="noopener">Telegram</a>, and a daily summary is posted there at 14:00 UTC.
         </p>
         <p>
+          A new listing, or a change to how a listed reserve is priced (another feed, Scope chain or provider, another age limit), is
+          recorded under <RouterLink :to="{ name: 'incidents' }">Configuration changes</RouterLink> and posted on Telegram.
+        </p>
+        <p>
           <RouterLink :to="{ name: 'positions' }">My positions</RouterLink> applies the same checks to one wallet: a price the protocol cannot use
           holds up the whole loan account, so it cannot borrow, withdraw or be liquidated.
         </p>
