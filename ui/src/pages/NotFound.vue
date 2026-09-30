@@ -6,7 +6,7 @@ import { RouterLink } from 'vue-router'
   <div class="not-found">
     <h1 class="ax-page-head__title">Page not found</h1>
     <p>This page does not exist.</p>
-    <RouterLink to="/" class="ax-btn ax-btn--secondary ax-btn--sm">Go to the overview</RouterLink>
+    <RouterLink to="/app" class="ax-btn ax-btn--secondary ax-btn--sm">Go to the dashboard</RouterLink>
   </div>
 </template>
 
