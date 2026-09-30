@@ -108,6 +108,10 @@ const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Cont
           <a href="https://t.me/OracleCanaryAlerts" target="_blank" rel="noopener">Telegram</a>, and a daily summary is posted there at 14:00 UTC.
         </p>
         <p>
+          A new listing, or a change to how a listed reserve is priced (another feed, Scope chain or provider, another age limit), is
+          recorded under <RouterLink :to="{ name: 'incidents' }">Configuration changes</RouterLink> and posted on Telegram.
+        </p>
+        <p>
           <RouterLink :to="{ name: 'positions' }">My positions</RouterLink> applies the same checks to one wallet: a price the protocol cannot use
           holds up the whole loan account, so it cannot borrow, withdraw or be liquidated.
         </p>
@@ -125,6 +129,11 @@ const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Cont
           <code>oracle_guard</code>, which checks the signature, the reserve and how recent it is, and refuses to go on when the health is worse
           than the program allows. That turns a warning into a circuit breaker.
         </p>
+        <p>For a client, adding it to any transaction is one call:</p>
+        <pre class="snippet"><code>const ixs = await withOracleGuard([borrowIx], {
+  reserves: [collateralReserve, debtReserve],
+  maxSeverity: 'warning', // refuse stale, missing or shut-down prices
+})</code></pre>
         <ul class="links">
           <li>
             <a :href="explorer(GUARD)" target="_blank" rel="noopener">oracle_guard on Solana Explorer (devnet)</a>
@@ -132,7 +141,7 @@ const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Cont
           <li>
             <a :href="explorer(DEMO_VAULT)" target="_blank" rel="noopener">demo_vault</a>, a mock vault that calls the guard before a deposit
           </li>
-          <li><a :href="`${REPO}/tree/main/onchain`" target="_blank" rel="noopener">Source and attestation format</a></li>
+          <li><a :href="`${REPO}/tree/main/onchain`" target="_blank" rel="noopener">Source, the withOracleGuard helper and the attestation format</a></li>
         </ul>
         <p class="muted">Live on devnet only; nothing is on mainnet.</p>
       </div>
@@ -167,6 +176,16 @@ const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Cont
 .prose code {
   font-family: var(--ax-font-mono);
   font-size: 0.9em;
+}
+.snippet {
+  padding: var(--ax-space-3) var(--ax-space-4);
+  border-radius: var(--ax-radius-md);
+  background: var(--ax-surface-subtle);
+  border: 1px solid var(--ax-border);
+  font-family: var(--ax-font-mono);
+  font-size: var(--ax-text-xs);
+  overflow-x: auto;
+  white-space: pre;
 }
 .links {
   display: grid;

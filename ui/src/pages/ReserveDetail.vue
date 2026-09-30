@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { fetchEvents, fetchReserve, fetchReserveHistory, type Reserve, type ReserveEvent, type ReserveSnapshot } from '@/api/client'
 import EventList from '@/components/EventList.vue'
 import HealthHistoryChart from '@/components/HealthHistoryChart.vue'
+import PriceAgeChart from '@/components/PriceAgeChart.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import ReserveTags from '@/components/ReserveTags.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
@@ -145,6 +146,20 @@ const accountRows = (r: Reserve) =>
           <div v-if="historyError" class="ax-alert ax-alert--danger" role="alert">{{ historyError }}</div>
           <p v-else-if="!reserve.market.name" class="muted">History is not recorded for unlisted markets.</p>
           <HealthHistoryChart v-else :samples="history" :from="rangeStart" :hours="rangeHours" />
+        </div>
+      </section>
+
+      <section v-if="reserve.market.name && !historyError && reserve.price.maxAgeSeconds > 0" class="ax-card ax-col--12" aria-label="Price age">
+        <div class="ax-card__header">
+          <div class="ax-card__titles">
+            <h2 class="ax-card__title">Price age</h2>
+            <p class="ax-card__subtitle">
+              How old the price was, against the protocol's limit: past the dashed line, the protocol rejects it. Same range as above.
+            </p>
+          </div>
+        </div>
+        <div class="ax-card__body">
+          <PriceAgeChart :samples="history" :from="rangeStart" :hours="rangeHours" :max-age-seconds="reserve.price.maxAgeSeconds" />
         </div>
       </section>
 

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { fetchAllReserves, fetchIncidents, type Reserve, type ReserveIncident } from '@/api/client'
+import { fetchAllReserves, fetchConfigChanges, fetchIncidents, type ConfigChange, type Reserve, type ReserveIncident } from '@/api/client'
 import IncidentLog from '@/components/IncidentLog.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import ReserveTags from '@/components/ReserveTags.vue'
-import { duration, usd } from '@/lib/format'
+import { dateTime, duration, usd } from '@/lib/format'
 
 const router = useRouter()
 // Empty reserves (under $1, shown as $0) put no money at risk and are left out of incidents.
@@ -15,7 +15,13 @@ const reserves = ref<Reserve[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 
+/** Changes to how listed reserves are priced: new listings, other price sources, other age limits. */
+const changes = ref<ConfigChange[]>([])
+const CHANGE_LABEL: Record<string, string> = { listed: 'Newly listed', price_source: 'Price source', max_age: 'Age limit' }
+const PROTOCOL_NAME: Record<string, string> = { kamino: 'Kamino', marginfi: 'marginfi', 'jupiter-lend': 'Jupiter Lend' }
+
 onMounted(async () => {
+  fetchConfigChanges(30).then((rows) => (changes.value = rows), () => {})
   try {
     reserves.value = await fetchAllReserves({ listed: true })
   } catch (e) {
@@ -147,12 +153,57 @@ watch(
         <p v-else class="muted">No incident in this list.</p>
       </div>
     </section>
+
+    <section class="ax-card ax-col--12" aria-label="Configuration changes">
+      <div class="ax-card__header">
+        <div class="ax-card__titles">
+          <h2 class="ax-card__title">Configuration changes</h2>
+          <p class="ax-card__subtitle">
+            New listings and changes to how listed reserves are priced, seen from one check to the next: routine when an oracle is migrated,
+            and the first sign of trouble when a thin token is listed or a price source is swapped without notice.
+          </p>
+        </div>
+      </div>
+      <div v-if="changes.length" class="ax-table-wrap">
+        <table class="ax-table">
+          <thead class="ax-table__head">
+            <tr>
+              <th scope="col" class="ax-table__th">When</th>
+              <th scope="col" class="ax-table__th">Reserve</th>
+              <th scope="col" class="ax-table__th">Change</th>
+              <th scope="col" class="ax-table__th">What changed</th>
+              <th scope="col" class="ax-table__th num">Supply</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in changes" :key="c.id" class="ax-table__row">
+              <td class="ax-table__td muted nowrap">{{ dateTime(c.occurredAt) }}</td>
+              <td class="ax-table__td">
+                <RouterLink :to="{ name: 'reserve', params: { address: c.reserve } }">{{ c.asset || c.reserve }}</RouterLink>
+                <div class="muted">{{ PROTOCOL_NAME[c.protocol] ?? c.protocol }} · {{ c.marketName }}</div>
+              </td>
+              <td class="ax-table__td">
+                <span class="ax-badge ax-badge--soft ax-badge--pill" :class="c.kind === 'listed' ? 'ax-badge--info' : 'ax-badge--warning'">{{
+                  CHANGE_LABEL[c.kind] ?? c.kind
+                }}</span>
+              </td>
+              <td class="ax-table__td issue">{{ c.detail }}</td>
+              <td class="ax-table__td num ax-num">{{ usd(c.totalSupplyUsd) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-else class="ax-card__body muted">No change to a listed reserve's pricing seen since this was switched on (30 Sep 2026).</p>
+    </section>
   </div>
 </template>
 
 <style scoped>
 .row-link {
   cursor: pointer;
+}
+.nowrap {
+  white-space: nowrap;
 }
 th {
   text-align: left;

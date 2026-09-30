@@ -14,6 +14,8 @@ import PositionLegend from '@/components/PositionLegend.vue'
 import ReserveTags from '@/components/ReserveTags.vue'
 import WalletLookup from '@/components/WalletLookup.vue'
 import { shortAddress, usd } from '@/lib/format'
+import { walletAlertsUrl } from '@/lib/links'
+import { priceState } from '@/lib/priceState'
 
 /**
  * A wallet's deposits and loans in the monitored protocols, each with the health of the price it
@@ -28,8 +30,6 @@ const route = useRoute()
 const router = useRouter()
 
 const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
-/** Checks that make the protocol refuse a price (see health.ts); PRICE_DEVIATION prices are still used. */
-const BLOCKING = new Set(['STALE', 'NO_ORACLE', 'EMPTY_PRICE_ENTRY', 'DEPRECATED_PROVIDER'])
 
 const PROTOCOL_LABEL: Record<WalletPosition['protocol'], string> = {
   kamino: 'Kamino',
@@ -89,6 +89,11 @@ interface Row {
   checks: Reserve['checks']
   /** Vaults only: the wallet's share of vault money in markets with an unusable price. */
   atRiskUsd: number
+  /** Liquidation weight (a deposit's threshold, a loan's factor); null when unknown. */
+  weight: number | null
+  /** The price used for the value, per token; null when unknown. */
+  price: number | null
+  asset: string | null
 }
 
 const data = ref<WalletPositions | null>(null)
@@ -102,16 +107,7 @@ function mainIssue(checks: Reserve['checks']): string {
   return [...checks].sort((a, b) => (rank[b.severity] ?? 0) - (rank[a.severity] ?? 0))[0]?.message ?? 'Price is healthy.'
 }
 
-function stateOf(reserve: Reserve): State {
-  const critical = reserve.checks.filter((c) => c.severity === 'critical')
-  const blocking = critical.filter((c) => BLOCKING.has(c.code))
-  const closed = reserve.checks.some((c) => c.code === 'MARKET_CLOSED')
-  // A stock paused by its closed market, with nothing else wrong, is expected rather than broken.
-  if (blocking.length) return closed && blocking.every((c) => c.code === 'STALE') ? 'paused' : 'blocked'
-  if (critical.some((c) => c.code === 'PRICE_DEVIATION')) return 'overvalued'
-  if (critical.length || reserve.severity === 'warning') return 'weak'
-  return 'ok'
-}
+const stateOf = (reserve: Reserve): State => priceState(reserve)
 
 const tokenAmount = (value: number) =>
   value.toLocaleString('en', value >= 1000 ? { maximumFractionDigits: 0 } : { maximumSignificantDigits: 4 })
@@ -137,6 +133,9 @@ function reserveRow(p: Extract<WalletPosition, { reserve: string }>, reserve: Re
           : mainIssue(checks),
     checks,
     atRiskUsd: 0,
+    weight: typeof p.weight === 'number' ? p.weight : null,
+    price: typeof p.tokens === 'number' && p.tokens > 0 ? p.usd / p.tokens : null,
+    asset: reserve?.asset || null,
   }
 }
 
@@ -163,6 +162,9 @@ function vaultRow(p: Extract<WalletPosition, { vault: string }>, vault: Vault | 
             : 'Every reserve and market this vault lends into has a usable price.',
     checks: [],
     atRiskUsd: atRisk,
+    weight: null,
+    price: null,
+    asset: null,
   }
 }
 
@@ -243,7 +245,46 @@ interface Group {
   /** What holds the account up, when it is blocked or paused. */
   by: string | null
   rows: Row[]
+  /** Deposits times their liquidation thresholds, and loans times their factors, in USD. */
+  capacity: number
+  debt: number
+  /** How far the deposits' prices can fall before liquidation (0 to 1); null without a loan or weights. */
+  liquidationDrop: number | null
+  /** With a single collateral asset, the price at which the account is liquidated. */
+  liquidationPrice: { asset: string; price: number } | null
 }
+
+/**
+ * Where a loan account is liquidated: when its loans (times their factors) exceed its deposits
+ * (times their thresholds). Assumes the loans' prices hold while the deposits' prices fall.
+ */
+function liquidation(list: Row[]): Pick<Group, 'capacity' | 'debt' | 'liquidationDrop' | 'liquidationPrice'> {
+  const deposits = list.filter((r) => r.side === 'Deposit')
+  const loans = list.filter((r) => r.side === 'Borrow')
+  const known = list.every((r) => r.weight !== null && r.usd !== null)
+  const capacity = deposits.reduce((s, r) => s + (r.usd ?? 0) * (r.weight ?? 0), 0)
+  const debt = loans.reduce((s, r) => s + (r.usd ?? 0) * (r.weight ?? 0), 0)
+  if (!known || !loans.length || capacity <= 0) return { capacity, debt, liquidationDrop: null, liquidationPrice: null }
+  const drop = Math.max(0, 1 - debt / capacity)
+  const assets = new Set(deposits.map((r) => r.asset))
+  const only = assets.size === 1 ? deposits[0] : null
+  return {
+    capacity,
+    debt,
+    liquidationDrop: drop,
+    liquidationPrice: only?.asset && only.price ? { asset: only.asset, price: only.price * (1 - drop) } : null,
+  }
+}
+
+/** The "what if" slider: a fall of every deposit's price, in percent. */
+const shock = ref(0)
+const loanGroups = computed(() => groups.value.filter((g) => g.liquidationDrop !== null))
+const shockResult = (g: Group) => {
+  const capacity = g.capacity * (1 - shock.value / 100)
+  return { liquidatable: g.debt > capacity, buffer: capacity > 0 ? 1 - g.debt / capacity : 0 }
+}
+const pct = (ratio: number) => `${Math.round(ratio * 100)}%`
+const price = (value: number) => (value >= 1 ? `${value.toFixed(2)}` : `${value.toPrecision(3)}`)
 
 /** One group per loan account, and one for vault shares; worst first, then largest. */
 const groups = computed<Group[]>(() => {
@@ -255,7 +296,7 @@ const groups = computed<Group[]>(() => {
   const list = [...byKey].map(([key, list]): Group => {
     const sorted = [...list].sort((a, b) => STATE_RANK[b.state] - STATE_RANK[a.state] || (b.usd ?? 0) - (a.usd ?? 0))
     const worst = sorted[0].state
-    if (key === 'vaults') return { key, title: 'Curator vault shares', subtitle: 'Kamino', state: worst, by: null, rows: sorted }
+    if (key === 'vaults') return { key, title: 'Curator vault shares', subtitle: 'Kamino', state: worst, by: null, rows: sorted, capacity: 0, debt: 0, liquidationDrop: null, liquidationPrice: null }
     const account = accountStates.value.get(key)
     const first = sorted[0]
     return {
@@ -265,6 +306,7 @@ const groups = computed<Group[]>(() => {
       state: worst,
       by: account ? [...account.by].join(', ') : null,
       rows: sorted,
+      ...liquidation(sorted),
     }
   })
   const total = (g: Group) => g.rows.reduce((s, r) => s + (r.usd ?? 0), 0)
@@ -474,6 +516,48 @@ const others = computed(() => findings.value.slice(1))
         </div>
       </section>
 
+      <section v-if="!loading && rows.length" class="ax-card ax-col--12" aria-label="Alerts for this wallet">
+        <div class="alerts-cta">
+        <div>
+          <h2 class="ax-card__title">Get a message when this wallet is held up</h2>
+          <p class="muted">
+            OracleCanary checks it every 5 minutes and messages you on Telegram when a price blocks one of its loan accounts, and when it
+            recovers. Read-only: only the address is shared.
+          </p>
+        </div>
+        <a class="ax-btn ax-btn--primary ax-btn--sm" :href="walletAlertsUrl(address)" target="_blank" rel="noopener">Get Telegram alerts</a>
+        </div>
+      </section>
+
+      <section v-if="!loading && loanGroups.length" class="ax-card ax-col--12" aria-labelledby="whatif-title">
+        <div class="ax-card__header">
+          <div class="ax-card__titles">
+            <h2 id="whatif-title" class="ax-card__title">What if your deposits fall?</h2>
+            <p class="ax-card__subtitle">
+              Loans are assumed to keep their price. While a price is blocked or paused, the protocol cannot liquidate the account even past
+              this point, so a fall keeps growing the loss instead.
+            </p>
+          </div>
+        </div>
+        <div class="ax-card__body whatif">
+          <label class="whatif__slider">
+            <span>Deposit prices fall by <b class="ax-num">{{ shock }}%</b></span>
+            <input v-model.number="shock" type="range" min="0" max="90" step="5" aria-label="Fall of deposit prices, in percent" />
+          </label>
+          <ul class="whatif__list">
+            <li v-for="g in loanGroups" :key="g.key">
+              <span class="whatif__name">{{ g.title }} <span class="muted">{{ g.subtitle }}</span></span>
+              <span
+                class="ax-badge ax-badge--soft ax-badge--pill"
+                :class="shockResult(g).liquidatable ? 'ax-badge--danger' : 'ax-badge--success'"
+              >
+                {{ shockResult(g).liquidatable ? 'Would be liquidated' : `Safe: can fall another ${pct(shockResult(g).buffer)}` }}
+              </span>
+            </li>
+          </ul>
+        </div>
+      </section>
+
       <section v-if="loading || rows.length" class="ax-card ax-col--12" aria-label="Positions">
         <div class="ax-card__header">
           <div class="ax-card__titles">
@@ -507,6 +591,11 @@ const others = computed(() => findings.value.slice(1))
                     <span v-if="g.subtitle" class="muted">{{ g.subtitle }}</span>
                     <span v-if="g.by" class="group__by">
                       {{ g.state === 'paused' ? 'Paused by' : 'Blocked by' }} {{ g.by }}: this account cannot borrow, withdraw or be liquidated
+                    </span>
+                    <span v-if="g.liquidationDrop !== null" class="group__liq">
+                      Liquidated if deposits fall {{ pct(g.liquidationDrop) }}<template v-if="g.liquidationPrice">
+                        ({{ g.liquidationPrice.asset }} at {{ price(g.liquidationPrice.price) }})</template
+                      >
                     </span>
                   </div>
                 </th>
@@ -542,6 +631,14 @@ const others = computed(() => findings.value.slice(1))
 </template>
 
 <style scoped>
+.alerts-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ax-space-4);
+  padding: var(--ax-space-5);
+}
 .start {
   gap: var(--ax-space-3);
 }
@@ -684,6 +781,39 @@ const others = computed(() => findings.value.slice(1))
   font-size: var(--ax-text-sm);
   font-weight: 600;
   color: var(--ax-danger-500);
+}
+.group__liq {
+  font-size: var(--ax-text-sm);
+  color: var(--ax-text-muted);
+}
+.whatif {
+  display: grid;
+  gap: var(--ax-space-4);
+}
+.whatif__slider {
+  display: grid;
+  gap: var(--ax-space-2);
+  max-width: 480px;
+  font-size: var(--ax-text-sm);
+}
+.whatif__slider input {
+  width: 100%;
+  accent-color: var(--ax-accent);
+}
+.whatif__list {
+  display: grid;
+  gap: var(--ax-space-2);
+}
+.whatif__list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--ax-space-2);
+}
+.whatif__name {
+  font-weight: 600;
+  color: var(--ax-text-strong);
 }
 .group--info .group__by {
   color: var(--ax-info-500);

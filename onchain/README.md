@@ -103,6 +103,27 @@ let attestation = oracle_guard::cpi::assert_oracle_healthy(
 )?.get();
 ```
 
+## Integrate in one call
+
+A client adds the guard to any transaction with `withOracleGuard` (`ts/guard.ts`). It fetches each
+reserve's latest attestation from the API, checks the signer, signature and reserve, and puts the
+signature instruction and the guard check in front of the client's own instructions:
+
+```ts
+import { withOracleGuard } from './ts/guard.js';
+
+const instructions = await withOracleGuard([borrowIx], {
+  reserves: [collateralReserve, debtReserve], // whose prices the borrow relies on
+  maxSeverity: 'warning',                     // refuse critical: stale, missing or shut-down prices
+  maxAttestationAgeSeconds: 600,
+});
+tx.add(...instructions); // fails on-chain, before borrowIx runs, if either price is broken
+```
+
+Each reserve adds about 250 bytes to the transaction. A program that wants to enforce the check
+itself, whoever builds the transaction, calls `assert_oracle_healthy` through CPI as
+`programs/demo_vault` does; `ts/devnet.ts demo` uses the same helper to fetch the attestation.
+
 ## TypeScript helper
 
 `ts/attestation.ts` provides `encodeAttestation`, `decodeAttestation`, `attestationFromHealth` (maps the

@@ -23,6 +23,8 @@ export type WalletPosition =
       tokens: number;
       /** At the price the protocol last stored for the reserve or bank. */
       usd: number;
+      /** Liquidation weight: a deposit's threshold (0 to 1), a loan's factor (1 or more). */
+      weight: number;
     }
   | {
       protocol: 'kamino-vault';
@@ -112,8 +114,8 @@ export function vaultSharePositions(
  */
 export async function fetchWalletPositions(connection: Connection, wallet: PublicKey): Promise<WalletPositions> {
   const sources = [
-    ['kamino', () => fetchKaminoPositions(connection, wallet).then((list) => list.map((p) => ({ protocol: 'kamino' as const, side: p.side, reserve: p.reserve, account: p.account, tokens: p.tokens, usd: p.usd })))],
-    ['marginfi', () => fetchMarginfiPositions(connection, wallet).then((list) => list.map((p) => ({ protocol: 'marginfi' as const, side: p.side, reserve: p.bank, account: p.account, tokens: p.tokens, usd: p.usd })))],
+    ['kamino', () => fetchKaminoPositions(connection, wallet).then((list) => list.map((p) => ({ protocol: 'kamino' as const, side: p.side, reserve: p.reserve, account: p.account, tokens: p.tokens, usd: p.usd, weight: p.weight })))],
+    ['marginfi', () => fetchMarginfiPositions(connection, wallet).then((list) => list.map((p) => ({ protocol: 'marginfi' as const, side: p.side, reserve: p.bank, account: p.account, tokens: p.tokens, usd: p.usd, weight: p.weight })))],
     ['kamino-vault', () => fetchVaultShares(connection, wallet)],
   ] as const satisfies readonly (readonly [string, () => Promise<WalletPosition[]>])[];
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { alertFor, formatAlert, formatSummary, problemCodes, summaryDue, type HealthEvent, type ReserveStatus } from '../src/alerts.js';
+import { alertFor, announceConfigChange, formatAlert, formatConfigChange, formatSummary, problemCodes, summaryDue, type ConfigChangeEvent, type HealthEvent, type ReserveStatus } from '../src/alerts.js';
 
 const MIN = 10_000;
 
@@ -165,5 +165,31 @@ describe('summaryDue', () => {
     assert.equal(summaryDue(new Date('2026-09-29T14:00:00Z'), 14, '2026-09-28'), '2026-09-29');
     assert.equal(summaryDue(new Date('2026-09-29T20:00:00Z'), 14, '2026-09-29'), null);
     assert.equal(summaryDue(new Date('2026-09-29T15:00:00Z'), 14, null), '2026-09-29');
+  });
+});
+
+describe('configuration changes', () => {
+  const change = (overrides: Partial<ConfigChangeEvent> = {}): ConfigChangeEvent => ({
+    id: '1',
+    address: 'reserve-sol',
+    protocol: 'kamino',
+    asset: 'SOL',
+    marketName: 'Main Market',
+    kind: 'price_source',
+    detail: 'Price source changed: Scope price chain [3] → [495].',
+    totalSupplyUsd: 250_000_000,
+    ...overrides,
+  });
+
+  it('announces every new listing, and other changes to reserves worth alerting on', () => {
+    assert.ok(announceConfigChange(change({ kind: 'listed', totalSupplyUsd: 0 }), MIN));
+    assert.ok(announceConfigChange(change(), MIN));
+    assert.ok(!announceConfigChange(change({ totalSupplyUsd: 50 }), MIN));
+  });
+
+  it('says what changed, where, and links the reserve', () => {
+    const text = formatConfigChange(change(), 'https://oraclecanary.com');
+    assert.match(text, /^<b>🔧 Price source changed: SOL<\/b>\nKamino · Main Market\n\nPrice source changed: Scope price chain \[3\] → \[495\]\.\nSupply: \$250\.0M/);
+    assert.ok(text.endsWith('https://oraclecanary.com/reserves/reserve-sol'));
   });
 });

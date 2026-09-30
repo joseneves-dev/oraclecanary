@@ -154,6 +154,12 @@ export interface MarginfiPosition {
   tokens: number;
   /** At the bank's last stored price (or its fixed price). */
   usd: number;
+  /**
+   * The bank's maintenance weight: for a deposit, the share that counts as collateral (0 to 1); for
+   * a loan, the multiple it counts as debt. The account is liquidated when weighted loans exceed
+   * weighted deposits.
+   */
+  weight: number;
 }
 
 /** Offset of `authority` in a MarginfiAccount: after the discriminator and `group`. */
@@ -193,7 +199,7 @@ export async function fetchMarginfiPositions(connection: Connection, wallet: Pub
 
   const bankKeys = [...new Set(balances.map((b) => b.bank))];
   const bankInfos = await connection.getMultipleAccountsInfo(bankKeys.map((k) => new PublicKey(k)));
-  const banks = new Map<string, { assetValue: number; liabilityValue: number; decimals: number; price: number }>();
+  const banks = new Map<string, { assetValue: number; liabilityValue: number; decimals: number; price: number; assetWeight: number; liabilityWeight: number }>();
   bankInfos.forEach((info, i) => {
     if (!info) return;
     try {
@@ -203,6 +209,8 @@ export async function fetchMarginfiPositions(connection: Connection, wallet: Pub
         liabilityValue: fromI80F48(bank.liability_share_value),
         decimals: bank.mint_decimals,
         price: bankPrice(bank, variant(bank.config.oracle_setup)),
+        assetWeight: fromI80F48(bank.config.asset_weight_maint),
+        liabilityWeight: fromI80F48(bank.config.liability_weight_maint),
       });
     } catch (e) {
       console.warn(`Skipping marginfi bank ${bankKeys[i]}: ${(e as Error).message}`);
@@ -222,7 +230,7 @@ export async function fetchMarginfiPositions(connection: Connection, wallet: Pub
       // Rounding leaves dust shares behind on closed positions; judged in tokens, so a position whose
       // bank never cached a price is still listed (at $0) rather than hidden.
       if (tokens * 10 ** bank.decimals < 1) continue;
-      positions.push({ account: b.account, bank: b.bank, side, tokens, usd: tokens * bank.price });
+      positions.push({ account: b.account, bank: b.bank, side, tokens, usd: tokens * bank.price, weight: side === 'deposit' ? bank.assetWeight : bank.liabilityWeight });
     }
   }
   return positions;

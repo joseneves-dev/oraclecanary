@@ -2,6 +2,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import bs58 from 'bs58';
 // Import only the generated account decoder: the SDK's main entry pulls in
 // transaction helpers whose peer dependencies conflict with each other.
+import { LendingMarket } from '@kamino-finance/klend-sdk/dist/@codegen/klend/accounts/LendingMarket.js';
 import { Obligation } from '@kamino-finance/klend-sdk/dist/@codegen/klend/accounts/Obligation.js';
 import { Reserve } from '@kamino-finance/klend-sdk/dist/@codegen/klend/accounts/Reserve.js';
 import { PROGRAM_ID } from '@kamino-finance/klend-sdk/dist/@codegen/klend/programId.js';
@@ -134,6 +135,12 @@ export interface KaminoPosition {
   tokens: number;
   /** At the reserve's last stored price. */
   usd: number;
+  /**
+   * How much of the position counts towards liquidation: for a deposit, the liquidation threshold
+   * (0 to 1); for a loan, the borrow factor (1 or more). The account is liquidated when its loans
+   * times their factors exceed its deposits times their thresholds.
+   */
+  weight: number;
 }
 
 /** Offset of `owner` in an Obligation: discriminator, tag, last update and lending market come first. */
@@ -155,6 +162,8 @@ interface ReserveRates {
   /** Underlying tokens per collateral (cToken) unit, both in raw units. */
   exchangeRate: number;
   cumulativeBorrowRate: number;
+  liquidationThreshold: number;
+  borrowFactor: number;
 }
 
 function reserveRates(data: Buffer): ReserveRates {
@@ -170,6 +179,9 @@ function reserveRates(data: Buffer): ReserveRates {
     price: sf(l.marketPriceSf),
     exchangeRate: collateral > 0 ? liquidity / collateral : 1,
     cumulativeBorrowRate: fromBigFraction(l.cumulativeBorrowRateBsf),
+    liquidationThreshold: reserve.config.liquidationThresholdPct / 100,
+    // Stored as a percentage; 0 means unset, which Kamino treats as 100%.
+    borrowFactor: Math.max(100, Number(reserve.config.borrowFactorPct.toString())) / 100,
   };
 }
 
@@ -189,7 +201,7 @@ export async function fetchKaminoPositions(connection: Connection, wallet: Publi
     ],
   });
 
-  type Raw = { account: string; market: string; reserve: string } & (
+  type Raw = { account: string; market: string; reserve: string; elevationGroup: number } & (
     | { side: 'deposit'; collateral: number }
     | { side: 'borrow'; borrowedSf: number; obligationRate: number }
   );
@@ -198,7 +210,7 @@ export async function fetchKaminoPositions(connection: Connection, wallet: Publi
     // One account the decoder cannot read must not hide the wallet's other positions.
     try {
       const obligation = Obligation.decode(account.data);
-      const base = { account: pubkey.toBase58(), market: obligation.lendingMarket.toString() };
+      const base = { account: pubkey.toBase58(), market: obligation.lendingMarket.toString(), elevationGroup: obligation.elevationGroup };
       for (const d of obligation.deposits) {
         if (d.depositedAmount.toString() === '0') continue;
         raw.push({ ...base, reserve: d.depositReserve.toString(), side: 'deposit', collateral: Number(d.depositedAmount.toString()) });
@@ -231,6 +243,24 @@ export async function fetchKaminoPositions(connection: Connection, wallet: Publi
     }
   });
 
+  // Loans in an elevation group (e.g. a SOL/LST mode) use the group's liquidation threshold for
+  // every deposit, and no borrow factor.
+  const groupMarkets = [...new Set(raw.filter((r) => r.elevationGroup > 0).map((r) => r.market))];
+  const groupThresholds = new Map<string, number>();
+  if (groupMarkets.length) {
+    const marketInfos = await connection.getMultipleAccountsInfo(groupMarkets.map((k) => new PublicKey(k)));
+    marketInfos.forEach((info, i) => {
+      if (!info) return;
+      try {
+        for (const g of LendingMarket.decode(info.data).elevationGroups) {
+          if (g.id > 0) groupThresholds.set(`${groupMarkets[i]}:${g.id}`, g.liquidationThresholdPct / 100);
+        }
+      } catch (e) {
+        console.warn(`Skipping Kamino market ${groupMarkets[i]}: ${(e as Error).message}`);
+      }
+    });
+  }
+
   const positions: KaminoPosition[] = [];
   for (const r of raw) {
     const rate = rates.get(r.reserve);
@@ -240,7 +270,9 @@ export async function fetchKaminoPositions(connection: Connection, wallet: Publi
       r.side === 'deposit'
         ? (r.collateral * rate.exchangeRate) / scale
         : (r.borrowedSf * (r.obligationRate > 0 ? rate.cumulativeBorrowRate / r.obligationRate : 1)) / scale;
-    positions.push({ account: r.account, market: r.market, reserve: r.reserve, side: r.side, tokens, usd: tokens * rate.price });
+    const group = r.elevationGroup > 0 ? groupThresholds.get(`${r.market}:${r.elevationGroup}`) : undefined;
+    const weight = r.side === 'deposit' ? (group ?? rate.liquidationThreshold) : group !== undefined ? 1 : rate.borrowFactor;
+    positions.push({ account: r.account, market: r.market, reserve: r.reserve, side: r.side, tokens, usd: tokens * rate.price, weight });
   }
   return positions;
 }

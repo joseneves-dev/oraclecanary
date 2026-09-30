@@ -1,6 +1,7 @@
 import pg from 'pg';
 
 import type { CuratorVault } from './adapters/kaminoVaults.js';
+import { configChanges, storedFeeds, type StoredConfig } from './configWatch.js';
 import type { HealthResult } from './health.js';
 import { checkKeys, hourOf, planIncidents, trackChanges, type AlertState, type HealthTransition } from './history.js';
 import type { MarketOracleConfig, Protocol } from './types.js';
@@ -82,6 +83,29 @@ async function loadAlertStates(client: pg.PoolClient, protocol: Protocol): Promi
   );
 }
 
+const CONFIG_CHANGE_COLUMNS = [
+  'address', 'protocol', 'asset', 'market_name', 'occurred_at', 'kind', 'detail', 'before_value', 'after_value', 'total_supply_usd',
+] as const;
+
+/** How each reserve of a protocol was priced at the last run, from lending_reserve. */
+async function loadStoredConfigs(client: pg.PoolClient, protocol: Protocol): Promise<Map<string, StoredConfig>> {
+  const { rows } = await client.query<{ address: string; market_name: string | null; status: string; feeds: unknown; max_age_price_seconds: number; providers: unknown }>(
+    'SELECT address, market_name, status, feeds, max_age_price_seconds, providers FROM lending_reserve WHERE protocol = $1',
+    [protocol],
+  );
+  return new Map(
+    rows.map((r) => [
+      r.address,
+      {
+        listed: r.market_name !== null && r.status === 'active',
+        feeds: r.feeds && typeof r.feeds === 'object' ? (r.feeds as Record<string, unknown>) : {},
+        maxAgeSeconds: r.max_age_price_seconds,
+        providers: Array.isArray(r.providers) ? r.providers.filter((p): p is string => typeof p === 'string') : [],
+      },
+    ]),
+  );
+}
+
 const INCIDENT_COLUMNS = ['address', 'protocol', 'asset', 'market_name', 'started_at', 'start_estimated', 'checks', 'total_supply_usd'] as const;
 
 /** Opens and closes incidents (see planIncidents) and records the largest supply exposed by open ones. */
@@ -154,6 +178,18 @@ export async function saveReserveHealth(
     const listed = rows.filter(({ reserve: r }) => r.marketName);
     const { transitions, states } = trackChanges(await loadAlertStates(client, protocol), listed, checkedAt, confirmSeconds);
 
+    // Compared before the rows are replaced: how each listed reserve is priced now against last run.
+    const changes = configChanges(await loadStoredConfigs(client, protocol), rows.map(({ reserve, health }) => ({ reserve, providers: health.providers })));
+    await insertRows(
+      client,
+      'reserve_config_change',
+      CONFIG_CHANGE_COLUMNS,
+      changes.map((c) => [
+        c.reserve.reserve, c.reserve.protocol, asset(c.reserve), marketName(c.reserve), utc(checkedAt), c.kind, c.detail,
+        JSON.stringify(c.before), JSON.stringify(c.after), finite(c.reserve.totalSupplyUsd),
+      ]),
+    );
+
     const updates = RESERVE_COLUMNS.filter((c) => c !== 'address').map((c) => `${c} = EXCLUDED.${c}`).join(', ');
     await insertRows(
       client,
@@ -162,7 +198,7 @@ export async function saveReserveHealth(
       rows.map(({ reserve: r, health: h }) => [
         r.reserve, r.protocol, r.market, marketName(r), asset(r), r.mint, r.status, finite(r.totalSupplyUsd),
         r.maxAgePriceSeconds, h.priceAgeSeconds, h.score, JSON.stringify(h.providers), JSON.stringify(h.checks),
-        JSON.stringify({ ...r.feeds, scopeChain: r.scopeChain, oracle: r.oracle ?? null }), utc(checkedAt),
+        JSON.stringify(storedFeeds(r)), utc(checkedAt),
       ]),
       `ON CONFLICT (address) DO UPDATE SET ${updates}`,
     );
@@ -214,6 +250,7 @@ export async function saveReserveHealth(
     await client.query('DELETE FROM reserve_health_event WHERE protocol = $1 AND occurred_at < $2', [protocol, daysBefore(checkedAt, EVENT_RETENTION_DAYS)]);
     await client.query('DELETE FROM reserve_health_state WHERE protocol = $1 AND last_seen_at < $2', [protocol, daysBefore(checkedAt, STATE_RETENTION_DAYS)]);
     await client.query('DELETE FROM reserve_incident WHERE protocol = $1 AND ended_at < $2', [protocol, daysBefore(checkedAt, EVENT_RETENTION_DAYS)]);
+    await client.query('DELETE FROM reserve_config_change WHERE protocol = $1 AND occurred_at < $2', [protocol, daysBefore(checkedAt, EVENT_RETENTION_DAYS)]);
     await client.query('COMMIT');
     return transitions;
   } catch (e) {

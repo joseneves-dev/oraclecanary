@@ -121,7 +121,7 @@ export async function fetchIncidents(query: IncidentQuery, signal?: AbortSignal)
 
 /** One of a wallet's positions, as the positions service reads it from the chain. */
 export type WalletPosition =
-  | { protocol: 'kamino' | 'marginfi'; side: 'deposit' | 'borrow'; reserve: string; account: string; tokens: number; usd: number }
+  | { protocol: 'kamino' | 'marginfi'; side: 'deposit' | 'borrow'; reserve: string; account: string; tokens: number; usd: number; weight?: number }
   | { protocol: 'kamino-vault'; side: 'deposit'; vault: string; share: number }
 
 export interface WalletPositions {
@@ -143,4 +143,24 @@ export async function fetchWalletPositions(address: string, signal?: AbortSignal
   const body = (await response.json().catch(() => null)) as (WalletPositions & { error?: string }) | null
   if (!response.ok || !body) throw new ApiError(body?.error ?? `Could not load this wallet (HTTP ${response.status})`)
   return body
+}
+
+export type Stats = Complete<components['schemas']['Stats']>
+
+/** How many wallets are watched through the Telegram bot, and the value in them. */
+export async function fetchStats(signal?: AbortSignal): Promise<Stats> {
+  const { data, response } = await api.GET('/api/stats', { signal })
+  const status: number = response.status
+  if (!data) throw new ApiError(`Could not load stats (HTTP ${status})`)
+  return data as Stats
+}
+
+export type ConfigChange = Complete<components['schemas']['ReserveConfigChange']>
+
+/** Changes to how listed reserves are priced, most recent first. */
+export async function fetchConfigChanges(itemsPerPage: number, signal?: AbortSignal): Promise<ConfigChange[]> {
+  const { data, response } = await api.GET('/api/config-changes', { params: { query: { itemsPerPage } }, signal })
+  const status: number = response.status
+  if (!data) throw new ApiError(`Could not load configuration changes (HTTP ${status})`)
+  return data as ConfigChange[]
 }

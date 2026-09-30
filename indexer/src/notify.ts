@@ -4,7 +4,17 @@ import { dirname } from 'node:path';
 
 import pg from 'pg';
 
-import { alertFor, formatAlert, formatSummary, summaryDue, type HealthEvent, type ReserveStatus } from './alerts.js';
+import {
+  alertFor,
+  announceConfigChange,
+  formatAlert,
+  formatConfigChange,
+  formatSummary,
+  summaryDue,
+  type ConfigChangeEvent,
+  type HealthEvent,
+  type ReserveStatus,
+} from './alerts.js';
 
 /**
  * Posts alerts to a Telegram channel for new health events, and a daily summary so the channel shows
@@ -51,19 +61,22 @@ interface State {
   open: Set<string>;
   /** UTC date (YYYY-MM-DD) of the last daily summary sent. */
   lastSummary: string | null;
+  /** Id of the last configuration change handled; null until first set from the table. */
+  configCursor: string | null;
 }
 
 async function readState(): Promise<State | null> {
   try {
     const text = (await readFile(STATE_FILE, 'utf8')).trim();
     // The first version stored only the cursor.
-    if (/^\d+$/.test(text)) return { cursor: text, open: new Set(), lastSummary: null };
-    const saved = JSON.parse(text) as { cursor?: unknown; open?: unknown; lastSummary?: unknown };
+    if (/^\d+$/.test(text)) return { cursor: text, open: new Set(), lastSummary: null, configCursor: null };
+    const saved = JSON.parse(text) as { cursor?: unknown; open?: unknown; lastSummary?: unknown; configCursor?: unknown };
     if (typeof saved.cursor !== 'string' || !/^\d+$/.test(saved.cursor)) return null;
     return {
       cursor: saved.cursor,
       open: new Set(Array.isArray(saved.open) ? saved.open.filter((a): a is string => typeof a === 'string') : []),
       lastSummary: typeof saved.lastSummary === 'string' ? saved.lastSummary : null,
+      configCursor: typeof saved.configCursor === 'string' && /^\d+$/.test(saved.configCursor) ? saved.configCursor : null,
     };
   } catch {
     return null;
@@ -73,7 +86,7 @@ async function readState(): Promise<State | null> {
 async function writeState(state: State): Promise<void> {
   await mkdir(dirname(STATE_FILE), { recursive: true });
   // Written aside and renamed, so a crash mid-write cannot leave a half-written file.
-  await writeFile(`${STATE_FILE}.tmp`, JSON.stringify({ cursor: state.cursor, open: [...state.open], lastSummary: state.lastSummary }));
+  await writeFile(`${STATE_FILE}.tmp`, JSON.stringify({ cursor: state.cursor, open: [...state.open], lastSummary: state.lastSummary, configCursor: state.configCursor }));
   await rename(`${STATE_FILE}.tmp`, STATE_FILE);
 }
 
@@ -93,6 +106,24 @@ async function eventsAfter(id: string): Promise<HealthEvent[]> {
     marketName: r.market_name,
     previousChecks: strings(r.previous_checks),
     checks: strings(r.checks),
+    totalSupplyUsd: Number(r.total_supply_usd),
+  }));
+}
+
+async function configChangesAfter(id: string): Promise<ConfigChangeEvent[]> {
+  const { rows } = await pool.query(
+    `SELECT id, address, protocol, asset, market_name, kind, detail, total_supply_usd
+       FROM reserve_config_change WHERE id > $1 ORDER BY id LIMIT ${BATCH}`,
+    [id],
+  );
+  return rows.map((r) => ({
+    id: String(r.id),
+    address: r.address,
+    protocol: r.protocol,
+    asset: r.asset,
+    marketName: r.market_name,
+    kind: r.kind,
+    detail: r.detail,
     totalSupplyUsd: Number(r.total_supply_usd),
   }));
 }
@@ -149,7 +180,13 @@ let state = await readState();
 if (!state) {
   // First start: alert from now on rather than replaying the whole history.
   const { rows } = await pool.query('SELECT COALESCE(MAX(id), 0) AS id FROM reserve_health_event');
-  state = { cursor: String(rows[0].id), open: new Set(), lastSummary: null };
+  state = { cursor: String(rows[0].id), open: new Set(), lastSummary: null, configCursor: null };
+  await writeState(state);
+}
+if (state.configCursor === null) {
+  // Configuration changes likewise: announced from now on, not replayed.
+  const { rows } = await pool.query('SELECT COALESCE(MAX(id), 0) AS id FROM reserve_config_change');
+  state.configCursor = String(rows[0].id);
   await writeState(state);
 }
 console.log(`Sending alerts to ${CHAT_ID} for events after #${state.cursor} (reserves with at least $${MIN_SUPPLY_USD} supplied).`);
@@ -176,6 +213,21 @@ for (;;) {
       }
       // Moved past only once handled, so a failed send is retried on the next poll.
       state.cursor = event.id;
+      await writeState(state);
+    }
+    for (const change of await configChangesAfter(state.configCursor ?? '0')) {
+      if (announceConfigChange(change, MIN_SUPPLY_USD)) {
+        try {
+          await send(formatConfigChange(change, SITE_URL));
+          console.log(`Sent ${change.kind} change for ${change.asset} (change #${change.id})`);
+          await sleep(SEND_GAP_MS);
+        } catch (e) {
+          if (!(e instanceof RejectedMessage)) throw e;
+          rejected = true;
+          console.error(`Alerts: skipped change #${change.id}: ${e.message}`);
+        }
+      }
+      state.configCursor = change.id;
       await writeState(state);
     }
     const due = SUMMARY_HOUR === null ? null : summaryDue(new Date(), SUMMARY_HOUR, state.lastSummary);
