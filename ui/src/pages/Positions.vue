@@ -15,6 +15,7 @@ import ReserveTags from '@/components/ReserveTags.vue'
 import WalletLookup from '@/components/WalletLookup.vue'
 import { shortAddress, usd } from '@/lib/format'
 import { walletAlertsUrl } from '@/lib/links'
+import { priceState } from '@/lib/priceState'
 
 /**
  * A wallet's deposits and loans in the monitored protocols, each with the health of the price it
@@ -29,8 +30,6 @@ const route = useRoute()
 const router = useRouter()
 
 const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
-/** Checks that make the protocol refuse a price (see health.ts); PRICE_DEVIATION prices are still used. */
-const BLOCKING = new Set(['STALE', 'NO_ORACLE', 'EMPTY_PRICE_ENTRY', 'DEPRECATED_PROVIDER'])
 
 const PROTOCOL_LABEL: Record<WalletPosition['protocol'], string> = {
   kamino: 'Kamino',
@@ -108,16 +107,7 @@ function mainIssue(checks: Reserve['checks']): string {
   return [...checks].sort((a, b) => (rank[b.severity] ?? 0) - (rank[a.severity] ?? 0))[0]?.message ?? 'Price is healthy.'
 }
 
-function stateOf(reserve: Reserve): State {
-  const critical = reserve.checks.filter((c) => c.severity === 'critical')
-  const blocking = critical.filter((c) => BLOCKING.has(c.code))
-  const closed = reserve.checks.some((c) => c.code === 'MARKET_CLOSED')
-  // A stock paused by its closed market, with nothing else wrong, is expected rather than broken.
-  if (blocking.length) return closed && blocking.every((c) => c.code === 'STALE') ? 'paused' : 'blocked'
-  if (critical.some((c) => c.code === 'PRICE_DEVIATION')) return 'overvalued'
-  if (critical.length || reserve.severity === 'warning') return 'weak'
-  return 'ok'
-}
+const stateOf = (reserve: Reserve): State => priceState(reserve)
 
 const tokenAmount = (value: number) =>
   value.toLocaleString('en', value >= 1000 ? { maximumFractionDigits: 0 } : { maximumSignificantDigits: 4 })

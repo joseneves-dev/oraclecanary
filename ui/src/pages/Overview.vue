@@ -6,6 +6,7 @@ import ReserveTable from '@/components/ReserveTable.vue'
 import WalletLookup from '@/components/WalletLookup.vue'
 import { time, usd } from '@/lib/format'
 import { TELEGRAM_CHANNEL_URL as TELEGRAM_URL } from '@/lib/links'
+import { priceState } from '@/lib/priceState'
 
 const router = useRouter()
 const ATTENTION_ROWS = 10
@@ -63,6 +64,13 @@ const switchboardUnlisted = computed(() => switchboard.value?.filter((r) => !r.m
 const totalSupply = computed(() => reserves.value.reduce((sum, r) => sum + r.totalSupplyUsd, 0))
 const critical = computed(() => reserves.value.filter((r) => r.severity === 'critical'))
 const warnings = computed(() => reserves.value.filter((r) => r.severity === 'warning'))
+/** Deposits whose price the protocol cannot use right now, apart from stocks paused by their closed market. */
+/** Reserves this small (e.g. vaults left empty) would only add noise to the headline figure. */
+const BLOCKED_MIN_USD = 1_000
+const blocked = computed(() => reserves.value.filter((r) => r.totalSupplyUsd >= BLOCKED_MIN_USD && priceState(r) === 'blocked'))
+const paused = computed(() => reserves.value.filter((r) => r.totalSupplyUsd >= BLOCKED_MIN_USD && priceState(r) === 'paused'))
+const supplyOf = (list: Reserve[]) => list.reduce((sum, r) => sum + r.totalSupplyUsd, 0)
+
 /** The colour of the live status dot: the worst health among listed reserves. */
 const statusTone = computed(() => (critical.value.length ? 'danger' : warnings.value.length ? 'warning' : 'success'))
 
@@ -146,6 +154,13 @@ const lastChecked = computed(() => {
           <span class="live__label">Supply watched</span>
         </div>
       </div>
+      <RouterLink v-if="!loading && !error" class="live__blocked" :class="{ 'live__blocked--none': !blocked.length }" :to="{ name: 'reserves', query: { health: 'critical' } }">
+        <span class="live__value" :class="{ 'live__value--danger': blocked.length }">{{ usd(supplyOf(blocked)) }}</span>
+        <span class="live__label">
+          of deposits can't be priced right now<template v-if="blocked.length"> ({{ blocked.length }} {{ blocked.length === 1 ? 'reserve' : 'reserves' }})</template
+          ><template v-if="paused.length">; {{ usd(supplyOf(paused)) }} more paused while the US market is closed</template>
+        </span>
+      </RouterLink>
       <p v-if="stats?.walletsWatched" class="live__watched">
         {{ stats.walletsWatched }} {{ stats.walletsWatched === 1 ? 'wallet' : 'wallets' }} watched for personal alerts ({{ usd(stats.valueWatchedUsd) }})
       </p>
@@ -308,6 +323,21 @@ a.live__stat:hover {
 .live__label {
   font-size: var(--ax-text-xs);
   color: var(--ax-text-muted);
+}
+.live__blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ax-space-3);
+  border: 1px solid color-mix(in srgb, var(--ax-danger-500) 35%, var(--ax-border));
+  border-radius: var(--ax-radius-md);
+  background: color-mix(in srgb, var(--ax-danger-500) 6%, var(--ax-surface-subtle));
+  color: inherit;
+  text-decoration: none;
+}
+.live__blocked--none {
+  border-color: var(--ax-border);
+  background: var(--ax-surface-subtle);
 }
 .live__watched {
   font-size: var(--ax-text-xs);
