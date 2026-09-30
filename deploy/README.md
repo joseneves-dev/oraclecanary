@@ -67,7 +67,9 @@ wallet and sends a direct message when one of its Kamino or marginfi loan accoun
 price the protocol cannot use, and when it recovers (a tokenized stock paused by its closed market is
 not alerted). The web app's "Get Telegram alerts" button opens the bot with the wallet filled in.
 It uses the same `TELEGRAM_BOT_TOKEN` as `alerts` and `POSITIONS_RPC_URL` (or `RPC_URL`); the
-number of watched wallets and their value is public at `/api/stats`.
+number of watched wallets and their deposits is public at `/api/stats`. Only this service reads the
+bot's messages: running a second copy with the same token (say, locally) makes Telegram refuse one of
+them, and commands go unanswered.
 
 ## Wallet positions
 

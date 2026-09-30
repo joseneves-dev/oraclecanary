@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { WalletPosition } from '../src/positions.js';
-import { alertKeys, formatChange, formatCheck, summarizeWallet, walletChanges, type ReserveHealth } from '../src/walletAlerts.js';
+import { alertKeys, formatChange, formatCheck, planWallet, summarizeWallet, type ReserveHealth } from '../src/walletAlerts.js';
 
 const WALLET = 'BKLBmxGDFrGK63QwhFgUcvqRQfWnTeJzUeMaoKcDGcvH';
 const SITE = 'https://oraclecanary.com';
@@ -48,33 +48,63 @@ describe('summarizeWallet', () => {
   });
 });
 
-describe('walletChanges', () => {
+describe('planWallet', () => {
   const blocked = summarizeWallet(loan, reserves(['STALE:critical']));
   const healthy = summarizeWallet(loan, reserves([]));
+  const paused = summarizeWallet(loan, reserves(['STALE:critical', 'MARKET_CLOSED:info']));
+  const kinds = (plan: ReturnType<typeof planWallet>) => plan.changes.map((c) => c.kind);
 
-  it('announces a newly blocked account once, then its recovery', () => {
-    const first = walletChanges([], blocked);
-    assert.deepEqual(first.map((c) => c.kind), ['blocked']);
-    assert.deepEqual(walletChanges(alertKeys(blocked), blocked), [], 'nothing new');
-    assert.deepEqual(walletChanges(alertKeys(blocked), healthy).map((c) => c.kind), ['recovered']);
+  it('announces an account held up on two checks in a row, once, then its recovery', () => {
+    const first = planWallet([], blocked);
+    assert.deepEqual(kinds(first), [], 'one check is not enough');
+    const second = planWallet(first.state, blocked);
+    assert.deepEqual(kinds(second), ['blocked']);
+    assert.deepEqual(kinds(planWallet(second.state, blocked)), [], 'already told');
+    assert.deepEqual(kinds(planWallet(second.state, healthy)), ['recovered']);
   });
 
-  it('never alerts on a market-closed pause', () => {
-    const paused = summarizeWallet(loan, reserves(['STALE:critical', 'MARKET_CLOSED:info']));
-    assert.deepEqual(walletChanges([], paused), []);
+  it('stays quiet about a price that is blocked for a single check', () => {
+    const seen = planWallet([], blocked);
+    const back = planWallet(seen.state, healthy);
+    assert.deepEqual(kinds(back), []);
+    assert.deepEqual(back.state, []);
   });
 
-  it('reports a blocked account that closed as recovered', () => {
+  it('never alerts on a market-closed pause, and does not call blocked-to-paused recovered', () => {
+    assert.deepEqual(kinds(planWallet([], paused)), []);
+    const told = alertKeys(blocked);
+    const plan = planWallet(told, paused);
+    assert.deepEqual(kinds(plan), []);
+    assert.deepEqual(plan.state, told);
+  });
+
+  it('keeps an announced account while one of its reserves is not tracked', () => {
+    const told = alertKeys(blocked);
+    const untracked = summarizeWallet(loan, new Map([['usdc', reserve('usdc', 'USDC')]]));
+    assert.deepEqual(kinds(planWallet(told, untracked)), []);
+  });
+
+  it('reports an announced account that closed as recovered, and reads first-version state', () => {
     const empty = summarizeWallet([], new Map());
-    const changes = walletChanges(alertKeys(blocked), empty);
-    assert.deepEqual(changes.map((c) => [c.kind, c.summary]), [['recovered', null]]);
+    assert.deepEqual(planWallet(alertKeys(blocked), empty).changes.map((c) => [c.kind, c.summary]), [['recovered', null]]);
+    assert.deepEqual(kinds(planWallet(['loan-1:FWDI'], healthy)), ['recovered']);
+  });
+
+  it('gives the state to store after each message, so a failed later one does not repeat the first', () => {
+    const second = { ...loan[0], account: 'loan-2' };
+    const twoBlocked = summarizeWallet([...loan, second], reserves(['STALE:critical']));
+    const seen = planWallet([], twoBlocked);
+    const plan = planWallet(seen.state, twoBlocked);
+    assert.deepEqual(kinds(plan), ['blocked', 'blocked']);
+    assert.ok(plan.changes[0].stateAfter.some((k) => k.startsWith('told:loan-1:')));
+    assert.ok(plan.changes[0].stateAfter.some((k) => k.startsWith('seen:loan-2:')), 'the second account is not marked told before its message');
+    assert.deepEqual(plan.changes[1].stateAfter, plan.state);
   });
 });
 
 describe('messages', () => {
   it('says which price holds the account up, what it blocks and links the wallet', () => {
-    const [change] = walletChanges([], summarizeWallet(loan, reserves(['STALE:critical'])));
-    const text = formatChange(WALLET, change, SITE);
+    const text = formatChange(WALLET, { kind: 'blocked', summary: summarizeWallet(loan, reserves(['STALE:critical'])).accounts[0] }, SITE);
     assert.match(text, /Your loan account is held up/);
     assert.match(text, /Wallet BKLB…GcvH · Kamino · Superstate Market/);
     assert.match(text, /cannot use the price of FWDI, so this account cannot borrow, withdraw or be liquidated/);

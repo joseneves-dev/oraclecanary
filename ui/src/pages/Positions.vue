@@ -122,7 +122,7 @@ function reserveRow(p: Extract<WalletPosition, { reserve: string }>, reserve: Re
     name: reserve?.asset || shortAddress(p.reserve),
     market: reserve?.market.name ?? null,
     to: { name: 'reserve', params: { address: p.reserve } },
-    usd: p.usd,
+    usd: p.unpriced ? null : p.usd,
     tokens: reserve?.asset && typeof p.tokens === 'number' ? `${tokenAmount(p.tokens)} ${reserve.asset}` : null,
     state: reserve ? stateOf(reserve) : 'unknown',
     issue:
@@ -134,7 +134,7 @@ function reserveRow(p: Extract<WalletPosition, { reserve: string }>, reserve: Re
     checks,
     atRiskUsd: 0,
     weight: typeof p.weight === 'number' ? p.weight : null,
-    price: typeof p.tokens === 'number' && p.tokens > 0 ? p.usd / p.tokens : null,
+    price: !p.unpriced && typeof p.tokens === 'number' && p.tokens > 0 ? p.usd / p.tokens : null,
     asset: reserve?.asset || null,
   }
 }
@@ -248,43 +248,68 @@ interface Group {
   /** Deposits times their liquidation thresholds, and loans times their factors, in USD. */
   capacity: number
   debt: number
-  /** How far the deposits' prices can fall before liquidation (0 to 1); null without a loan or weights. */
-  liquidationDrop: number | null
-  /** With a single collateral asset, the price at which the account is liquidated. */
-  liquidationPrice: { asset: string; price: number } | null
+  liquidation: Liquidation
 }
 
 /**
- * Where a loan account is liquidated: when its loans (times their factors) exceed its deposits
- * (times their thresholds). Assumes the loans' prices hold while the deposits' prices fall.
+ * Where a loan account stands against its liquidation limit (loans times their factors against
+ * deposits times their thresholds). "use" is always true; the price scenarios hold one side still.
  */
-function liquidation(list: Row[]): Pick<Group, 'capacity' | 'debt' | 'liquidationDrop' | 'liquidationPrice'> {
+type Liquidation =
+  | { kind: 'none' } // no loan
+  | { kind: 'unknown' } // a price or weight is missing
+  | { kind: 'past' } // at or past the limit: liquidatable now
+  | {
+      kind: 'ok'
+      /** Share of the limit the loans use, 0 to 1. */
+      use: number
+      /** How far every deposit can fall, loans unchanged, before liquidation. */
+      drop: number
+      /** A single collateral asset (not also borrowed, not a stablecoin): the price at which the account is liquidated if only it moves. */
+      price: { asset: string; price: number } | null
+      /** Stablecoin deposits: how far the loans' prices can rise, deposits unchanged. */
+      loansRise: number | null
+    }
+
+/** A dollar- or euro-pegged token: its price does not fall the way the "deposits fall" scenario assumes. */
+const isStable = (r: Row) => !!r.asset && /USD|EUR/i.test(r.asset) && r.price !== null && r.price > 0.95 && r.price < 1.05
+
+function liquidation(list: Row[]): Pick<Group, 'capacity' | 'debt' | 'liquidation'> {
   const deposits = list.filter((r) => r.side === 'Deposit')
   const loans = list.filter((r) => r.side === 'Borrow')
-  const known = list.every((r) => r.weight !== null && r.usd !== null)
   const capacity = deposits.reduce((s, r) => s + (r.usd ?? 0) * (r.weight ?? 0), 0)
   const debt = loans.reduce((s, r) => s + (r.usd ?? 0) * (r.weight ?? 0), 0)
-  if (!known || !loans.length || capacity <= 0) return { capacity, debt, liquidationDrop: null, liquidationPrice: null }
-  const drop = Math.max(0, 1 - debt / capacity)
+  if (!loans.length) return { capacity, debt, liquidation: { kind: 'none' } }
+  if (!list.every((r) => r.weight !== null && r.usd !== null)) return { capacity, debt, liquidation: { kind: 'unknown' } }
+  // Kamino liquidates at the limit, marginfi past it: at the limit counts as liquidatable.
+  if (capacity <= 0 || debt >= capacity) return { capacity, debt, liquidation: { kind: 'past' } }
+  const use = debt / capacity
+  const drop = 1 - use
   const assets = new Set(deposits.map((r) => r.asset))
   const only = assets.size === 1 ? deposits[0] : null
+  const borrowed = new Set(loans.map((r) => r.asset))
+  const single = only?.asset && only.price && !borrowed.has(only.asset) && !isStable(only) ? { asset: only.asset, price: only.price * use } : null
   return {
     capacity,
     debt,
-    liquidationDrop: drop,
-    liquidationPrice: only?.asset && only.price ? { asset: only.asset, price: only.price * (1 - drop) } : null,
+    liquidation: { kind: 'ok', use, drop, price: single, loansRise: deposits.every(isStable) ? capacity / debt - 1 : null },
   }
 }
 
-/** The "what if" slider: a fall of every deposit's price, in percent. */
+/** The "what if" slider: a fall of every deposit's price, loans unchanged, in percent. */
 const shock = ref(0)
-const loanGroups = computed(() => groups.value.filter((g) => g.liquidationDrop !== null))
+// A new wallet starts from today's prices.
+watch(address, () => (shock.value = 0))
+const loanGroups = computed(() => groups.value.filter((g) => g.liquidation.kind === 'ok' || g.liquidation.kind === 'past'))
 const shockResult = (g: Group) => {
   const capacity = g.capacity * (1 - shock.value / 100)
-  return { liquidatable: g.debt > capacity, buffer: capacity > 0 ? 1 - g.debt / capacity : 0 }
+  return { liquidatable: g.liquidation.kind === 'past' || g.debt >= capacity, buffer: capacity > 0 ? Math.max(0, 1 - g.debt / capacity) : 0 }
 }
-const pct = (ratio: number) => `${Math.round(ratio * 100)}%`
-const price = (value: number) => (value >= 1 ? `${value.toFixed(2)}` : `${value.toPrecision(3)}`)
+/** Percentages rounded towards caution: a share of the limit up, a margin down. */
+const pctUp = (ratio: number) => `${Math.min(100, Math.ceil(ratio * 100))}%`
+const pctDown = (ratio: number) => `${Math.max(0, Math.floor(ratio * 100))}%`
+const money = (value: number) =>
+  `$${value.toLocaleString('en', value >= 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumSignificantDigits: 3 })}`
 
 /** One group per loan account, and one for vault shares; worst first, then largest. */
 const groups = computed<Group[]>(() => {
@@ -296,7 +321,7 @@ const groups = computed<Group[]>(() => {
   const list = [...byKey].map(([key, list]): Group => {
     const sorted = [...list].sort((a, b) => STATE_RANK[b.state] - STATE_RANK[a.state] || (b.usd ?? 0) - (a.usd ?? 0))
     const worst = sorted[0].state
-    if (key === 'vaults') return { key, title: 'Curator vault shares', subtitle: 'Kamino', state: worst, by: null, rows: sorted, capacity: 0, debt: 0, liquidationDrop: null, liquidationPrice: null }
+    if (key === 'vaults') return { key, title: 'Curator vault shares', subtitle: 'Kamino', state: worst, by: null, rows: sorted, capacity: 0, debt: 0, liquidation: { kind: 'none' } }
     const account = accountStates.value.get(key)
     const first = sorted[0]
     return {
@@ -516,13 +541,14 @@ const others = computed(() => findings.value.slice(1))
         </div>
       </section>
 
-      <section v-if="!loading && rows.length" class="ax-card ax-col--12" aria-label="Alerts for this wallet">
+      <section v-if="!loading && accountCount" class="ax-card ax-col--12" aria-label="Alerts for this wallet">
         <div class="alerts-cta">
         <div>
           <h2 class="ax-card__title">Get a message when this wallet is held up</h2>
           <p class="muted">
-            OracleCanary checks it every 5 minutes and messages you on Telegram when a price blocks one of its loan accounts, and when it
-            recovers. Read-only: only the address is shared.
+            OracleCanary checks it every 5 minutes and messages you on Telegram when a price the protocol cannot use holds up one of its
+            Kamino or marginfi loan accounts, and again when it recovers. Pauses while the US market is closed, and curator vaults, are not
+            alerted. Read-only: only the address is shared.
           </p>
         </div>
         <a class="ax-btn ax-btn--primary ax-btn--sm" :href="walletAlertsUrl(address)" target="_blank" rel="noopener">Get Telegram alerts</a>
@@ -534,24 +560,33 @@ const others = computed(() => findings.value.slice(1))
           <div class="ax-card__titles">
             <h2 id="whatif-title" class="ax-card__title">What if your deposits fall?</h2>
             <p class="ax-card__subtitle">
-              Loans are assumed to keep their price. While a price is blocked or paused, the protocol cannot liquidate the account even past
-              this point, so a fall keeps growing the loss instead.
+              Every deposit falls by the same share while loans keep their price, from the protocols' last stored prices: an estimate. While a
+              price is blocked or paused, the protocol cannot liquidate the account even past this point, so a fall keeps growing the loss
+              instead.
             </p>
           </div>
         </div>
         <div class="ax-card__body whatif">
           <label class="whatif__slider">
             <span>Deposit prices fall by <b class="ax-num">{{ shock }}%</b></span>
-            <input v-model.number="shock" type="range" min="0" max="90" step="5" aria-label="Fall of deposit prices, in percent" />
+            <input
+              v-model.number="shock"
+              type="range"
+              min="0"
+              max="90"
+              step="5"
+              aria-label="Fall of deposit prices"
+              :aria-valuetext="`${shock}%`"
+            />
           </label>
-          <ul class="whatif__list">
+          <ul class="whatif__list" aria-live="polite">
             <li v-for="g in loanGroups" :key="g.key">
               <span class="whatif__name">{{ g.title }} <span class="muted">{{ g.subtitle }}</span></span>
               <span
                 class="ax-badge ax-badge--soft ax-badge--pill"
                 :class="shockResult(g).liquidatable ? 'ax-badge--danger' : 'ax-badge--success'"
               >
-                {{ shockResult(g).liquidatable ? 'Would be liquidated' : `Safe: can fall another ${pct(shockResult(g).buffer)}` }}
+                {{ shockResult(g).liquidatable ? 'Would be liquidated' : `Safe: can fall another ${pctDown(shockResult(g).buffer)}` }}
               </span>
             </li>
           </ul>
@@ -592,11 +627,15 @@ const others = computed(() => findings.value.slice(1))
                     <span v-if="g.by" class="group__by">
                       {{ g.state === 'paused' ? 'Paused by' : 'Blocked by' }} {{ g.by }}: this account cannot borrow, withdraw or be liquidated
                     </span>
-                    <span v-if="g.liquidationDrop !== null" class="group__liq">
-                      Liquidated if deposits fall {{ pct(g.liquidationDrop) }}<template v-if="g.liquidationPrice">
-                        ({{ g.liquidationPrice.asset }} at {{ price(g.liquidationPrice.price) }})</template
+                    <span v-if="g.liquidation.kind === 'ok'" class="group__liq">
+                      Loans use {{ pctUp(g.liquidation.use) }} of the liquidation limit<template v-if="g.liquidation.price"
+                        >; liquidated if only {{ g.liquidation.price.asset }} falls to {{ money(g.liquidation.price.price) }}</template
+                      ><template v-else-if="g.liquidation.loansRise !== null"
+                        >; liquidated if the loans' prices rise {{ pctDown(g.liquidation.loansRise) }}</template
                       >
                     </span>
+                    <span v-else-if="g.liquidation.kind === 'past'" class="group__by">At or past its liquidation limit</span>
+                    <span v-else-if="g.liquidation.kind === 'unknown'" class="group__liq">Liquidation point unknown: a price is missing</span>
                   </div>
                 </th>
               </tr>

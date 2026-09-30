@@ -32,11 +32,11 @@ class WalletWatch
     #[ORM\Column]
     private \DateTimeImmutable $createdAt;
 
-    /** @var list<string> Loan accounts held up at the last check, as "account:state:blockers", to alert only on changes. */
+    /** @var list<string> Per loan account, what the chat knows: "told:<account>:<blockers>" or "seen:<account>:<blockers>" (see walletAlerts.ts). */
     #[ORM\Column(type: Types::JSON)]
     private array $lastState = [];
 
-    /** Deposits plus loans at the last check, in USD: the value under watch. */
+    /** Deposits at the last check, in USD: the value under watch. */
     #[ORM\Column(type: Types::FLOAT, nullable: true)]
     private ?float $lastUsd = null;
 

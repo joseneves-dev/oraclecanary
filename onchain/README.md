@@ -114,13 +114,19 @@ import { withOracleGuard } from './ts/guard.js';
 
 const instructions = await withOracleGuard([borrowIx], {
   reserves: [collateralReserve, debtReserve], // whose prices the borrow relies on
-  maxSeverity: 'warning',                     // refuse critical: stale, missing or shut-down prices
-  maxAttestationAgeSeconds: 600,
+  maxSeverity: 'warning',                     // refuse any price with a critical issue
+  maxAttestationAgeSeconds: 900,              // the default
 });
 tx.add(...instructions); // fails on-chain, before borrowIx runs, if either price is broken
 ```
 
-Each reserve adds about 250 bytes to the transaction. A program that wants to enforce the check
+It throws before anything is sent when an attestation already fails that check, so no fee is paid for a
+transaction certain to fail. The first reserve adds about 350 bytes to the transaction (with its
+accounts) and each further one about 220; with a lending instruction's own accounts, two reserves is
+close to the 1232-byte limit. The age limit is also how long an older "healthy" attestation can still
+be presented after a newer one says otherwise, so keep it as short as the indexer's 5-minute checks
+allow. Devnet only for now; after `ts/devnet.ts rotate`, pass the new key as `signer`. The helper has
+no Node-only dependency, so it also runs in a browser bundle. A program that wants to enforce the check
 itself, whoever builds the transaction, calls `assert_oracle_healthy` through CPI as
 `programs/demo_vault` does; `ts/devnet.ts demo` uses the same helper to fetch the attestation.
 

@@ -12,7 +12,6 @@
  */
 import { Ed25519Program, PublicKey, SYSVAR_INSTRUCTIONS_PUBKEY, TransactionInstruction } from '@solana/web3.js';
 import nacl from 'tweetnacl';
-import { createHash } from 'node:crypto';
 
 export const ORACLE_GUARD_PROGRAM_ID = new PublicKey('444eBJsPgQGT6QfKtESvd21vZQa4YFsuKTodCokTasTT');
 export const DOMAIN_TAG = new TextEncoder().encode('OCANARY1');
@@ -115,9 +114,11 @@ export function ed25519Instruction(s: SignedAttestation): TransactionInstruction
   });
 }
 
-function anchorDiscriminator(name: string): Buffer {
-  return createHash('sha256').update(`global:${name}`).digest().subarray(0, 8);
-}
+/**
+ * Anchor's discriminator of `assert_oracle_healthy`: the first 8 bytes of sha256("global:assert_oracle_healthy").
+ * A constant rather than computed, so this file also runs in a browser bundle (no node:crypto).
+ */
+export const ASSERT_ORACLE_HEALTHY_DISCRIMINATOR = new Uint8Array([187, 112, 238, 135, 86, 66, 118, 103]);
 
 export function configAddress(programId: PublicKey = ORACLE_GUARD_PROGRAM_ID): PublicKey {
   return PublicKey.findProgramAddressSync([Buffer.from('config')], programId)[0];
@@ -132,7 +133,7 @@ export function assertOracleHealthyInstruction(params: {
 }): TransactionInstruction {
   const programId = params.programId ?? ORACLE_GUARD_PROGRAM_ID;
   const data = Buffer.alloc(8 + 32 + 1 + 4);
-  anchorDiscriminator('assert_oracle_healthy').copy(data, 0);
+  data.set(ASSERT_ORACLE_HEALTHY_DISCRIMINATOR, 0);
   params.reserve.toBuffer().copy(data, 8);
   data.writeUInt8(SEVERITIES.indexOf(params.maxSeverity), 40);
   data.writeUInt32LE(params.maxAttestationAgeSeconds, 41);

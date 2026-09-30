@@ -44,6 +44,12 @@ describe('configChanges', () => {
     assert.equal(change.detail, 'Newly listed in Main Market, priced by OrcaWhirlpoolAtoB.');
   });
 
+  it('does not call a reserve listed within the last week newly listed when it reappears', () => {
+    const known = reserve();
+    const back = reserve({ reserve: 'reserve-paused-bank', asset: 'BACK' });
+    assert.deepEqual(configChanges(new Map([[known.reserve, stored(known)]]), [{ reserve: back, providers: ['Pyth'] }], new Set([back.reserve])), []);
+  });
+
   it('reports a new price chain and a new provider as one price-source change', () => {
     const before = reserve();
     const after = reserve({ scopeChain: [495] });

@@ -209,3 +209,20 @@ export function formatConfigChange(change: ConfigChangeEvent, siteUrl: string): 
     `${siteUrl}/reserves/${change.address}`,
   ].join('\n');
 }
+
+/** Above this many new listings in one batch, they are posted as one summary rather than one each. */
+export const LISTING_BURST = 5;
+
+/** Many new listings at once (e.g. a whole new market) as one Telegram message. */
+export function formatListingBurst(changes: ConfigChangeEvent[], siteUrl: string): string {
+  const markets = [...new Set(changes.map((c) => [PROTOCOL_NAMES[c.protocol] ?? c.protocol, c.marketName].filter(Boolean).join(' · ')))];
+  const names = changes.slice(0, 10).map((c) => escapeHtml(c.asset || c.address));
+  return [
+    `<b>🆕 ${changes.length} reserves newly listed</b>`,
+    escapeHtml(markets.join(', ')),
+    '',
+    `${names.join(', ')}${changes.length > names.length ? ` and ${changes.length - names.length} more` : ''}`,
+    '',
+    `${siteUrl}/incidents`,
+  ].join('\n');
+}

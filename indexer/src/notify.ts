@@ -9,6 +9,8 @@ import {
   announceConfigChange,
   formatAlert,
   formatConfigChange,
+  formatListingBurst,
+  LISTING_BURST,
   formatSummary,
   summaryDue,
   type ConfigChangeEvent,
@@ -183,11 +185,44 @@ if (!state) {
   state = { cursor: String(rows[0].id), open: new Set(), lastSummary: null, configCursor: null };
   await writeState(state);
 }
-if (state.configCursor === null) {
-  // Configuration changes likewise: announced from now on, not replayed.
+/**
+ * Configuration changes are announced from the first time this runs, not replayed. Retried each poll
+ * until it works: the table may not exist yet if this starts before the web app migrates.
+ */
+async function initConfigCursor(s: State): Promise<void> {
+  if (s.configCursor !== null) return;
   const { rows } = await pool.query('SELECT COALESCE(MAX(id), 0) AS id FROM reserve_config_change');
-  state.configCursor = String(rows[0].id);
-  await writeState(state);
+  s.configCursor = String(rows[0].id);
+  await writeState(s);
+}
+
+/** Posts a batch of configuration changes: many new listings at once become one summary. */
+async function announceConfigChanges(s: State): Promise<boolean> {
+  let rejected = false;
+  const changes = await configChangesAfter(s.configCursor ?? '0');
+  const toPost = changes.filter((c) => announceConfigChange(c, MIN_SUPPLY_USD));
+  const listings = toPost.filter((c) => c.kind === 'listed');
+  const messages =
+    listings.length > LISTING_BURST
+      ? [formatListingBurst(listings, SITE_URL), ...toPost.filter((c) => c.kind !== 'listed').map((c) => formatConfigChange(c, SITE_URL))]
+      : toPost.map((c) => formatConfigChange(c, SITE_URL));
+  for (const message of messages) {
+    try {
+      await send(message);
+      await sleep(SEND_GAP_MS);
+    } catch (e) {
+      if (!(e instanceof RejectedMessage)) throw e;
+      rejected = true;
+      console.error(`Alerts: skipped a configuration change message: ${e.message}`);
+    }
+  }
+  if (messages.length) console.log(`Sent ${messages.length} configuration change message(s)`);
+  // The whole batch is done: a transient error above throws before this, so it is retried.
+  if (changes.length) {
+    s.configCursor = changes[changes.length - 1].id;
+    await writeState(s);
+  }
+  return rejected;
 }
 console.log(`Sending alerts to ${CHAT_ID} for events after #${state.cursor} (reserves with at least $${MIN_SUPPLY_USD} supplied).`);
 
@@ -215,21 +250,8 @@ for (;;) {
       state.cursor = event.id;
       await writeState(state);
     }
-    for (const change of await configChangesAfter(state.configCursor ?? '0')) {
-      if (announceConfigChange(change, MIN_SUPPLY_USD)) {
-        try {
-          await send(formatConfigChange(change, SITE_URL));
-          console.log(`Sent ${change.kind} change for ${change.asset} (change #${change.id})`);
-          await sleep(SEND_GAP_MS);
-        } catch (e) {
-          if (!(e instanceof RejectedMessage)) throw e;
-          rejected = true;
-          console.error(`Alerts: skipped change #${change.id}: ${e.message}`);
-        }
-      }
-      state.configCursor = change.id;
-      await writeState(state);
-    }
+    await initConfigCursor(state);
+    if (await announceConfigChanges(state)) rejected = true;
     const due = SUMMARY_HOUR === null ? null : summaryDue(new Date(), SUMMARY_HOUR, state.lastSummary);
     if (due) {
       const reserves = await listedReserves();

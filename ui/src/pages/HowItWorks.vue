@@ -109,7 +109,8 @@ const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Cont
         </p>
         <p>
           A new listing, or a change to how a listed reserve is priced (another feed, Scope chain or provider, another age limit), is
-          recorded under <RouterLink :to="{ name: 'incidents' }">Configuration changes</RouterLink> and posted on Telegram.
+          recorded under <RouterLink :to="{ name: 'incidents' }">Configuration changes</RouterLink>. New listings, and changes to reserves
+          holding $10K or more, are posted on Telegram.
         </p>
         <p>
           <RouterLink :to="{ name: 'positions' }">My positions</RouterLink> applies the same checks to one wallet: a price the protocol cannot use
@@ -132,7 +133,7 @@ const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Cont
         <p>For a client, adding it to any transaction is one call:</p>
         <pre class="snippet"><code>const ixs = await withOracleGuard([borrowIx], {
   reserves: [collateralReserve, debtReserve],
-  maxSeverity: 'warning', // refuse stale, missing or shut-down prices
+  maxSeverity: 'warning', // refuse any price with a critical issue; single-source prices pass
 })</code></pre>
         <ul class="links">
           <li>

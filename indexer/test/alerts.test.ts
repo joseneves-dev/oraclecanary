@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { alertFor, announceConfigChange, formatAlert, formatConfigChange, formatSummary, problemCodes, summaryDue, type ConfigChangeEvent, type HealthEvent, type ReserveStatus } from '../src/alerts.js';
+import { alertFor, announceConfigChange, formatAlert, formatConfigChange, formatListingBurst, formatSummary, problemCodes, summaryDue, type ConfigChangeEvent, type HealthEvent, type ReserveStatus } from '../src/alerts.js';
 
 const MIN = 10_000;
 
@@ -191,5 +191,22 @@ describe('configuration changes', () => {
     const text = formatConfigChange(change(), 'https://oraclecanary.com');
     assert.match(text, /^<b>🔧 Price source changed: SOL<\/b>\nKamino · Main Market\n\nPrice source changed: Scope price chain \[3\] → \[495\]\.\nSupply: \$250\.0M/);
     assert.ok(text.endsWith('https://oraclecanary.com/reserves/reserve-sol'));
+  });
+});
+
+describe('listing bursts', () => {
+  it('sums up many new listings in one message', () => {
+    const listed = Array.from({ length: 12 }, (_, i) => ({
+      id: String(i),
+      address: `reserve-${i}`,
+      protocol: 'kamino',
+      asset: `T${i}`,
+      marketName: 'New Market',
+      kind: 'listed' as const,
+      detail: 'Newly listed',
+      totalSupplyUsd: 0,
+    }));
+    const text = formatListingBurst(listed, 'https://oraclecanary.com');
+    assert.match(text, /^<b>🆕 12 reserves newly listed<\/b>\nKamino · New Market\n\nT0, T1, .*T9 and 2 more/);
   });
 });

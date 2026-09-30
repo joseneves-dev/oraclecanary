@@ -38,7 +38,10 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stri
 const short = (value: unknown): string => {
   if (typeof value === 'string' && value.length > 12) return `${value.slice(0, 4)}…${value.slice(-4)}`;
   if (Array.isArray(value)) return `[${value.join(', ')}]`;
-  if (value && typeof value === 'object') return 'a different oracle';
+  if (value && typeof value === 'object') {
+    const account = (value as { account?: unknown }).account;
+    return typeof account === 'string' ? short(account) : 'another configuration';
+  }
   return String(value ?? 'none');
 };
 const LABEL: Record<(typeof SOURCE_FIELDS)[number], string> = {
@@ -54,15 +57,21 @@ const LABEL: Record<(typeof SOURCE_FIELDS)[number], string> = {
 /**
  * The changes between the stored configs and this run's listed reserves. Nothing is reported for a
  * protocol with no stored reserves yet (a first run), and a field newly recorded (absent before) is
- * not a change.
+ * not a change. `knownListed` holds reserves seen in a listed market recently (even if missing from
+ * the last run, e.g. a bank paused for a while): those are not "newly listed" when they reappear.
  */
-export function configChanges(previous: Map<string, StoredConfig>, current: { reserve: MarketOracleConfig; providers: string[] }[]): ConfigChange[] {
+export function configChanges(
+  previous: Map<string, StoredConfig>,
+  current: { reserve: MarketOracleConfig; providers: string[] }[],
+  knownListed: Set<string> = new Set(),
+): ConfigChange[] {
   if (!previous.size) return [];
   const changes: ConfigChange[] = [];
   for (const { reserve: r, providers } of current) {
     if (!r.marketName || r.status !== 'active') continue;
     const before = previous.get(r.reserve);
     if (!before || !before.listed) {
+      if (knownListed.has(r.reserve)) continue;
       changes.push({
         reserve: r,
         kind: 'listed',
