@@ -5,7 +5,7 @@ import { fetchAllReserves, fetchIncidents, fetchReserves, fetchStats, type Reser
 import ReserveTable from '@/components/ReserveTable.vue'
 import WalletLookup from '@/components/WalletLookup.vue'
 import { time, usd } from '@/lib/format'
-import { TELEGRAM_CHANNEL_URL as TELEGRAM_URL } from '@/lib/links'
+import { TELEGRAM_BOT, TELEGRAM_CHANNEL_URL as TELEGRAM_URL } from '@/lib/links'
 import { priceState } from '@/lib/priceState'
 
 const router = useRouter()
@@ -62,6 +62,7 @@ const switchboardListed = computed(() => switchboard.value?.filter((r) => r.mark
 const switchboardUnlisted = computed(() => switchboard.value?.filter((r) => !r.market.name) ?? [])
 
 const totalSupply = computed(() => reserves.value.reduce((sum, r) => sum + r.totalSupplyUsd, 0))
+const protocolCount = computed(() => new Set(reserves.value.map((r) => r.protocol)).size)
 const critical = computed(() => reserves.value.filter((r) => r.severity === 'critical'))
 const warnings = computed(() => reserves.value.filter((r) => r.severity === 'warning'))
 /**
@@ -119,13 +120,20 @@ const lastChecked = computed(() => {
     <section class="ax-card ax-welcome hero" aria-labelledby="hero-title">
       <div class="ax-welcome__body">
         <div class="ax-welcome__text hero__text">
-          <span class="ax-welcome__eyebrow">Independent oracle monitor for Solana lending</span>
+          <span class="ax-welcome__eyebrow">The canary in the coal mine for Solana lending</span>
           <h1 id="hero-title" class="hero__title">When a lending oracle fails, withdrawals and liquidations silently stop.</h1>
           <p class="hero__lead">
-            Is your money exposed? Check a wallet: each deposit, loan and vault share on Kamino and marginfi is matched with the health of the
-            price it depends on.
+            OracleCanary checks the price behind every Kamino, marginfi and Jupiter Lend reserve every 5 minutes, raises the alarm when one
+            breaks, and lets a transaction refuse a broken price on-chain. Is your money exposed? Check a wallet on Kamino or marginfi.
           </p>
           <WalletLookup large @lookup="(address) => router.push({ name: 'positions', query: { address } })" />
+          <ul v-if="!loading && !error" class="facts" aria-label="Coverage">
+            <li><b>{{ usd(totalSupply) }}</b> in deposits watched</li>
+            <li><b>{{ reserves.length }}</b> listed reserves</li>
+            <li><b>{{ protocolCount }}</b> protocols</li>
+            <li>checked every <b>5 min</b></li>
+            <li><b>open source</b>, free API</li>
+          </ul>
         </div>
       </div>
     </section>
@@ -147,14 +155,6 @@ const lastChecked = computed(() => {
           <span class="live__value" :class="{ 'live__value--warning': warnings.length }">{{ loading ? '…' : warnings.length }}</span>
           <span class="live__label">Warnings</span>
         </RouterLink>
-        <RouterLink class="live__stat" :to="{ name: 'reserves' }">
-          <span class="live__value">{{ loading ? '…' : reserves.length }}</span>
-          <span class="live__label">Reserves watched</span>
-        </RouterLink>
-        <div class="live__stat">
-          <span class="live__value">{{ loading ? '…' : usd(totalSupply) }}</span>
-          <span class="live__label">Supply watched</span>
-        </div>
       </div>
       <RouterLink v-if="!loading && !error" class="live__blocked" :class="{ 'live__blocked--none': !blocked.length }" :to="{ name: 'reserves', query: { health: 'critical' } }">
         <span class="live__value" :class="{ 'live__value--danger': blocked.length }">{{ usd(supplyOf(blocked)) }}</span>
@@ -242,6 +242,43 @@ const lastChecked = computed(() => {
       </div>
     </section>
   </div>
+
+  <div class="ax-dash-grid">
+    <h2 class="ax-col--12 audience__title">Who it's for</h2>
+    <section class="ax-card ax-col--4 audience" aria-labelledby="for-people">
+      <h3 id="for-people" class="audience__who">Depositors and borrowers</h3>
+      <p>
+        See which of your deposits, loans and vault shares rely on a broken price, and at what price a loan would be liquidated. Get a Telegram
+        message when a price your account relies on breaks.
+      </p>
+      <div class="audience__links">
+        <RouterLink :to="{ name: 'positions' }">Check a wallet →</RouterLink>
+        <a :href="`https://t.me/${TELEGRAM_BOT}`" target="_blank" rel="noopener">Wallet alerts bot →</a>
+      </div>
+    </section>
+    <section class="ax-card ax-col--4 audience" aria-labelledby="for-protocols">
+      <h3 id="for-protocols" class="audience__who">Protocols and vault curators</h3>
+      <p>
+        An independent check of every reserve against the protocol's own rules, a record of every change to how a reserve is priced, and an
+        on-chain guard that lets a program refuse to act on a broken price. Findings go to the team privately first.
+      </p>
+      <div class="audience__links">
+        <RouterLink :to="{ name: 'how-it-works' }">Methodology and guard →</RouterLink>
+        <RouterLink :to="{ name: 'incidents' }">Incidents →</RouterLink>
+      </div>
+    </section>
+    <section class="ax-card ax-col--4 audience" aria-labelledby="for-integrators">
+      <h3 id="for-integrators" class="audience__who">Integrators and researchers</h3>
+      <p>
+        A free public API in JSON and CSV: every reserve's health and history, incidents, configuration changes, and a signed attestation per
+        reserve that a wallet, dashboard or program can check.
+      </p>
+      <div class="audience__links">
+        <a href="/api/docs" target="_blank" rel="noopener">Public API →</a>
+        <a href="https://github.com/joseneves-dev/oraclecanary" target="_blank" rel="noopener">Code on GitHub →</a>
+      </div>
+    </section>
+  </div>
 </template>
 
 <style scoped>
@@ -270,6 +307,45 @@ const lastChecked = computed(() => {
 .hero__lead {
   color: var(--ax-text-muted);
   max-width: 64ch;
+}
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ax-space-2) var(--ax-space-5);
+  font-size: var(--ax-text-sm);
+  color: var(--ax-text-muted);
+}
+.facts b {
+  font-family: var(--ax-font-display);
+  color: var(--ax-text-strong);
+}
+.audience__title {
+  font-family: var(--ax-font-display);
+  font-size: var(--ax-text-lg);
+  color: var(--ax-text-strong);
+  margin: 0;
+}
+.audience {
+  display: grid;
+  gap: var(--ax-space-3);
+  align-content: start;
+  padding: var(--ax-space-5);
+  font-size: var(--ax-text-sm);
+}
+.audience__who {
+  font-size: var(--ax-text-md, 1rem);
+  font-weight: 600;
+  color: var(--ax-text-strong);
+  margin: 0;
+}
+.audience__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ax-space-4);
+}
+.audience__links a {
+  color: var(--ax-link);
+  font-weight: 600;
 }
 .live {
   display: flex;

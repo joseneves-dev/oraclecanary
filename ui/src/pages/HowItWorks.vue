@@ -12,20 +12,30 @@ const GUARD = '444eBJsPgQGT6QfKtESvd21vZQa4YFsuKTodCokTasTT'
 const DEMO_VAULT = 'HGjvgPmovhBCeXVUrtNkrdQn1LadW6dyKo52A6MnhMi4'
 const explorer = (address: string) => `https://explorer.solana.com/address/${address}?cluster=devnet`
 
-const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Context'; meaning: string }[] = [
-  { label: 'Stale price', severity: 'Critical', meaning: 'The price is older than the protocol’s own limit, so the protocol rejects it: borrowing, withdrawals and liquidations that need it fail.' },
-  { label: 'No oracle', severity: 'Critical', meaning: 'No price source is configured, or the price chain reads none.' },
-  { label: 'Empty price entry', severity: 'Critical', meaning: 'The price depends on a Scope entry that is not configured.' },
-  { label: 'Shut-down oracle', severity: 'Critical', meaning: 'The price comes only from a provider that has shut down (Switchboard, 25 Sep 2026). A warning when a live source backs it up.' },
-  { label: 'Price far from the market', severity: 'Critical', meaning: 'The oracle price is 10% or more above a liquid market price: collateral is overvalued. Below the market it is a warning (early liquidations). Information only for banks being wound down. Published from October 2026.' },
-  { label: 'Sources disagree', severity: 'Critical', meaning: 'A reserve’s price sources differ by more than the protocol allows. A warning from half of that limit.' },
-  { label: 'No fallback oracle', severity: 'Warning', meaning: 'A single feed with no backup: if it stops, the price stops.' },
-  { label: 'Close to stale', severity: 'Warning', meaning: 'The price is past 80% of the protocol’s age limit.' },
-  { label: 'Oracle not readable', severity: 'Warning', meaning: 'OracleCanary could not read or does not analyse this oracle yet, so it cannot vouch for it.' },
-  { label: 'Pyth unsure of the price', severity: 'Warning', meaning: 'Pyth’s confidence interval is wider than 2% of the price.' },
-  { label: 'Fixed price', severity: 'Info', meaning: 'A fixed value set by the protocol, which does not follow the market. It never goes stale, so it is checked against the market instead.' },
-  { label: 'Market hours', severity: 'Context', meaning: 'A tokenized stock whose feed follows US market hours: stale while the market is closed. Expected, but the protocol still rejects the price.' },
-  { label: 'Winding down', severity: 'Context', meaning: 'A marginfi bank that takes no new deposits or borrows and counts for no collateral, so its price backs no borrowing.' },
+type Level = 'Critical' | 'Warning' | 'Info' | 'Context'
+/** What each level costs the 0–100 score (PENALTY and NO_PENALTY in health.ts). */
+const COST: Record<Level, string> = { Critical: '−50', Warning: '−15', Info: '−5', Context: '0' }
+
+const CHECKS: { label: string; severity: Level; trigger: string; meaning: string }[] = [
+  { label: 'Stale price', severity: 'Critical', trigger: 'The price is older than the protocol’s own age limit.', meaning: 'The protocol rejects it: borrowing, withdrawals and liquidations that need it fail.' },
+  { label: 'No oracle', severity: 'Critical', trigger: 'No price source is configured, or the price chain reads none.', meaning: 'Nothing can price the reserve.' },
+  { label: 'Empty price entry', severity: 'Critical', trigger: 'The price depends on a Scope entry that is not configured.', meaning: 'The price cannot be worked out.' },
+  { label: 'Shut-down oracle', severity: 'Critical', trigger: 'The only source is a provider that has shut down (Switchboard, 25 Sep 2026). A warning when a live source backs it up.', meaning: 'The price no longer follows the market.' },
+  {
+    label: 'Price far from the market',
+    severity: 'Critical',
+    trigger:
+      'The oracle price is 10% or more above a liquid market price on Jupiter, or 50% above a thinner one with $25K of liquidity. From 3% above or 3% below it is a warning; a fixed price below the market, or any gap on a bank being wound down, is information. Reserves under $1K are skipped.',
+    meaning: 'Above the market, collateral is overvalued; below it, borrowers can be liquidated early. Published from October 2026.',
+  },
+  { label: 'Sources disagree', severity: 'Critical', trigger: 'A reserve’s price sources differ by more than the protocol allows. A warning from half of that limit.', meaning: 'Sources that should agree do not, so at least one is off.' },
+  { label: 'No fallback oracle', severity: 'Warning', trigger: 'A single feed with no backup.', meaning: 'If it stops, the price stops.' },
+  { label: 'Close to stale', severity: 'Warning', trigger: 'The price is past 80% of the protocol’s age limit.', meaning: 'A little more delay and the protocol rejects it.' },
+  { label: 'Oracle not readable', severity: 'Warning', trigger: 'OracleCanary could not read this oracle, or does not analyse its kind yet.', meaning: 'OracleCanary cannot vouch for the price.' },
+  { label: 'Pyth unsure of the price', severity: 'Warning', trigger: 'Pyth’s confidence interval is wider than 2% of the price (usually far below 0.1%).', meaning: 'Pyth itself is unsure what the price is.' },
+  { label: 'Fixed price', severity: 'Info', trigger: 'A fixed value set by the protocol.', meaning: 'It never goes stale but does not follow the market, so it is checked against the market instead.' },
+  { label: 'Market hours', severity: 'Context', trigger: 'A tokenized stock whose feed follows US market hours, stale while the market is closed.', meaning: 'Expected, but the protocol still rejects the price until the market reopens.' },
+  { label: 'Winding down', severity: 'Context', trigger: 'A marginfi bank that takes no new deposits or borrows and counts for no collateral.', meaning: 'Its price backs no borrowing.' },
 ]
 </script>
 
@@ -34,7 +44,7 @@ const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Cont
     <div class="ax-page-head__row">
       <div>
         <h1 class="ax-page-head__title">How it works</h1>
-        <p class="ax-page-head__subtitle">What OracleCanary reads, how it judges a price, and what it does when one breaks.</p>
+        <p class="ax-page-head__subtitle">The methodology: what OracleCanary reads, the rules it judges a price by, and what it does when one breaks.</p>
       </div>
     </div>
   </div>
@@ -62,8 +72,12 @@ const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Cont
     <section class="ax-card ax-col--12" aria-labelledby="checks">
       <div class="ax-card__header">
         <div class="ax-card__titles">
-          <h2 id="checks" class="ax-card__title">2. The checks</h2>
-          <p class="ax-card__subtitle">Each reserve starts at 100: a critical issue costs 50, a warning 15, an information note 5. Context costs nothing.</p>
+          <h2 id="checks" class="ax-card__title">2. The checks and the score</h2>
+          <p class="ax-card__subtitle">
+            Each reserve starts at 100 and loses points for every check it fails, down to 0; its level is its worst check. Both are recorded
+            every 5 minutes and kept as history. The rules are in
+            <a :href="`${REPO}/blob/main/indexer/src/health.ts`" target="_blank" rel="noopener">health.ts</a>.
+          </p>
         </div>
       </div>
       <div class="ax-table-wrap">
@@ -72,7 +86,9 @@ const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Cont
             <tr>
               <th scope="col" class="ax-table__th">Check</th>
               <th scope="col" class="ax-table__th">Level</th>
+              <th scope="col" class="ax-table__th">Triggers when</th>
               <th scope="col" class="ax-table__th">What it means</th>
+              <th scope="col" class="ax-table__th num">Score</th>
             </tr>
           </thead>
           <tbody>
@@ -90,7 +106,9 @@ const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Cont
                   >{{ c.severity }}</span
                 >
               </td>
+              <td class="ax-table__td meaning">{{ c.trigger }}</td>
               <td class="ax-table__td meaning">{{ c.meaning }}</td>
+              <td class="ax-table__td num ax-num">{{ COST[c.severity] }}</td>
             </tr>
           </tbody>
         </table>
@@ -204,9 +222,17 @@ const CHECKS: { label: string; severity: 'Critical' | 'Warning' | 'Info' | 'Cont
 }
 .meaning {
   font-size: var(--ax-text-sm);
-  max-width: 80ch;
+  max-width: 60ch;
 }
-th {
+.num {
+  text-align: right;
+  white-space: nowrap;
+}
+.ax-card__subtitle a {
+  color: var(--ax-link);
+  text-decoration: underline;
+}
+th:not(.num) {
   text-align: left;
 }
 .muted {
