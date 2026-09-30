@@ -1,5 +1,5 @@
 /*
- * Vireo — Sidebar navigation tree
+ * OracleCanary · sidebar navigation tree
  * The base layout for the manifest-driven sidebar menu (.ax-sidebar__nav /
  * .ax-nav__*). Active state + glow bar live in tokens/_recipes.css; the six
  * sidebar STYLES (compact/overlay/…) live in base.css; this file owns the
@@ -29,9 +29,10 @@
 /* ── section eyebrow ── */
 .ax-sidebar__section {
   margin: var(--ax-space-4) var(--ax-space-3) var(--ax-space-1);
-  font-size: var(--ax-text-2xs);
-  font-weight: var(--ax-weight-semibold);
-  letter-spacing: 0.08em;
+  font-family: var(--ax-font-mono);
+  font-size: 10.5px;
+  font-weight: var(--ax-weight-medium);
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ax-text-subtle);
   user-select: none;
@@ -143,10 +144,13 @@
   align-items: center;
   justify-content: center;
   min-inline-size: 18px;
-  padding: 1px 7px;
-  border-radius: var(--ax-radius-pill);
-  font-size: var(--ax-text-2xs);
-  font-weight: var(--ax-weight-semibold);
+  padding: 1px 6px;
+  border-radius: var(--ax-radius-xs);
+  font-family: var(--ax-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: var(--ax-weight-medium);
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
@@ -156,11 +160,17 @@
 }
 .ax-nav__badge--new {
   background: var(--ax-accent-wash);
-  color: var(--ax-accent);
+  color: var(--ax-accent-text);
+  box-shadow: inset 0 0 0 1px rgba(var(--ax-accent-rgb), 0.35);
 }
 .ax-nav__badge--hot {
   background: color-mix(in srgb, var(--ax-danger-500) 16%, transparent);
   color: var(--ax-danger-500);
+}
+.ax-nav__badge--muted {
+  background: transparent;
+  color: var(--ax-text-subtle);
+  box-shadow: inset 0 0 0 1px var(--ax-border-strong);
 }
 .ax-nav__badge--beta {
   background: var(--ax-fill-active);
@@ -179,7 +189,7 @@
 }
 .ax-sidebar__nav mark {
   background: var(--ax-accent-wash);
-  color: var(--ax-accent);
+  color: var(--ax-accent-text);
   border-radius: 3px;
   padding: 0 1px;
 }
@@ -320,7 +330,7 @@
 }
 .ax-flyout__badge--new {
   background: var(--ax-accent-wash);
-  color: var(--ax-accent);
+  color: var(--ax-accent-text);
 }
 .ax-flyout__badge--hot {
   background: color-mix(in srgb, var(--ax-danger-500) 16%, transparent);
@@ -328,5 +338,34 @@
 }
 .ax-flyout__badge--beta {
   background: var(--ax-fill-active);
+  color: var(--ax-text-subtle);
+}
+
+/* ── wordmark: "Oracle" in ink, "Canary" in the accent ── */
+.ax-sidebar__wordmark-accent {
+  color: var(--ax-accent-text);
+}
+
+/* ── foot: network + protocols, set as a quiet instrument label ── */
+.ax-sidebar__foot .ax-sidebar__user-name {
+  font-family: var(--ax-font-mono);
+  font-size: var(--ax-text-2xs);
+  font-weight: var(--ax-weight-medium);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ax-text-muted);
+}
+.ax-sidebar__foot .ax-sidebar__user-name::before {
+  content: "";
+  display: inline-block;
+  inline-size: 6px;
+  block-size: 6px;
+  margin-inline-end: 8px;
+  vertical-align: 1px;
+  border-radius: 50%;
+  background: var(--ax-success-500);
+}
+.ax-sidebar__foot .ax-sidebar__user-mail {
+  margin-block-start: 2px;
   color: var(--ax-text-subtle);
 }

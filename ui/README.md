@@ -8,8 +8,8 @@ Vue 3 + TypeScript + Vite, talking to the OracleCanary REST API (`/api`).
 ## Licence notice
 
 The layout, styles and shell components are based on the **Vireo** admin template, purchased on
-ThemeForest under an Envato licence. This repository must stay **private**: the template code may not
-be redistributed. Only the parts the product uses are kept here.
+ThemeForest, and are published here with the template author's permission. Only the parts the product
+uses are kept, restyled for OracleCanary.
 
 ## Development
 

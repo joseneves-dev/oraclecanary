@@ -1,5 +1,5 @@
 /*
- * Vireo — HTML reference edition · SHELL-CHROME components (Aurora)
+ * OracleCanary · SHELL-CHROME components
  * ----------------------------------------------------------------------------
  * Fills the component-CSS gaps for the six shell partials (head/sidebar/header/
  * footer/customizer/scripts). The design-system foundation (tokens, .ax-card,
@@ -79,9 +79,8 @@
   .ax-icon-btn:active {
     background: var(--ax-fill-active);
   }
-  .ax-icon-btn[aria-expanded='true'],
   .ax-icon-btn[aria-pressed='true'] {
-    color: var(--ax-accent);
+    color: var(--ax-accent-text);
     background: var(--ax-accent-wash);
   }
   .ax-icon-btn .ax-icon {
@@ -266,7 +265,7 @@
   }
   .ax-dropdown__item.is-active,
   .ax-dropdown__item[aria-checked='true'] {
-    color: var(--ax-accent);
+    color: var(--ax-accent-text);
   }
   .ax-dropdown__lead {
     flex: 0 0 auto;
@@ -283,7 +282,7 @@
     flex: 0 0 auto;
     inline-size: var(--ax-icon-sm);
     block-size: var(--ax-icon-sm);
-    color: var(--ax-accent);
+    color: var(--ax-accent-text);
     opacity: 0;
   }
   .ax-dropdown__item.is-active .ax-dropdown__check,
@@ -376,7 +375,7 @@
     justify-content: center;
     inline-size: 38px;
     block-size: 38px;
-    color: var(--ax-accent);
+    color: var(--ax-accent-text);
     background: var(--ax-accent-wash);
     border-radius: var(--ax-radius-md);
   }
@@ -519,7 +518,7 @@
       color var(--ax-motion-fast) var(--ax-ease-standard);
   }
   .ax-notif__tab.is-active {
-    color: var(--ax-accent);
+    color: var(--ax-accent-text);
     background: var(--ax-accent-wash);
   }
   .ax-notif__list {
@@ -714,8 +713,6 @@
     border-end-start-radius: var(--ax-radius-xl);
     border-inline-start: 1px solid var(--ax-border);
     box-shadow: var(--ax-shadow-lg);
-    -webkit-backdrop-filter: blur(22px) saturate(1.1);
-    backdrop-filter: blur(22px) saturate(1.1);
     transform: translateX(0); /* shown state (x-show controls display) */
   }
   [dir='rtl'] .ax-customizer {
@@ -733,8 +730,6 @@
     background: var(--ax-backdrop);
     border: 0;
     cursor: pointer;
-    -webkit-backdrop-filter: blur(2px);
-    backdrop-filter: blur(2px);
   }
 
   /* Alpine x-transition classes (slide + fade). Enter: start off-canvas →
@@ -876,7 +871,7 @@
     background: var(--ax-fill-hover);
   }
   .ax-segmented__btn.is-active {
-    color: var(--ax-accent);
+    color: var(--ax-accent-text);
     background: var(--ax-accent-wash);
     box-shadow: inset 0 0 0 1px var(--ax-accent);
   }
@@ -907,7 +902,7 @@
   }
   /* anything other than the shipped default reads as an active choice */
   .ax-font-active.is-custom {
-    color: var(--ax-accent);
+    color: var(--ax-accent-text);
     background: var(--ax-accent-wash);
     border-color: var(--ax-accent);
   }
@@ -1050,7 +1045,7 @@
     background: var(--ax-fill-hover);
   }
   .ax-font-result.is-active {
-    color: var(--ax-accent);
+    color: var(--ax-accent-text);
     background: var(--ax-accent-wash);
   }
   /* the name is the specimen — never wrap a long family onto a second line */
@@ -1314,7 +1309,7 @@
     color: var(--ax-text-muted);
   }
   .ax-style.is-active .ax-style__label {
-    color: var(--ax-accent);
+    color: var(--ax-accent-text);
   }
   .ax-style__diagram {
     position: relative;
@@ -1540,8 +1535,6 @@
     inset: 0;
     background: var(--ax-backdrop);
     border: 0;
-    -webkit-backdrop-filter: blur(2px);
-    backdrop-filter: blur(2px);
   }
   .ax-command__panel {
     position: relative;
@@ -1554,8 +1547,6 @@
     border: 1px solid var(--ax-border);
     border-radius: var(--ax-radius-xl);
     box-shadow: var(--ax-shadow-lg);
-    -webkit-backdrop-filter: blur(22px) saturate(1.1);
-    backdrop-filter: blur(22px) saturate(1.1);
     overflow: hidden;
   }
   .ax-command__input {
@@ -1610,7 +1601,7 @@
   }
   .ax-command__row.is-active {
     background: var(--ax-accent-wash);
-    color: var(--ax-accent);
+    color: var(--ax-accent-text);
   }
   .ax-command__row-title {
     flex: 1 1 auto;
@@ -1723,7 +1714,7 @@
      ════════════════════════════════════════════════════════════════════════ */
   .ax-sidebar__mark {
     display: inline-flex;
-    color: var(--ax-accent);
+    color: var(--ax-accent-text);
   }
   .ax-sidebar__mark .ax-icon {
     inline-size: 24px;
@@ -1870,7 +1861,7 @@
     transition: color var(--ax-motion-fast) var(--ax-ease-standard);
   }
   .ax-footer__link:hover {
-    color: var(--ax-accent);
+    color: var(--ax-accent-text);
   }
 
   /* ════════════════════════════════════════════════════════════════════════
@@ -1913,173 +1904,75 @@
   }
 
   /* ════════════════════════════════════════════════════════════════════════
-     18 · RESPONSIVE HEADER — the utility SHED (02-shell §4.12)
-     The cluster is eleven controls wide. Left alone on a phone it is ~525px of
-     content in a 390px bar: the profile, the cog and the "More" trigger itself
-     all fall off the inline end, and the ⌘K pill gets squeezed to a 26px stub.
-     Each band therefore hides its controls in the bar and reveals the matching
-     `[data-ax-shed]` row inside the overflow menu (partials/header-utils.html),
-     so every control keeps exactly ONE reachable copy.
-
-     BANDS — keep in lockstep with _bindBands() in js/alpine/index.js, which
-     fills $store.ax.overflow and is what makes the "More" trigger appear:
-       < 992px (lg) … language · fullscreen · app-grid
-       < 768px (md) … + cart · customizer
-     Leaving on a phone: menu · search · theme · notifications · profile · More.
+     18 · APP HEADER  network pill · "← Site" link · "Get alerts" CTA
      ════════════════════════════════════════════════════════════════════════ */
-
-  /* Shed rows are opt-in — hidden until their band sheds the header copy. */
-  .ax-overflow__menu [data-ax-shed] {
-    display: none;
-  }
-
-  /* ── shed rows: chrome shared by both bands ── */
-  .ax-overflow__group {
-    padding-block-end: var(--ax-space-1);
-  }
-  /* hairline between adjacent shed blocks (a hidden row draws nothing, so the
-     rule stays correct in both bands without per-band exceptions) */
-  .ax-overflow__menu [data-ax-shed] + [data-ax-shed] {
-    border-block-start: 1px solid var(--ax-border);
-    margin-block-start: var(--ax-space-1);
-    padding-block-start: var(--ax-space-1);
-  }
-  .ax-overflow__langs {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: var(--ax-space-1);
-    padding-inline: var(--ax-space-1);
-  }
-  .ax-overflow__lang {
-    padding-block: var(--ax-space-2);
+  .oc-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    block-size: 26px;
+    padding-inline: 10px;
+    margin-inline-start: var(--ax-space-1);
+    font-family: var(--ax-font-mono);
+    font-size: var(--ax-text-2xs);
+    font-weight: var(--ax-weight-medium);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
     color: var(--ax-text-muted);
-    background: transparent;
     border: 1px solid var(--ax-border);
-    border-radius: var(--ax-radius-md);
-    cursor: pointer;
-    transition:
-      background var(--ax-motion-fast) var(--ax-ease-standard),
-      color var(--ax-motion-fast) var(--ax-ease-standard),
-      border-color var(--ax-motion-fast) var(--ax-ease-standard);
+    border-radius: var(--ax-radius-pill);
   }
-  .ax-overflow__lang:hover,
-  .ax-overflow__lang:focus-visible {
+  .oc-live__dot {
+    inline-size: 7px;
+    block-size: 7px;
+    border-radius: 50%;
+    background: var(--ax-success-500);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ax-success-500) 22%, transparent);
+    animation: oc-live-pulse 2.4s var(--ax-ease-standard) infinite;
+  }
+  @keyframes oc-live-pulse {
+    0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ax-success-500) 22%, transparent); }
+    50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--ax-success-500) 6%, transparent); }
+  }
+  .oc-header-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    block-size: 30px;
+    padding-inline: 10px;
+    font-size: var(--ax-text-sm);
+    font-weight: var(--ax-weight-medium);
+    color: var(--ax-text-muted);
+    border-radius: var(--ax-radius-md);
+    transition: background var(--ax-motion-fast) var(--ax-ease-standard), color var(--ax-motion-fast) var(--ax-ease-standard);
+  }
+  .oc-header-link:hover {
     color: var(--ax-text-strong);
     background: var(--ax-fill-hover);
-    outline: none;
   }
-  .ax-overflow__lang.is-active {
-    color: var(--ax-accent);
-    background: var(--ax-accent-wash);
-    border-color: transparent;
-  }
-  /* trailing count on the cart row — pushed to the inline end */
-  .ax-overflow__count {
-    margin-inline-start: auto;
-    font-size: var(--ax-text-xs);
-    color: var(--ax-text-subtle);
+  .oc-header-cta {
+    margin-inline-start: var(--ax-space-1);
   }
 
-  /* ── < lg: language · fullscreen · app-grid move into "More" ── */
-  @media (max-width: 991.98px) {
-    .ax-lang,
-    .ax-fullscreen,
-    .ax-apps {
-      display: none;
-    }
-    .ax-overflow__menu [data-ax-shed='lang'],
-    .ax-overflow__menu [data-ax-shed='apps'] {
-      display: block;
-    }
-    .ax-overflow__menu [data-ax-shed='fullscreen'] {
-      display: flex;
-    }
-  }
-
-  /* ── < md: cart + customizer follow; the ⌘K pill becomes an icon button ── */
+  /* Phones: keep the toggle, the theme switch and the CTA; the pill shrinks to
+     its dot and the "Site" link hides (the wordmark in the drawer goes there). */
   @media (max-width: 767.98px) {
-    .ax-cart,
-    .ax-cog {
-      display: none;
-    }
-    .ax-overflow__menu [data-ax-shed='cart'],
-    .ax-overflow__menu [data-ax-shed='customizer'] {
-      display: flex;
-    }
-
-    /* tighter gutter + gap so six controls sit comfortably at 360px */
     .ax-header {
       padding-inline: var(--ax-space-3);
       gap: var(--ax-space-1);
     }
-
-    /* The pill has no room for its label or keycap here, and `min-inline-size:0`
-       let flex crush it to a stub. Lock it to the icon-button box instead — the
-       palette still opens on tap, and on ⌘K where there is a keyboard. */
-    .ax-search {
-      inline-size: 38px;
-      min-inline-size: 38px;
-      max-inline-size: 38px;
-      padding-inline: 0;
-      justify-content: center;
-      border-radius: var(--ax-radius-md);
-    }
-    .ax-search__placeholder,
-    .ax-search__keycap {
+    .oc-header-link {
       display: none;
     }
-    .ax-search__icon {
-      inline-size: var(--ax-icon-md);
-      block-size: var(--ax-icon-md);
+  }
+  @media (max-width: 479.98px) {
+    .oc-live__net {
+      display: none;
     }
-
-    /* ── panels pin to the BAR, not to their trigger ──
-       Every panel anchors `inset-inline-end:0` to its own cluster wrapper, which
-       only stays on-screen while the trigger is the last control in the run. It
-       is not: notifications still has the avatar and "More" to its inline end,
-       so a 360px panel hung off it started ~60px past the leading edge of a
-       390px screen and the heading was clipped mid-word.
-
-       Taking the wrappers out of the positioning chain re-points the panels at
-       the nearest positioned ancestor — the fixed `.ax-header` / relative
-       `.ax-appbar`, both full-bleed at this width — so both insets can be
-       pinned to the viewport gutters. Standard phone treatment, and it hands
-       the overflow shed the extra width its app tiles were short of.
-       (`inset-block-start:100%` now measures the BAR's height, which is where
-       these panels should have been dropping from anyway.) */
-    .ax-lang,
-    .ax-apps,
-    .ax-cart,
-    .ax-notif,
-    .ax-profile,
-    .ax-overflow {
-      position: static;
-    }
-    .ax-lang__menu,
-    .ax-apps__menu,
-    .ax-cart__menu,
-    .ax-notif__menu,
-    .ax-profile__menu,
-    .ax-overflow__menu {
-      inset-inline: var(--ax-space-3);
-      inline-size: auto;
-      min-inline-size: 0;
-      max-inline-size: none;
-    }
-    /* the shed needs the height to show all five rows without a scroll */
-    .ax-overflow__menu {
-      max-block-size: min(80vh, 560px);
-    }
-    /* …which the app tiles pay for by going a size down */
-    .ax-overflow__menu .ax-apps__grid {
-      gap: 2px;
-    }
-    .ax-overflow__menu .ax-apps__tile {
-      padding-block: var(--ax-space-2);
-      gap: var(--ax-space-1);
-    }
-    .ax-overflow__menu .ax-apps__tile-icon {
-      inline-size: 32px;
-      block-size: 32px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .oc-live__dot {
+      animation: none;
     }
   }

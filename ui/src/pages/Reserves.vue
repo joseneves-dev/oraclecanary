@@ -2,14 +2,16 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter, type LocationQuery } from 'vue-router'
 import { fetchReservePage, type Reserve, type ReserveQuery } from '@/api/client'
+import EmptyState from '@/components/EmptyState.vue'
 import ReserveTable, { type SortKey } from '@/components/ReserveTable.vue'
+import { PROTOCOL_NAME } from '@/lib/format'
 
 const PAGE_SIZE = 25
 const SORT_KEYS: SortKey[] = ['score', 'totalSupplyUsd', 'priceAgeSeconds', 'asset']
 type Health = 'all' | 'issues' | 'critical'
 type ProtocolFilter = 'all' | 'kamino' | 'jupiter-lend' | 'marginfi'
 
-const PROTOCOL_LABEL: Record<ProtocolFilter, string> = { all: 'All protocols', kamino: 'Kamino', 'jupiter-lend': 'Jupiter Lend', marginfi: 'marginfi' }
+const PROTOCOL_LABEL: Record<ProtocolFilter, string> = { all: 'All protocols', kamino: PROTOCOL_NAME.kamino, 'jupiter-lend': PROTOCOL_NAME['jupiter-lend'], marginfi: PROTOCOL_NAME.marginfi }
 
 /** Checks a reserve can fail, as the API's `check` filter takes them. */
 const ISSUES: Record<string, string> = {
@@ -189,24 +191,35 @@ function sortBy(key: SortKey) {
 </script>
 
 <template>
-  <div class="ax-page-head">
-    <div class="ax-page-head__row">
-      <div>
-        <h1 class="ax-page-head__title">Reserves</h1>
-        <p class="ax-page-head__subtitle">Every lending reserve, the oracles behind its price, and how healthy they are right now.</p>
+  <!-- One root: the layout pads every top-level block, which would stack the spacing. -->
+  <div class="page">
+    <div class="ax-page-head">
+      <div class="ax-page-head__row">
+        <div>
+          <h1 class="ax-page-head__title">Reserves</h1>
+          <p class="ax-page-head__subtitle">Every lending reserve, the oracles behind its price, and how healthy they are right now.</p>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="ax-dash-grid">
-    <section class="ax-card ax-col--12" aria-label="Lending reserves">
-      <div class="ax-card__header toolbar">
-        <div class="ax-card__titles">
-          <h2 class="ax-card__title">{{ PROTOCOL_LABEL[state.protocol] }}</h2>
-          <p class="ax-card__subtitle ax-num">{{ loading ? 'Loading…' : `${total} reserves` }}</p>
+    <div class="ax-dash-grid">
+      <section class="ax-card ax-col--12" aria-label="Lending reserves">
+        <div class="ax-card__header">
+          <div class="ax-card__titles">
+            <h2 class="ax-card__title">{{ PROTOCOL_LABEL[state.protocol] }}</h2>
+            <p class="ax-card__subtitle">
+              <span v-if="loading && !rows.length" class="ax-skeleton ax-skeleton--line count-skeleton" aria-hidden="true"></span>
+              <template v-else><span class="ax-num">{{ total }}</span> {{ total === 1 ? 'reserve' : 'reserves' }}<template v-if="filtered"> match these filters</template></template>
+            </p>
+          </div>
+          <div class="ax-card__actions">
+            <button v-if="filtered" type="button" class="ax-btn ax-btn--ghost ax-btn--sm" @click="clearFilters">Clear filters</button>
+            <a class="ax-btn ax-btn--secondary ax-btn--sm" :href="csvHref" download="oraclecanary-reserves.csv">Download CSV</a>
+          </div>
         </div>
-        <div class="ax-card__actions toolbar__controls">
-          <input v-model="search" type="search" class="ax-input ax-input--sm" placeholder="Search asset, e.g. SOL" aria-label="Search by asset" />
+
+        <div class="filters" role="search" aria-label="Filter reserves">
+          <input v-model="search" type="search" class="ax-input ax-input--sm filters__search" placeholder="Search asset, e.g. SOL" aria-label="Search by asset" />
           <select
             class="ax-select ax-select--sm"
             aria-label="Filter by protocol"
@@ -247,7 +260,7 @@ function sortBy(key: SortKey) {
             <option value="">Any supply</option>
             <option v-for="(label, value) in MIN_SUPPLY" :key="value" :value="value">{{ label }}</option>
           </select>
-          <label class="toolbar__check">
+          <label class="filters__check">
             <input
               type="checkbox"
               class="ax-checkbox"
@@ -256,79 +269,94 @@ function sortBy(key: SortKey) {
             />
             Listed markets only
           </label>
-          <button v-if="filtered" type="button" class="ax-btn ax-btn--ghost ax-btn--sm" @click="clearFilters">Clear filters</button>
-          <a class="ax-btn ax-btn--ghost ax-btn--sm" :href="csvHref" download="oraclecanary-reserves.csv">Download CSV</a>
         </div>
-      </div>
 
-      <div v-if="error" class="ax-alert ax-alert--danger" role="alert">{{ error }}</div>
-      <div v-else :aria-busy="loading" :class="{ loading }">
-        <ReserveTable :rows="rows" :sort-key="state.sortKey" :sort-dir="state.sortDir" @sort="sortBy" />
-        <p v-if="!loading && !rows.length" class="empty">No reserves match these filters.</p>
-      </div>
+        <div v-if="error" class="ax-card__body"><div class="ax-alert ax-alert--danger" role="alert">{{ error }}</div></div>
+        <EmptyState v-else-if="!loading && !rows.length" tone="none" title="No reserves match these filters">
+          Try a broader search, or clear the filters to see every reserve.
+          <template v-if="filtered" #actions>
+            <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="clearFilters">Clear filters</button>
+          </template>
+        </EmptyState>
+        <div v-else :aria-busy="loading" :class="{ loading: loading && rows.length }">
+          <ReserveTable :rows="rows" :sort-key="state.sortKey" :sort-dir="state.sortDir" :loading-rows="loading ? 8 : 0" @sort="sortBy" />
+        </div>
 
-      <div class="ax-card__footer pager">
-        <span class="ax-num muted">Page {{ state.page }} of {{ pageCount }}</span>
-        <nav class="ax-pagination" aria-label="Pagination">
-          <button
-            type="button"
-            class="ax-pagination__prev"
-            :disabled="loading || state.page <= 1"
-            aria-label="Previous page"
-            @click="writeState({ page: state.page - 1 })"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6l6 6" /></svg>
-          </button>
-          <button
-            type="button"
-            class="ax-pagination__next"
-            :disabled="loading || state.page >= pageCount"
-            aria-label="Next page"
-            @click="writeState({ page: state.page + 1 })"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6l-6 6" /></svg>
-          </button>
-        </nav>
-      </div>
-    </section>
+        <div v-if="rows.length || loading" class="ax-card__footer pager">
+          <span class="ax-num muted">Page {{ state.page }} of {{ pageCount }}</span>
+          <nav class="ax-pagination" aria-label="Pagination">
+            <button
+              type="button"
+              class="ax-pagination__prev"
+              :disabled="loading || state.page <= 1"
+              aria-label="Previous page"
+              @click="writeState({ page: state.page - 1 })"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6l6 6" /></svg>
+            </button>
+            <button
+              type="button"
+              class="ax-pagination__next"
+              :disabled="loading || state.page >= pageCount"
+              aria-label="Next page"
+              @click="writeState({ page: state.page + 1 })"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6l-6 6" /></svg>
+            </button>
+          </nav>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.toolbar {
-  flex-wrap: wrap;
-  gap: var(--ax-space-3);
+/* Card subtitles stay at a readable line length. */
+.ax-card__subtitle {
+  max-width: 72ch;
 }
-/* The filters take the full width under the title and wrap, so each control keeps its own size. */
-.toolbar__controls {
-  flex: 1 1 100%;
+.page {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: var(--ax-space-6);
+}
+.page > .ax-page-head {
+  margin-block-end: 0;
+}
+/* Filters: one tidy row on wide screens, an even grid below. */
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   align-items: center;
   gap: var(--ax-space-2);
+  padding: 0 var(--ax-space-6) var(--ax-space-4);
 }
-.toolbar__controls .ax-select {
-  width: auto;
+@media (min-width: 1280px) {
+  .filters {
+    grid-template-columns: minmax(180px, 1.4fr) repeat(5, minmax(0, 1fr)) auto;
+  }
+}
+.filters .ax-select,
+.filters .ax-input {
+  width: 100%;
   min-width: 0;
 }
-.toolbar__controls .ax-input {
-  width: 220px;
-}
-.toolbar__check {
+.filters__check {
   display: inline-flex;
   align-items: center;
   gap: var(--ax-space-2);
   font-size: var(--ax-text-sm);
   color: var(--ax-text-muted);
+  white-space: nowrap;
+}
+.count-skeleton {
+  display: inline-block;
+  width: 7rem;
+  vertical-align: middle;
 }
 .loading {
   opacity: 0.6;
   transition: opacity 0.15s;
-}
-.empty {
-  padding: var(--ax-space-8);
-  text-align: center;
-  color: var(--ax-text-muted);
 }
 .pager {
   display: flex;
@@ -337,6 +365,15 @@ function sortBy(key: SortKey) {
 }
 .muted {
   color: var(--ax-text-muted);
-  font-size: var(--ax-text-xs);
+  font-size: var(--ax-text-sm);
+}
+@media (max-width: 576px) {
+  .filters {
+    grid-template-columns: 1fr 1fr;
+    padding-inline: var(--ax-space-4);
+  }
+  .filters__search {
+    grid-column: 1 / -1;
+  }
 }
 </style>

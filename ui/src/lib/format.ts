@@ -71,3 +71,19 @@ export function day(value: DateInput): string {
 export function time(value: DateInput): string {
   return timeFormat.format(toDate(value))
 }
+
+/** How each protocol is named on screen. */
+export const PROTOCOL_NAME: Record<string, string> = { kamino: 'Kamino', marginfi: 'marginfi', 'jupiter-lend': 'Jupiter Lend' }
+
+/** Kamino, marginfi, Jupiter Lend; unknown ids are shown as they are. */
+export function protocolName(protocol: string): string {
+  return PROTOCOL_NAME[protocol] ?? protocol
+}
+
+/** The colour a value takes for each health level: only bad news is coloured. */
+export const SEVERITY_TONE: Record<Severity, 'danger' | 'warning' | undefined> = {
+  critical: 'danger',
+  warning: 'warning',
+  info: undefined,
+  ok: undefined,
+}

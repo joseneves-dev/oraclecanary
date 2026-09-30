@@ -1,9 +1,7 @@
 <script setup lang="ts">
 /*
- * Vireo — application shell layout (Vue edition). Mirrors the <body> structure
- * of every HTML reference page: loader, ambient glow, .ax-layout (sidebar +
- * .ax-shell (header + main + footer)).
- * The router <RouterView> renders into <main class="ax-main">.
+ * Application shell: loader, the faint canary ambient light, and .ax-layout
+ * (sidebar + .ax-shell: header, main, footer). Pages render into <main>.
  */
 import { watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'

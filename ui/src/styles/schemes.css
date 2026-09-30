@@ -1,5 +1,5 @@
 /*
- * Vireo — HTML reference edition · schemes.css
+ * OracleCanary · schemes.css
  * ────────────────────────────────────────────────────────────────────────
  * SURFACE SCHEMES for the shell chrome (sidebar + header), independent of
  * content cards. Each scheme remaps the Layer-3 chrome tokens that .ax-sidebar
@@ -232,7 +232,6 @@
   color: var(--ax-header-fg);
 }
 :is(.ax-header, .ax-appbar) .ax-icon-btn:hover,
-:is(.ax-header, .ax-appbar) .ax-icon-btn[aria-expanded='true'],
 :is(.ax-header, .ax-appbar) .ax-icon-btn[aria-pressed='true'] {
   color: var(--ax-header-fg-strong);
   background: var(--ax-header-hover);

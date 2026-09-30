@@ -117,14 +117,14 @@
     },
     {
       "id": "switchboard",
-      "title": "Switchboard exposure",
+      "title": "Switchboard",
       "slug": "switchboard",
       "icon": "life-buoy",
       "parent": null,
       "section": "MONITOR",
       "order": 6,
       "badge": {
-        "type": "hot",
+        "type": "muted",
         "value": "Shut down"
       },
       "keywords": [

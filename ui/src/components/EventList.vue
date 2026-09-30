@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { RouterLink, useRouter } from 'vue-router'
 import type { ReserveEvent } from '@/api/client'
-import { dateTime, usd } from '@/lib/format'
+import { dateTime, protocolName, usd } from '@/lib/format'
 
 defineProps<{
   events: ReserveEvent[]
@@ -21,15 +21,15 @@ const DIRECTION: Record<ReserveEvent['direction'], { label: string; badge: strin
 
 <template>
   <div class="ax-table-wrap">
-    <table class="ax-table ax-table--hover">
-      <thead>
+    <table class="ax-table ax-table--hover ax-table--compact">
+      <thead class="ax-table__head">
         <tr>
-          <th scope="col">Started</th>
-          <th v-if="!hideAsset" scope="col">Reserve</th>
-          <th scope="col">Change</th>
-          <th scope="col">What changed</th>
-          <th scope="col" class="num">Score</th>
-          <th v-if="!hideAsset" scope="col" class="num">Supply</th>
+          <th scope="col" class="ax-table__th">Started</th>
+          <th v-if="!hideAsset" scope="col" class="ax-table__th">Reserve</th>
+          <th scope="col" class="ax-table__th">Change</th>
+          <th scope="col" class="ax-table__th">What changed</th>
+          <th scope="col" class="ax-table__th ax-table__th--num">Score</th>
+          <th v-if="!hideAsset" scope="col" class="ax-table__th ax-table__th--num">Supply</th>
         </tr>
       </thead>
       <tbody>
@@ -37,23 +37,24 @@ const DIRECTION: Record<ReserveEvent['direction'], { label: string; badge: strin
         <tr
           v-for="e in events"
           :key="e.id"
+          class="ax-table__row"
           :class="{ 'row-link': !hideAsset }"
           @click="!hideAsset && router.push({ name: 'reserve', params: { address: e.reserve } })"
         >
-          <td class="nowrap">{{ dateTime(e.occurredAt) }}</td>
-          <td v-if="!hideAsset">
-            <RouterLink :to="{ name: 'reserve', params: { address: e.reserve } }">{{ e.asset }}</RouterLink>
-            <div class="muted">{{ e.protocol }} · {{ e.marketName }}</div>
+          <td class="ax-table__td nowrap">{{ dateTime(e.occurredAt) }}</td>
+          <td v-if="!hideAsset" class="ax-table__td">
+            <RouterLink class="asset" :to="{ name: 'reserve', params: { address: e.reserve } }">{{ e.asset }}</RouterLink>
+            <div class="muted">{{ protocolName(e.protocol) }} · {{ e.marketName }}</div>
           </td>
-          <td>
+          <td class="ax-table__td">
             <span class="ax-badge ax-badge--soft ax-badge--pill" :class="DIRECTION[e.direction].badge">{{ DIRECTION[e.direction].label }}</span>
           </td>
-          <td>
+          <td class="ax-table__td">
             <span v-for="c in e.started" :key="`s-${c.code}`" class="change change--started" :title="`${c.code} started failing (${c.severity})`">+ {{ c.code }}</span>
             <span v-for="c in e.resolved" :key="`r-${c.code}`" class="change change--resolved" :title="`${c.code} stopped failing`">− {{ c.code }}</span>
           </td>
-          <td class="num ax-num nowrap">{{ e.previousScore }} → {{ e.score }}</td>
-          <td v-if="!hideAsset" class="num ax-num">{{ usd(e.totalSupplyUsd) }}</td>
+          <td class="ax-table__td ax-table__td--num nowrap">{{ e.previousScore }} → {{ e.score }}</td>
+          <td v-if="!hideAsset" class="ax-table__td ax-table__td--num nowrap">{{ usd(e.totalSupplyUsd) }}</td>
         </tr>
       </tbody>
     </table>
@@ -64,11 +65,12 @@ const DIRECTION: Record<ReserveEvent['direction'], { label: string; badge: strin
 .row-link {
   cursor: pointer;
 }
-th {
-  text-align: left;
+.asset {
+  font-weight: 600;
+  color: var(--ax-text-strong);
 }
-.num {
-  text-align: right;
+.asset:hover {
+  color: var(--ax-accent-text);
 }
 .nowrap {
   white-space: nowrap;

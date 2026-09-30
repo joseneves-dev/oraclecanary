@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * Vireo — command palette (⌘K / Ctrl-K). Native Vue re-expression of
+ * Command palette (⌘K / Ctrl-K). Native Vue re-expression of
  * src/js/core/command-palette.js + the static shell of src/html/partials/command.html.
  * Fuzzy search over the SAME nav-manifest the sidebar uses, grouped results, arrow/
  * enter navigation, Esc close, plus the dark mode action. Open state via

@@ -1,20 +1,24 @@
 /*
- * Vireo — HTML reference edition · utilities.css
+ * OracleCanary · utilities.css
  * ────────────────────────────────────────────────────────────────────────
  * Token-driven helper classes that Tailwind's built-ins don't cleanly cover.
  * Kept deliberately MINIMAL — Tailwind utilities handle most spacing/flex/
- * color needs; these encode Aurora/spec-specific micro-patterns.
+ * color needs; these encode the identity-specific micro-patterns.
  *
  * All values reference Layer-2 role tokens or Layer-1 scale tokens — never a
  * raw stop, never a themeable literal hex.
  */
 
 /* ── Numerics ───────────────────────────────────────────────────────────
-   Tabular figures for KPIs, table columns, ledgers, axis labels (spec 01 §4.1). */
+   Tabular mono figures for KPIs, table columns, ledgers, axis labels. */
 .ax-num,
 [data-ax-tabular] {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
+}
+.ax-num {
+  font-family: var(--ax-font-mono);
+  letter-spacing: -0.01em;
 }
 .ax-mono {
   font-family: var(--ax-font-mono);
@@ -25,14 +29,15 @@
 /* ── Display / eyebrow type ─────────────────────────────────────────────── */
 .ax-display {
   font-family: var(--ax-font-display);
-  font-weight: var(--ax-weight-bold);
-  letter-spacing: -0.015em;
+  font-weight: var(--ax-weight-semibold);
+  letter-spacing: -0.025em;
 }
 .ax-eyebrow {
   display: block;
+  font-family: var(--ax-font-mono);
   font-size: var(--ax-text-2xs);
   line-height: var(--ax-leading-2xs);
-  font-weight: var(--ax-weight-semibold);
+  font-weight: var(--ax-weight-medium);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--ax-text-subtle);
@@ -211,7 +216,7 @@
   color: var(--ax-text-subtle);
 }
 .ax-text-accent {
-  color: var(--ax-accent);
+  color: var(--ax-accent-text);
 }
 .ax-text-success {
   color: var(--ax-success-500);
