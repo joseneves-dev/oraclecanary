@@ -10,12 +10,13 @@ import { decodeDataStreamsTimestamp, fetchJupiterLendVaults, ORACLE_PROGRAM as J
 import { fetchKaminoReserves } from './adapters/kamino.js';
 import { fetchVaults, valueVaults } from './adapters/kaminoVaults.js';
 import { fetchMarginfiBanks } from './adapters/marginfi.js';
-import { saveReserveHealth, saveVaults, storedSupplyUsd, type ReserveHealthRow } from './db.js';
+import { saveEarnPools, saveReserveHealth, saveVaults, storedSupplyUsd, type ReserveHealthRow } from './db.js';
 import { evaluate, setPriceDeviationCheck } from './health.js';
 import { fetchChainlinkPrices } from './oracles/chainlink.js';
 import { fetchMarketPrices, valueUnlisted, type MarketPrice, type MarketPrices } from './oracles/marketPrice.js';
 import { fetchPythPrices } from './oracles/pyth.js';
 import { fetchScopeFeed, type ScopeFeed } from './oracles/scope.js';
+import { fetchJupiterEarn, withKaminoRates } from './rates.js';
 import type { MarketOracleConfig, OracleSource, Protocol } from './types.js';
 
 const RPC_URL = process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com';
@@ -72,7 +73,8 @@ async function checkKamino(): Promise<ReserveHealthRow[]> {
   const valued = await withMarketValues(all, market);
   // Hidden reserves are not checked, but curator vaults can still hold money in them.
   await updateVaults(valued, market.prices);
-  const reserves = valued.filter((r) => r.status === 'active');
+  // Rates are optional context: withKaminoRates never throws, and stored rates stay when it fails.
+  const reserves = await withKaminoRates(valued.filter((r) => r.status === 'active'));
 
   const feeds = new Map<string, ScopeFeed>();
   for (const address of new Set(reserves.flatMap((r) => (r.feeds.scope ? [r.feeds.scope] : [])))) {
@@ -130,8 +132,18 @@ async function fetchJupiterSourceTimes(sources: OracleSource[]): Promise<Map<str
   return times;
 }
 
+/** Jupiter Lend's Earn pools and their rates. Optional: a failure never stops the vault checks. */
+async function updateEarnPools(): Promise<void> {
+  try {
+    await saveEarnPools(pool, await fetchJupiterEarn(), new Date(nowSeconds() * 1000));
+  } catch (e) {
+    console.warn(`Jupiter Earn rates not updated: ${(e as Error).message}`);
+  }
+}
+
 async function checkJupiterLend(): Promise<ReserveHealthRow[]> {
   const vaults = await fetchJupiterLendVaults(connection);
+  await updateEarnPools();
   const sourceTimes = await fetchJupiterSourceTimes(vaults.flatMap((v) => v.oracle?.sources ?? []));
 
   const now = nowSeconds();

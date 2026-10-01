@@ -5,6 +5,7 @@ import bs58 from 'bs58';
 // marginfi's IDL 0.1.11, taken from the @0dotxyz/p0-ts-sdk package (MIT). The IDL published
 // on-chain is older and cannot decode banks that use newer oracle setups or bank states.
 import marginfiIdl from '../idl/marginfi.json' with { type: 'json' };
+import { marginfiRate } from '../rates.js';
 import type { MarketOracleConfig } from '../types.js';
 
 const idl = marginfiIdl as unknown as Idl;
@@ -85,6 +86,8 @@ async function fetchTickers(connection: Connection): Promise<Map<string, string>
   return tickers;
 }
 
+const withRate = (rate: ReturnType<typeof marginfiRate>) => (rate ? { rate } : {});
+
 function toMarketOracleConfig(address: string, data: Buffer, tickers: Map<string, string>): MarketOracleConfig {
   const bank = coder.decode('Bank', data);
   const config = bank.config;
@@ -124,6 +127,8 @@ function toMarketOracleConfig(address: string, data: Buffer, tickers: Map<string
     // Only `Fixed` is the price itself; FixedKamino, FixedDrift... multiply it by an exchange rate.
     ...(setup === 'Fixed' ? { fixedPrice: fromI80F48(config.fixed_price) } : {}),
     ...(state === 'ReduceOnly' && noCollateral ? { windingDown: true } : {}),
+    // The rates the bank cached at its last update: no extra read.
+    ...withRate(marginfiRate(bank.cache, Number(bank.last_update.toString()), fromI80F48(config.asset_weight_init))),
   };
 }
 

@@ -24,6 +24,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieves the collection of LendingRate resources.
+         * @description Retrieves the collection of LendingRate resources.
+         */
+        get: operations["api_rates_get_collection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rates/{address}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieves a LendingRate resource.
+         * @description Retrieves a LendingRate resource.
+         */
+        get: operations["api_rates_address_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reserves": {
         parameters: {
             query?: never;
@@ -427,6 +467,249 @@ export interface components {
             "@id": string;
             "@type": string;
         };
+        /** @description Supply pools in the markets listed by each protocol's own app, largest deposits first. Also as CSV (Accept: text/csv). */
+        LendingRate: {
+            /** @description Reserve or bank address; for a Jupiter Lend Earn pool, its share token (fToken) address. */
+            address?: string;
+            /** @description kamino, marginfi or jupiter-lend. */
+            protocol?: string;
+            /** @description "reserve" (a Kamino reserve or marginfi bank) or "earn" (a Jupiter Lend Earn pool). */
+            kind?: string;
+            /** @description For an Earn pool, Jupiter Lend as a whole. */
+            market?: components["schemas"]["MarketRef"];
+            /** @description Deposit token symbol, e.g. "USDC". */
+            asset?: string;
+            /** @description Deposit token mint. */
+            mint?: string;
+            /** @description What depositors earn per year as the protocol reports it, a fraction (0.05 = 5%), without token incentives. */
+            supplyApy?: number | null;
+            /** @description What borrowers pay per year as the protocol reports it, a fraction; null for an Earn pool. */
+            borrowApy?: number | null;
+            /** @description Token incentives on top of supplyApy where the source reports them apart (Jupiter Lend), a fraction. */
+            rewardsApy?: number | null;
+            /** @description Where the rates come from: kamino-api (Kamino's public API), marginfi-onchain (the bank account) or jupiter-api (Jupiter's public API). */
+            rateSource?: string | null;
+            /**
+             * Format: date-time
+             * @description When the source computed (or OracleCanary read) the rates.
+             */
+            rateAt?: string | null;
+            /** @description Deposits in the pool, in USD. */
+            totalSupplyUsd?: number;
+            /** @description The pool's own oracle score, 0 (broken) to 100 (healthy); null for an Earn pool, which has no oracle of its own. */
+            score?: number | null;
+            /**
+             * @description Worst severity among the pool's own failed checks; null for an Earn pool.
+             * @enum {string|null}
+             */
+            severity?: "ok" | "info" | "warning" | "critical" | null;
+            /** @description How the pool's health reads: its severity, or "paused" when a stock's price is only stopped by its closed market; null for an Earn pool. */
+            healthState?: string | null;
+            /** @description Oracle providers the pool's own price comes from. */
+            providers?: string[];
+            /** @description Codes of the pool's own failed checks, e.g. NO_FALLBACK. */
+            checks?: string[];
+            /** @description Oracle facts about the collateral the pool's deposits are lent against (an approximation; see LentAgainst). */
+            lentAgainst?: components["schemas"]["LentAgainst"];
+            /**
+             * Format: date-time
+             * @description When OracleCanary last checked the pool's oracle (or read an Earn pool).
+             */
+            checkedAt?: string;
+        };
+        /** @description Supply pools in the markets listed by each protocol's own app, largest deposits first. Also as CSV (Accept: text/csv). */
+        "LendingRate.csv": {
+            /** @description Reserve or bank address; for a Jupiter Lend Earn pool, its share token (fToken) address. */
+            address?: string;
+            /** @description kamino, marginfi or jupiter-lend. */
+            protocol?: string;
+            /** @description "reserve" (a Kamino reserve or marginfi bank) or "earn" (a Jupiter Lend Earn pool). */
+            kind?: string;
+            /** @description For an Earn pool, Jupiter Lend as a whole. */
+            market?: components["schemas"]["MarketRef.csv"];
+            /** @description Deposit token symbol, e.g. "USDC". */
+            asset?: string;
+            /** @description Deposit token mint. */
+            mint?: string;
+            /** @description What depositors earn per year as the protocol reports it, a fraction (0.05 = 5%), without token incentives. */
+            supplyApy?: number | null;
+            /** @description What borrowers pay per year as the protocol reports it, a fraction; null for an Earn pool. */
+            borrowApy?: number | null;
+            /** @description Token incentives on top of supplyApy where the source reports them apart (Jupiter Lend), a fraction. */
+            rewardsApy?: number | null;
+            /** @description Where the rates come from: kamino-api (Kamino's public API), marginfi-onchain (the bank account) or jupiter-api (Jupiter's public API). */
+            rateSource?: string | null;
+            /**
+             * Format: date-time
+             * @description When the source computed (or OracleCanary read) the rates.
+             */
+            rateAt?: string | null;
+            /** @description Deposits in the pool, in USD. */
+            totalSupplyUsd?: number;
+            /** @description The pool's own oracle score, 0 (broken) to 100 (healthy); null for an Earn pool, which has no oracle of its own. */
+            score?: number | null;
+            /**
+             * @description Worst severity among the pool's own failed checks; null for an Earn pool.
+             * @enum {string|null}
+             */
+            severity?: "ok" | "info" | "warning" | "critical" | null;
+            /** @description How the pool's health reads: its severity, or "paused" when a stock's price is only stopped by its closed market; null for an Earn pool. */
+            healthState?: string | null;
+            /** @description Oracle providers the pool's own price comes from. */
+            providers?: string[];
+            /** @description Codes of the pool's own failed checks, e.g. NO_FALLBACK. */
+            checks?: string[];
+            /** @description Oracle facts about the collateral the pool's deposits are lent against (an approximation; see LentAgainst). */
+            lentAgainst?: components["schemas"]["LentAgainst.csv"];
+            /**
+             * Format: date-time
+             * @description When OracleCanary last checked the pool's oracle (or read an Earn pool).
+             */
+            checkedAt?: string;
+        };
+        /** @description Supply pools in the markets listed by each protocol's own app, largest deposits first. Also as CSV (Accept: text/csv). */
+        "LendingRate.jsonld": components["schemas"]["HydraItemBaseSchema"] & {
+            /** @description Reserve or bank address; for a Jupiter Lend Earn pool, its share token (fToken) address. */
+            address?: string;
+            /** @description kamino, marginfi or jupiter-lend. */
+            protocol?: string;
+            /** @description "reserve" (a Kamino reserve or marginfi bank) or "earn" (a Jupiter Lend Earn pool). */
+            kind?: string;
+            /** @description For an Earn pool, Jupiter Lend as a whole. */
+            market?: components["schemas"]["MarketRef.jsonld"];
+            /** @description Deposit token symbol, e.g. "USDC". */
+            asset?: string;
+            /** @description Deposit token mint. */
+            mint?: string;
+            /** @description What depositors earn per year as the protocol reports it, a fraction (0.05 = 5%), without token incentives. */
+            supplyApy?: number | null;
+            /** @description What borrowers pay per year as the protocol reports it, a fraction; null for an Earn pool. */
+            borrowApy?: number | null;
+            /** @description Token incentives on top of supplyApy where the source reports them apart (Jupiter Lend), a fraction. */
+            rewardsApy?: number | null;
+            /** @description Where the rates come from: kamino-api (Kamino's public API), marginfi-onchain (the bank account) or jupiter-api (Jupiter's public API). */
+            rateSource?: string | null;
+            /**
+             * Format: date-time
+             * @description When the source computed (or OracleCanary read) the rates.
+             */
+            rateAt?: string | null;
+            /** @description Deposits in the pool, in USD. */
+            totalSupplyUsd?: number;
+            /** @description The pool's own oracle score, 0 (broken) to 100 (healthy); null for an Earn pool, which has no oracle of its own. */
+            score?: number | null;
+            /**
+             * @description Worst severity among the pool's own failed checks; null for an Earn pool.
+             * @enum {string|null}
+             */
+            severity?: "ok" | "info" | "warning" | "critical" | null;
+            /** @description How the pool's health reads: its severity, or "paused" when a stock's price is only stopped by its closed market; null for an Earn pool. */
+            healthState?: string | null;
+            /** @description Oracle providers the pool's own price comes from. */
+            providers?: string[];
+            /** @description Codes of the pool's own failed checks, e.g. NO_FALLBACK. */
+            checks?: string[];
+            /** @description Oracle facts about the collateral the pool's deposits are lent against (an approximation; see LentAgainst). */
+            lentAgainst?: components["schemas"]["LentAgainst.jsonld"];
+            /**
+             * Format: date-time
+             * @description When OracleCanary last checked the pool's oracle (or read an Earn pool).
+             */
+            checkedAt?: string;
+        };
+        LentAgainst: {
+            /** @description How the collateral was chosen: "market" (other reserves of the same market) or "vaults" (Jupiter Lend vaults borrowing this token). */
+            basis?: string;
+            /** @description Deposits in the collateral reserves, in USD. */
+            collateralUsd?: number;
+            /** @description How many collateral reserves (or vaults) there are. */
+            reserves?: number;
+            /**
+             * @description Share of the collateral (by USD, 0 to 1) whose price has a fallback: no single feed it depends
+             *     on, not fixed, and readable. The three oracle shares need not add to 1; the rest is collateral
+             *     whose oracle could not be read or has none.
+             */
+            withFallbackShare?: number;
+            /** @description Share of the collateral whose price depends on one feed with no fallback (check NO_FALLBACK): if it stops, the price stops. */
+            singleFeedShare?: number;
+            /** @description Share of the collateral priced at a fixed value that does not follow the market (check FIXED_PRICE). */
+            fixedPriceShare?: number;
+            /** @description Share of the collateral that is tokenized US stocks, whose prices pause while the stock market is closed. */
+            marketHoursShare?: number;
+            /** @description Share of the collateral in reserves being wound down (check WINDING_DOWN). */
+            windingDownShare?: number;
+            /**
+             * @description Collateral reserves holding $10K or more that have a critical check now; a stock whose price
+             *     is only paused because its market is closed is not counted.
+             */
+            criticalCount?: number;
+            /** @description Deposits in those reserves, in USD. */
+            criticalUsd?: number;
+            /** @description Their assets, largest first (at most five). */
+            criticalAssets?: string[];
+        };
+        "LentAgainst.csv": {
+            /** @description How the collateral was chosen: "market" (other reserves of the same market) or "vaults" (Jupiter Lend vaults borrowing this token). */
+            basis?: string;
+            /** @description Deposits in the collateral reserves, in USD. */
+            collateralUsd?: number;
+            /** @description How many collateral reserves (or vaults) there are. */
+            reserves?: number;
+            /**
+             * @description Share of the collateral (by USD, 0 to 1) whose price has a fallback: no single feed it depends
+             *     on, not fixed, and readable. The three oracle shares need not add to 1; the rest is collateral
+             *     whose oracle could not be read or has none.
+             */
+            withFallbackShare?: number;
+            /** @description Share of the collateral whose price depends on one feed with no fallback (check NO_FALLBACK): if it stops, the price stops. */
+            singleFeedShare?: number;
+            /** @description Share of the collateral priced at a fixed value that does not follow the market (check FIXED_PRICE). */
+            fixedPriceShare?: number;
+            /** @description Share of the collateral that is tokenized US stocks, whose prices pause while the stock market is closed. */
+            marketHoursShare?: number;
+            /** @description Share of the collateral in reserves being wound down (check WINDING_DOWN). */
+            windingDownShare?: number;
+            /**
+             * @description Collateral reserves holding $10K or more that have a critical check now; a stock whose price
+             *     is only paused because its market is closed is not counted.
+             */
+            criticalCount?: number;
+            /** @description Deposits in those reserves, in USD. */
+            criticalUsd?: number;
+            /** @description Their assets, largest first (at most five). */
+            criticalAssets?: string[];
+        };
+        "LentAgainst.jsonld": {
+            /** @description How the collateral was chosen: "market" (other reserves of the same market) or "vaults" (Jupiter Lend vaults borrowing this token). */
+            basis?: string;
+            /** @description Deposits in the collateral reserves, in USD. */
+            collateralUsd?: number;
+            /** @description How many collateral reserves (or vaults) there are. */
+            reserves?: number;
+            /**
+             * @description Share of the collateral (by USD, 0 to 1) whose price has a fallback: no single feed it depends
+             *     on, not fixed, and readable. The three oracle shares need not add to 1; the rest is collateral
+             *     whose oracle could not be read or has none.
+             */
+            withFallbackShare?: number;
+            /** @description Share of the collateral whose price depends on one feed with no fallback (check NO_FALLBACK): if it stops, the price stops. */
+            singleFeedShare?: number;
+            /** @description Share of the collateral priced at a fixed value that does not follow the market (check FIXED_PRICE). */
+            fixedPriceShare?: number;
+            /** @description Share of the collateral that is tokenized US stocks, whose prices pause while the stock market is closed. */
+            marketHoursShare?: number;
+            /** @description Share of the collateral in reserves being wound down (check WINDING_DOWN). */
+            windingDownShare?: number;
+            /**
+             * @description Collateral reserves holding $10K or more that have a critical check now; a stock whose price
+             *     is only paused because its market is closed is not counted.
+             */
+            criticalCount?: number;
+            /** @description Deposits in those reserves, in USD. */
+            criticalUsd?: number;
+            /** @description Their assets, largest first (at most five). */
+            criticalAssets?: string[];
+        };
         MarketRef: {
             /** @description Lending market address on Solana. */
             address?: string;
@@ -698,9 +981,8 @@ export interface components {
             kind?: string;
             /** @description The change in one sentence. */
             detail?: string;
-            /** @description The changed fields before, as stored (null for a new listing). */
-            before?: string | null;
-            after?: string | null;
+            before?: Record<string, never> | number | null;
+            after?: Record<string, never> | number | null;
             /** @description Supply in the reserve when the change was seen, in USD. */
             totalSupplyUsd?: number;
         };
@@ -718,9 +1000,8 @@ export interface components {
             kind?: string;
             /** @description The change in one sentence. */
             detail?: string;
-            /** @description The changed fields before, as stored (null for a new listing). */
-            before?: string | null;
-            after?: string | null;
+            before?: Record<string, never> | number | null;
+            after?: Record<string, never> | number | null;
             /** @description Supply in the reserve when the change was seen, in USD. */
             totalSupplyUsd?: number;
         };
@@ -909,14 +1190,14 @@ export interface components {
             totalSupplyUsd?: number;
             checks?: components["schemas"]["CheckState.jsonld"][];
         };
-        /** @description How many wallets are watched through the Telegram bot, and the value in them. */
+        /** @description How many wallets are watched through the Telegram bot, and the deposits in them. */
         Stats: {
             /** @description Distinct wallets watched by at least one chat. */
             walletsWatched?: number;
             /** @description Deposits plus loans in those wallets at their last check, in USD. */
             valueWatchedUsd?: number;
         };
-        /** @description How many wallets are watched through the Telegram bot, and the value in them. */
+        /** @description How many wallets are watched through the Telegram bot, and the deposits in them. */
         "Stats.jsonld": components["schemas"]["HydraItemBaseSchema"] & {
             /** @description Distinct wallets watched by at least one chat. */
             walletsWatched?: number;
@@ -1067,6 +1348,65 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    api_rates_get_collection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description LendingRate collection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["HydraCollectionBaseSchemaNoPagination"] & {
+                        member: components["schemas"]["LendingRate.jsonld"][];
+                    };
+                    "application/json": components["schemas"]["LendingRate"][];
+                    "text/csv": components["schemas"]["LendingRate.csv"][];
+                };
+            };
+        };
+    };
+    api_rates_address_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description LendingRate identifier */
+                address: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description LendingRate resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["LendingRate.jsonld"];
+                    "application/json": components["schemas"]["LendingRate"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["Error.jsonld"];
+                    "application/problem+json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };
