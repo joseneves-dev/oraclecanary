@@ -1,0 +1,4 @@
+# The MCP endpoint of each server in config/packages/mcp.yaml (/mcp).
+mcp:
+    resource: .
+    type: mcp

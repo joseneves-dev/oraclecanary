@@ -1,0 +1,39 @@
+# MCP (Model Context Protocol) server, so AI agents can ask OracleCanary about oracle health.
+#
+# The tools are API Platform #[McpTool] operations in src/Mcp/Tool; API Platform registers them with
+# this server itself (see api_platform.mcp in api_platform.yaml). The endpoint speaks the streamable
+# HTTP transport at /mcp.
+mcp:
+    servers:
+        oraclecanary:
+            name: OracleCanary
+            version: 1.0.0
+            description: 'Oracle health of Solana lending reserves: which oracle every reserve depends on, and whether it is healthy.'
+            website_url: https://oraclecanary.com
+            instructions: >-
+                Read-only oracle health data for Solana lending markets (Kamino, marginfi, Jupiter Lend).
+                Use search_reserves to find a reserve address, then reserve_health for its details.
+                Results are informational, not investment advice; prices change every 5 minutes, so
+                re-check before acting on a result.
+            http:
+                path: /mcp
+                # The SDK's DNS rebinding protection only lets localhost in. This server is public and
+                # read-only (no cookies, no credentials, nothing to write) and sits behind Caddy, which
+                # only answers for SERVER_NAME, so a rebinding attack gains nothing a plain request can't.
+                allowed_hosts: false
+            # Sessions only remember the handshake. They live in files under var/cache (the bundle's
+            # default), so a deploy drops them and clients simply initialize again.
+            # The tools are added by API Platform's loader, outside this registry; it only narrows the
+            # bundle's own attribute-based elements, of which there are none.
+            registry:
+                tools: '*'
+
+parameters:
+    # Where the indexer's wallet positions service listens, as host:port: the same variable the
+    # Caddyfile proxies /api/wallets/* to.
+    env(POSITIONS_UPSTREAM): 'positions:3001'
+
+when@dev:
+    parameters:
+        # `npm run positions` in indexer/.
+        env(POSITIONS_UPSTREAM): '127.0.0.1:3001'

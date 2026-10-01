@@ -13,3 +13,13 @@ api_platform:
         stateless: true
         cache_headers:
             vary: ['Content-Type', 'Authorization', 'Origin']
+    # src/Mcp holds the MCP tools (resources with no HTTP operation); listing paths replaces the
+    # default ones, so they are repeated here.
+    mapping:
+        paths:
+            - '%kernel.project_dir%/src/ApiResource'
+            - '%kernel.project_dir%/src/Entity'
+            - '%kernel.project_dir%/src/Mcp/Tool'
+    # MCP tool results as plain JSON, without JSON-LD's @context/@id noise.
+    mcp:
+        format: json
