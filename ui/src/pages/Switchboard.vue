@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { fetchAllReserves, type Reserve } from '@/api/client'
+import EmptyState from '@/components/EmptyState.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import ReserveTable from '@/components/ReserveTable.vue'
-import { usd } from '@/lib/format'
+import { protocolName, usd } from '@/lib/format'
 
 /**
  * Switchboard ended support for its Solana oracle on 25 Sep 2026. Reserves whose price depends on it
@@ -13,7 +14,9 @@ const reserves = ref<Reserve[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 
-onMounted(async () => {
+async function load() {
+  loading.value = true
+  error.value = null
   try {
     reserves.value = (await fetchAllReserves({ check: 'DEPRECATED_PROVIDER' })).sort((a, b) => b.totalSupplyUsd - a.totalSupplyUsd)
   } catch (e) {
@@ -21,9 +24,14 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+onMounted(load)
 
-const PROTOCOL_NAMES: Record<string, string> = { kamino: 'Kamino', 'jupiter-lend': 'Jupiter Lend', marginfi: 'marginfi' }
+/** Pages of 25, like the Reserves list, so a long tail of near-identical rows does not fill the page. */
+const PAGE_SIZE = 25
+const page = ref(1)
+const pageCount = computed(() => Math.max(1, Math.ceil(reserves.value.length / PAGE_SIZE)))
+const pageRows = computed(() => reserves.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE))
 
 const listed = computed(() => reserves.value.filter((r) => r.market.name))
 const unlisted = computed(() => reserves.value.filter((r) => !r.market.name))
@@ -33,83 +41,129 @@ const byProtocol = computed(() =>
   Object.entries(
     reserves.value.reduce<Record<string, number>>((counts, r) => ({ ...counts, [r.protocol]: (counts[r.protocol] ?? 0) + 1 }), {}),
   )
-    .map(([protocol, count]) => `${count} on ${PROTOCOL_NAMES[protocol] ?? protocol}`)
+    .map(([protocol, count]) => `${count} on ${protocolName(protocol)}`)
     .join(', '),
 )
 </script>
 
 <template>
-  <div class="ax-page-head">
-    <div class="ax-page-head__row">
-      <div>
-        <h1 class="ax-page-head__title">Switchboard exposure</h1>
-        <p class="ax-page-head__subtitle">
-          Switchboard ended support for its Solana oracle on 25 Sep 2026. The press asked who still relies on its prices; this is the
-          live answer, from every reserve of Kamino, marginfi and Jupiter Lend.
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <div v-if="error" class="ax-alert ax-alert--danger" role="alert">{{ error }}</div>
-
-  <div v-else class="ax-dash-grid" :aria-busy="loading">
-    <KpiCard
-      label="Listed markets"
-      :value="loading ? '…' : String(listed.length)"
-      icon="layout-dashboard"
-      :tone="listed.length ? 'c3' : 'c4'"
-      :hint="loading ? undefined : listed.length ? `${usd(sum(listed))} supplied still depends on Switchboard` : 'Every listed market has migrated'"
-    />
-    <KpiCard
-      label="Unlisted markets"
-      :value="loading ? '…' : String(unlisted.length)"
-      icon="table"
-      tone="c3"
-      :hint="loading ? undefined : `${usd(sum(unlisted))} supplied, at market prices`"
-    />
-    <KpiCard
-      label="Price cannot be produced"
-      :value="loading ? '…' : String(broken.length)"
-      icon="alert-triangle"
-      tone="c3"
-      hint="Nothing else can replace Switchboard: critical"
-    />
-    <KpiCard label="By protocol" :value="loading ? '…' : String(reserves.length)" icon="book" tone="c2" :hint="loading ? undefined : byProtocol || 'None'" />
-
-    <section class="ax-card ax-col--12" aria-label="Reserves that still depend on Switchboard">
-      <div class="ax-card__header">
-        <div class="ax-card__titles">
-          <h2 class="ax-card__title">Still depending on Switchboard</h2>
-          <p class="ax-card__subtitle">
-            Largest first. Unlisted markets are permissionless: anyone can create one, so these are not the protocols' own markets.
+  <!-- One root: the layout pads every top-level block, which would stack the spacing. -->
+  <div class="page">
+    <div class="ax-page-head">
+      <div class="ax-page-head__row">
+        <div>
+          <h1 class="ax-page-head__title">Switchboard exposure</h1>
+          <p class="ax-page-head__subtitle">
+            Switchboard ended support for its Solana oracle on 25 Sep 2026. The press asked who still relies on its prices; this is the
+            live answer, from every reserve of Kamino, marginfi and Jupiter Lend.
           </p>
         </div>
       </div>
-      <ReserveTable v-if="loading || reserves.length" :rows="reserves" />
-      <p v-else class="empty">No reserve depends on Switchboard any more.</p>
-    </section>
+    </div>
 
-    <p class="sources ax-col--12">
-      Sources:
-      <a href="https://crypto.news/a-solana-oracles-support-ends-today-who-still-relies-on-its-prices/" target="_blank" rel="noopener">crypto.news</a>,
-      <a href="https://cryptoticker.io/en/switchboard-oracle-shutdown-check-solana-defi/" target="_blank" rel="noopener">CryptoTicker</a>.
-      Data: <a href="/api/reserves?check=DEPRECATED_PROVIDER" target="_blank" rel="noopener">/api/reserves?check=DEPRECATED_PROVIDER</a>
-    </p>
+    <div class="ax-dash-grid" :aria-busy="loading">
+      <KpiCard
+        label="Listed markets"
+        :loading="loading"
+        :value="error ? '—' : String(listed.length)"
+       
+        :tone="listed.length ? 'danger' : undefined"
+        :hint="error ? null : listed.length ? `${usd(sum(listed))} supplied still depends on Switchboard` : 'Every listed market has migrated'"
+      />
+      <KpiCard
+        label="Unlisted markets"
+        :loading="loading"
+        :value="error ? '—' : String(unlisted.length)"
+       
+        :hint="error ? null : `${usd(sum(unlisted))} supplied, at market prices`"
+      />
+      <KpiCard
+        label="Price cannot be produced"
+        :loading="loading"
+        :value="error ? '—' : String(broken.length)"
+       
+        :tone="broken.length ? 'danger' : undefined"
+        hint="Nothing else can replace Switchboard: critical"
+      />
+      <KpiCard label="At stake" :loading="loading" :value="error ? '—' : usd(sum(reserves))" :hint="error ? null : byProtocol ? `${reserves.length} reserves: ${byProtocol}` : 'None'" />
+
+      <section class="ax-card ax-col--12" aria-label="Reserves that still depend on Switchboard">
+        <div class="ax-card__header">
+          <div class="ax-card__titles">
+            <h2 class="ax-card__title">Still depending on Switchboard</h2>
+            <p class="ax-card__subtitle">
+              Largest first. Unlisted markets are permissionless: anyone can create one, so these are not the protocols' own markets.
+            </p>
+          </div>
+        </div>
+        <EmptyState v-if="error" tone="error" title="Can't reach the API right now">
+          This list comes from the live API, which did not answer. Try again in a moment.
+          <template #actions>
+            <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="load">Retry</button>
+          </template>
+        </EmptyState>
+        <ReserveTable v-else-if="loading || reserves.length" :rows="pageRows" :loading-rows="loading ? 8 : 0" hide-oracles />
+        <p v-if="!error && !loading && reserves.some((r) => r.price.ageSeconds === null)" class="note">
+          "No price" means the feed publishes nothing the protocol can read; the figure after the slash is the age the protocol would accept.
+        </p>
+        <EmptyState v-else title="No reserve depends on Switchboard any more" />
+        <div v-if="!error && pageCount > 1" class="ax-card__footer pager">
+          <span class="ax-num muted">Page {{ page }} of {{ pageCount }} · {{ reserves.length }} reserves</span>
+          <nav class="ax-pagination" aria-label="Pagination">
+            <button type="button" class="ax-pagination__prev" :disabled="page <= 1" aria-label="Previous page" @click="page--">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6l6 6" /></svg>
+            </button>
+            <button type="button" class="ax-pagination__next" :disabled="page >= pageCount" aria-label="Next page" @click="page++">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6l-6 6" /></svg>
+            </button>
+          </nav>
+        </div>
+      </section>
+
+      <p class="sources ax-col--12">
+        Sources:
+        <a href="https://crypto.news/a-solana-oracles-support-ends-today-who-still-relies-on-its-prices/" target="_blank" rel="noopener">crypto.news</a>,
+        <a href="https://cryptoticker.io/en/switchboard-oracle-shutdown-check-solana-defi/" target="_blank" rel="noopener">CryptoTicker</a>.
+        Data: <a href="/api/reserves?check=DEPRECATED_PROVIDER" target="_blank" rel="noopener">/api/reserves?check=DEPRECATED_PROVIDER</a>
+      </p>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.empty {
-  padding: var(--ax-space-8);
-  text-align: center;
+/* Card subtitles stay at a readable line length. */
+.ax-card__subtitle {
+  max-width: 72ch;
+}
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ax-space-6);
+}
+.page > .ax-page-head {
+  margin-block-end: 0;
+}
+.note {
+  margin: 0;
+  padding: var(--ax-space-3) var(--ax-space-6);
+  font-size: var(--ax-text-xs);
+  color: var(--ax-text-subtle);
+  border-top: 1px solid var(--ax-border);
+}
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.muted {
   color: var(--ax-text-muted);
+  font-size: var(--ax-text-sm);
 }
 .sources {
   color: var(--ax-text-muted);
   font-size: var(--ax-text-xs);
 }
 .sources a {
-  color: var(--ax-accent);
+  color: var(--ax-accent-text);
 }
 </style>

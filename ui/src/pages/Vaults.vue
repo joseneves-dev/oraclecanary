@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter, type LocationQuery } from 'vue-router'
 import { fetchVaults, type Severity, type Vault } from '@/api/client'
+import EmptyState from '@/components/EmptyState.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
 import { usd } from '@/lib/format'
@@ -12,7 +13,9 @@ const vaults = ref<Vault[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 
-onMounted(async () => {
+async function load() {
+  loading.value = true
+  error.value = null
   try {
     vaults.value = await fetchVaults()
   } catch (e) {
@@ -20,7 +23,8 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+onMounted(load)
 
 /** Test and dust vaults hold next to nothing; they are listed only on request. */
 const MIN_VAULT_USD = 10_000
@@ -171,128 +175,153 @@ const ariaSort = (key: SortKey) => (state.value.sortKey === key ? (state.value.s
 </script>
 
 <template>
-  <div class="ax-page-head">
-    <div class="ax-page-head__row">
-      <div>
-        <h1 class="ax-page-head__title">Curator vaults</h1>
-        <p class="ax-page-head__subtitle">
-          How much of each Kamino vault is lent into reserves whose oracle is unhealthy, or into markets where the collateral borrowers post has a
-          price that cannot be used. Then bad loans cannot be liquidated, and the losses fall on the vault.
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <div v-if="error" class="ax-alert ax-alert--danger" role="alert">{{ error }}</div>
-
-  <div v-else class="ax-dash-grid" :aria-busy="loading">
-    <KpiCard label="Vaults" :value="loading ? '…' : String(shown.length)" icon="users-group" tone="c1" :hint="showSmall ? 'Every Kamino curator vault with deposits' : 'Kamino curator vaults holding $10K or more'" />
-    <KpiCard label="Deposits" :value="loading ? '…' : usd(total)" icon="layout-dashboard" tone="c2" />
-    <KpiCard
-      label="At risk now"
-      :value="loading ? '…' : usd(atRisk)"
-      icon="alert-triangle"
-      :tone="atRisk > 0 ? 'c3' : 'c4'"
-      :hint="loading ? undefined : atRisk > 0 ? `${share(atRisk, total)} of deposits` : `None of ${usd(total)} is in an unhealthy reserve or market`"
-    />
-    <KpiCard
-      label="Vaults exposed"
-      :value="loading ? '…' : String(exposed.length)"
-      icon="bell"
-      :tone="exposed.length ? 'c3' : 'c4'"
-      hint="With money in an unhealthy reserve or market"
-    />
-
-    <section class="ax-card ax-col--12 pilot" aria-label="Alerts for your vault">
-      <div>
-        <h2 class="ax-card__title">Curate a vault?</h2>
-        <p class="muted">
-          Private Telegram alerts (webhooks on request) for exactly the reserves your vault lends into and the collateral in their markets, within
-          minutes of a problem, before your depositors notice. Free pilot for the first curators.
-        </p>
-      </div>
-      <div class="pilot__actions">
-        <a class="ax-btn ax-btn--primary ax-btn--sm" href="mailto:hello@oraclecanary.com?subject=Vault%20alerts%20pilot">Request a pilot</a>
-        <a class="ax-btn ax-btn--secondary ax-btn--sm" href="https://t.me/OracleCanaryAlerts" target="_blank" rel="noopener">Public alerts</a>
-      </div>
-    </section>
-
-    <section class="ax-card ax-col--12" aria-label="Vaults">
-      <div class="ax-card__header toolbar">
-        <div class="ax-card__titles">
-          <h2 class="ax-card__title">All vaults</h2>
-          <p class="ax-card__subtitle ax-num">
-            {{ loading ? 'Loading…' : `${shown.length} vaults` }} · exposure is recomputed every few minutes from live oracle
-            data
+  <!-- One root: the layout pads every top-level block, which would stack the spacing. -->
+  <div class="page">
+    <div class="ax-page-head">
+      <div class="ax-page-head__row">
+        <div>
+          <h1 class="ax-page-head__title">Curator vaults</h1>
+          <p class="ax-page-head__subtitle">
+            How much of each Kamino vault is lent into reserves whose oracle is unhealthy, or into markets where the collateral borrowers post has a
+            price that cannot be used. Then bad loans cannot be liquidated, and the losses fall on the vault.
           </p>
         </div>
-        <div class="ax-card__actions toolbar__controls">
-          <input v-model="search" type="search" class="ax-input ax-input--sm" placeholder="Search vault, e.g. USDC" aria-label="Search by vault name" />
-          <select class="ax-select ax-select--sm" aria-label="Filter by curator" :value="filters.curator" @change="setQuery({ curator: selectValue($event) })">
-            <option value="">All curators</option>
-            <option v-for="c in curators" :key="c" :value="c">{{ c }}</option>
-          </select>
-          <select class="ax-select ax-select--sm" aria-label="Filter by token" :value="filters.token" @change="setQuery({ token: selectValue($event) })">
-            <option value="">Any token</option>
-            <option v-for="t in tokens" :key="t" :value="t">{{ t }}</option>
-          </select>
-          <select class="ax-select ax-select--sm" aria-label="Filter by health" :value="filters.health" @change="setQuery({ health: selectValue($event) })">
-            <option value="">All health levels</option>
-            <option v-for="(label, value) in HEALTH_FILTERS" :key="value" :value="value">{{ label }}</option>
-          </select>
-          <label v-if="smallCount" class="toggle">
-            <input v-model="showSmall" type="checkbox" class="ax-checkbox" />
-            Show {{ smallCount }} vaults under $10K
-          </label>
-          <button v-if="filtered" type="button" class="ax-btn ax-btn--ghost ax-btn--sm" @click="clearFilters">Clear filters</button>
-        </div>
       </div>
-      <div class="ax-table-wrap">
-        <table class="ax-table ax-table--hover" style="min-width: 760px">
-          <thead class="ax-table__head">
-            <tr>
-              <th
-                v-for="col in COLUMNS"
-                :key="col.key"
-                scope="col"
-                class="ax-table__th"
-                :class="{ center: col.num }"
-                :aria-sort="ariaSort(col.key)"
-              >
-                <button type="button" class="sort-button" @click="sortBy(col.key)">
-                  {{ col.label }}
-                  <svg v-if="state.sortKey !== col.key" class="ax-table__sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity: 0.4"><path d="M8 9l4 -4l4 4" /><path d="M16 15l-4 4l-4 -4" /></svg>
-                  <svg v-else-if="state.sortDir === 'asc'" class="ax-table__sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6 -6l6 6" /></svg>
-                  <svg v-else class="ax-table__sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6l6 -6" /></svg>
-                </button>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="v in rows" :key="v.address" class="ax-table__row row-link" @click="openVault($event, v.address)">
-              <td class="ax-table__td">
-                <RouterLink :to="{ name: 'vault', params: { address: v.address } }" class="name">{{ v.name }}</RouterLink>
-                <div class="muted">{{ v.token ?? '' }}</div>
-              </td>
-              <td class="ax-table__td muted">{{ v.curator ?? '—' }}</td>
-              <td class="ax-table__td"><SeverityBadge :severity="v.worstSeverity" /></td>
-              <td class="ax-table__td center ax-num">{{ usd(v.totalUsd) }}</td>
-              <td class="ax-table__td center ax-num" :class="{ risk: v.atRiskUsd > 0 }">
-                {{ v.atRiskUsd > 0 ? `${usd(v.atRiskUsd)} · ${share(v.atRiskUsd, v.totalUsd)}` : '—' }}
-              </td>
-              <td class="ax-table__td center ax-num">{{ v.allocations.length }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p v-if="!loading && !vaults.length" class="empty">No vault data yet.</p>
-      <p v-else-if="!loading && !rows.length && filtered" class="empty">No vault matches these filters.</p>
-      <p v-else-if="!loading && !rows.length" class="empty">No vault holds $10K or more. Use the option above to see the smaller ones.</p>
+    </div>
+
+    <section v-if="error" class="ax-card">
+      <EmptyState tone="error" title="Can't reach the API right now">
+        The vaults come from the live API, which did not answer. Try again in a moment.
+        <template #actions>
+          <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="load">Retry</button>
+        </template>
+      </EmptyState>
     </section>
+    <div v-else class="ax-dash-grid" :aria-busy="loading">
+      <KpiCard label="Vaults" :loading="loading" :value="String(shown.length)" :hint="showSmall ? 'Every Kamino curator vault with deposits' : 'Kamino curator vaults holding $10K or more'" />
+      <KpiCard label="Deposits" :loading="loading" :value="usd(total)" />
+      <KpiCard
+        label="At risk now"
+        :loading="loading"
+        :value="usd(atRisk)"
+       
+        :tone="atRisk > 0 ? 'danger' : undefined"
+        :hint="loading ? undefined : atRisk > 0 ? `${share(atRisk, total)} of deposits` : `None of ${usd(total)} is in an unhealthy reserve or market`"
+      />
+      <KpiCard
+        label="Vaults exposed"
+        :loading="loading"
+        :value="String(exposed.length)"
+       
+        :tone="exposed.length ? 'danger' : undefined"
+        hint="With money in an unhealthy reserve or market"
+      />
+
+      <section class="ax-card ax-col--12 pilot" aria-label="Alerts for your vault">
+        <div>
+          <h2 class="ax-card__title">Curate a vault?</h2>
+          <p class="muted">
+            Private Telegram alerts (webhooks on request) for exactly the reserves your vault lends into and the collateral in their markets, within
+            minutes of a problem, before your depositors notice. Free pilot for the first curators.
+          </p>
+        </div>
+        <div class="pilot__actions">
+          <a class="ax-btn ax-btn--primary ax-btn--sm" href="mailto:hello@oraclecanary.com?subject=Vault%20alerts%20pilot">Request a pilot</a>
+          <a class="ax-btn ax-btn--secondary ax-btn--sm" href="https://t.me/OracleCanaryAlerts" target="_blank" rel="noopener">Public alerts</a>
+        </div>
+      </section>
+
+      <section class="ax-card ax-col--12" aria-label="Vaults">
+        <div class="ax-card__header toolbar">
+          <div class="ax-card__titles">
+            <h2 class="ax-card__title">All vaults</h2>
+            <p class="ax-card__subtitle">
+              <span v-if="loading" class="ax-skeleton ax-skeleton--line count-skeleton" aria-hidden="true"></span>
+              <template v-else><span class="ax-num">{{ shown.length }}</span> vaults</template> · exposure is recomputed every few minutes from
+              live oracle data
+            </p>
+          </div>
+          <div class="ax-card__actions toolbar__controls">
+            <input v-model="search" type="search" class="ax-input ax-input--sm" placeholder="Search vault, e.g. USDC" aria-label="Search by vault name" />
+            <select class="ax-select ax-select--sm" aria-label="Filter by curator" :value="filters.curator" @change="setQuery({ curator: selectValue($event) })">
+              <option value="">All curators</option>
+              <option v-for="c in curators" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <select class="ax-select ax-select--sm" aria-label="Filter by token" :value="filters.token" @change="setQuery({ token: selectValue($event) })">
+              <option value="">Any token</option>
+              <option v-for="t in tokens" :key="t" :value="t">{{ t }}</option>
+            </select>
+            <select class="ax-select ax-select--sm" aria-label="Filter by health" :value="filters.health" @change="setQuery({ health: selectValue($event) })">
+              <option value="">All health levels</option>
+              <option v-for="(label, value) in HEALTH_FILTERS" :key="value" :value="value">{{ label }}</option>
+            </select>
+            <label v-if="smallCount" class="toggle">
+              <input v-model="showSmall" type="checkbox" class="ax-checkbox" />
+              Show {{ smallCount }} vaults under $10K
+            </label>
+            <button v-if="filtered" type="button" class="ax-btn ax-btn--ghost ax-btn--sm" @click="clearFilters">Clear filters</button>
+          </div>
+        </div>
+        <div class="ax-table-wrap">
+          <table class="ax-table ax-table--hover" style="min-width: 760px">
+            <thead class="ax-table__head">
+              <tr>
+                <th
+                  v-for="col in COLUMNS"
+                  :key="col.key"
+                  scope="col"
+                  class="ax-table__th"
+                  :class="{ 'ax-table__th--num': col.num }"
+                  :aria-sort="ariaSort(col.key)"
+                >
+                  <button type="button" class="sort-button" :class="{ 'sort-button--active': state.sortKey === col.key }" @click="sortBy(col.key)">
+                    {{ col.label }}
+                    <svg v-if="state.sortKey !== col.key" class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 9l4 -4l4 4" /><path d="M16 15l-4 4l-4 -4" /></svg>
+                    <svg v-else-if="state.sortDir === 'asc'" class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6 -6l6 6" /></svg>
+                    <svg v-else class="sort-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6l6 -6" /></svg>
+                  </button>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="v in rows" :key="v.address" class="ax-table__row row-link" @click="openVault($event, v.address)">
+                <td class="ax-table__td">
+                  <RouterLink :to="{ name: 'vault', params: { address: v.address } }" class="name">{{ v.name }}</RouterLink>
+                  <div class="muted">{{ v.token ?? '' }}</div>
+                </td>
+                <td class="ax-table__td muted">{{ v.curator ?? '—' }}</td>
+                <td class="ax-table__td"><SeverityBadge :severity="v.worstSeverity" /></td>
+                <td class="ax-table__td ax-table__td--num nowrap">{{ usd(v.totalUsd) }}</td>
+                <td class="ax-table__td ax-table__td--num nowrap" :class="{ risk: v.atRiskUsd > 0 }">
+                  <template v-if="v.atRiskUsd > 0">{{ usd(v.atRiskUsd) }} · {{ share(v.atRiskUsd, v.totalUsd) }}</template>
+                  <span v-else class="zero">$0</span>
+                </td>
+                <td class="ax-table__td ax-table__td--num nowrap">{{ v.allocations.length }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-if="!loading && !vaults.length" class="empty">No vault data yet.</p>
+        <p v-else-if="!loading && !rows.length && filtered" class="empty">No vault matches these filters.</p>
+        <p v-else-if="!loading && !rows.length" class="empty">No vault holds $10K or more. Use the option above to see the smaller ones.</p>
+      </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* Card subtitles stay at a readable line length. */
+.ax-card__subtitle {
+  max-width: 72ch;
+}
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ax-space-6);
+}
+.page > .ax-page-head {
+  margin-block-end: 0;
+}
 .toolbar {
   flex-wrap: wrap;
   gap: var(--ax-space-3);
@@ -321,6 +350,7 @@ const ariaSort = (key: SortKey) => (state.value.sortKey === key ? (state.value.s
 }
 .pilot {
   display: flex;
+  flex-direction: row;
   text-align: left;
   flex-wrap: wrap;
   align-items: center;
@@ -328,20 +358,35 @@ const ariaSort = (key: SortKey) => (state.value.sortKey === key ? (state.value.s
   gap: var(--ax-space-4);
   padding: var(--ax-space-5);
 }
+.count-skeleton {
+  display: inline-block;
+  width: 4rem;
+  vertical-align: middle;
+}
 .pilot__actions {
   display: flex;
   gap: var(--ax-space-2);
 }
-th {
-  text-align: left;
+/* The sort arrow sits right of the label, shown on hover and on the active column only. */
+.zero {
+  color: var(--ax-text-subtle);
 }
-/* Deposits, At risk and Reserves: header and values centered on the same axis. */
-th.center,
-td.center {
-  text-align: center;
+.sort-icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity 0.15s;
 }
-th.center .sort-button {
-  justify-content: center;
+.sort-button:hover .sort-icon,
+.sort-button:focus-visible .sort-icon {
+  opacity: 0.6;
+}
+.sort-button--active {
+  color: var(--ax-accent-text, var(--ax-accent));
+}
+.sort-button--active .sort-icon {
+  opacity: 1;
 }
 .sort-button {
   display: inline-flex;

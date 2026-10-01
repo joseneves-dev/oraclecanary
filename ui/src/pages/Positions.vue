@@ -10,10 +10,11 @@ import {
   type WalletPosition,
   type WalletPositions,
 } from '@/api/client'
+import AxIcon from '@/components/AxIcon.vue'
 import PositionLegend from '@/components/PositionLegend.vue'
 import ReserveTags from '@/components/ReserveTags.vue'
 import WalletLookup from '@/components/WalletLookup.vue'
-import { shortAddress, usd } from '@/lib/format'
+import { checkMessage, shortAddress, usd } from '@/lib/format'
 import { walletAlertsUrl } from '@/lib/links'
 import { priceState } from '@/lib/priceState'
 
@@ -46,6 +47,20 @@ const sourceNames = (list: string[]) => list.map((s) => SOURCE_LABEL[s] ?? s).jo
 
 // ---- The address, kept in the URL (?address=) so a result can be shared. ----
 
+/** Shown shortened; the full address goes to the clipboard. */
+const copied = ref(false)
+let copiedTimer: ReturnType<typeof setTimeout> | undefined
+async function copyAddress() {
+  try {
+    await navigator.clipboard.writeText(address.value)
+    copied.value = true
+    clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => (copied.value = false), 1500)
+  } catch {
+    // Clipboard access denied: the full address is still in the URL and the tooltip.
+  }
+}
+
 const address = computed(() => (typeof route.query.address === 'string' ? route.query.address.trim() : ''))
 /** Bumped by a lookup of the address already shown, which leaves the URL unchanged, to load it again. */
 const reload = ref(0)
@@ -64,10 +79,11 @@ function lookup(value: string) {
 type State = 'blocked' | 'paused' | 'overvalued' | 'weak' | 'unknown' | 'ok'
 const STATE_RANK: Record<State, number> = { blocked: 5, overvalued: 4, paused: 3, weak: 2, unknown: 1, ok: 0 }
 const STATE_BADGE: Record<State, { label: string; badge: string }> = {
-  blocked: { label: 'Blocked', badge: 'ax-badge--danger' },
-  paused: { label: 'Paused', badge: 'ax-badge--info' },
+  // The same words as the rest of the app, with the level each outcome corresponds to.
+  blocked: { label: 'Blocked (critical)', badge: 'ax-badge--danger' },
+  paused: { label: 'Paused · market closed', badge: 'ax-badge--info' },
   overvalued: { label: 'Overvalued', badge: 'ax-badge--warning' },
-  weak: { label: 'Weak', badge: 'ax-badge--warning' },
+  weak: { label: 'Weak (warning)', badge: 'ax-badge--warning' },
   unknown: { label: 'Unknown', badge: 'ax-badge--neutral' },
   ok: { label: 'Healthy', badge: 'ax-badge--success' },
 }
@@ -104,7 +120,7 @@ const error = ref<string | null>(null)
 /** The most telling message of a reserve: its worst check. */
 function mainIssue(checks: Reserve['checks']): string {
   const rank: Record<string, number> = { critical: 3, warning: 2, info: 1 }
-  return [...checks].sort((a, b) => (rank[b.severity] ?? 0) - (rank[a.severity] ?? 0))[0]?.message ?? 'Price is healthy.'
+  return checkMessage([...checks].sort((a, b) => (rank[b.severity] ?? 0) - (rank[a.severity] ?? 0))[0]?.message ?? 'Price is healthy.')
 }
 
 const stateOf = (reserve: Reserve): State => priceState(reserve)
@@ -227,6 +243,16 @@ const accountStates = computed(() => {
   }
   return states
 })
+
+/**
+ * The prices holding up a row that is fine on its own, e.g. a USDC loan in an account paused by
+ * FWDI. Shown instead of a state badge, so a healthy price is never labelled paused or blocked.
+ */
+function heldUpBy(row: Row): string | null {
+  const own = rawRows.value.find((r) => r.key === row.key)?.state
+  const account = row.account ? accountStates.value.get(row.account) : undefined
+  return account && own !== row.state ? [...account.by].join(', ') : null
+}
 
 /** Rows with their account's state applied: a healthy row in a blocked account is blocked too. */
 const rows = computed(() =>
@@ -354,6 +380,14 @@ function sides(list: Row[]): string {
   const loans = sum(list.filter((r) => r.side === 'Borrow'))
   return [dep > 0 ? `${usd(dep)} of deposits` : '', loans > 0 ? `${usd(loans)} of loans` : ''].filter(Boolean).join(' and ')
 }
+/**
+ * The amount a headline leads with: the deposits held up (loans are told in the line under it), or
+ * the loans when an account holds no deposit in that state. Deposits and loans are never added up.
+ */
+function heldUp(list: Row[]): string {
+  const dep = sum(list.filter((r) => r.side !== 'Borrow'))
+  return dep > 0 ? `${usd(dep)} of deposits` : `${usd(sum(list.filter((r) => r.side === 'Borrow')))} of loans`
+}
 const namesOf = (state: 'blocked' | 'paused') =>
   [...new Set([...accountStates.value.values()].filter((a) => a.state === state).flatMap((a) => [...a.by]))].join(', ')
 
@@ -374,7 +408,7 @@ const findings = computed<Finding[]>(() => {
     list.push({
       tone: 'danger',
       eyebrow: 'Blocked now',
-      headline: `${usd(sum(blocked))} held up by an unusable price`,
+      headline: `${heldUp(blocked)} held up by an unusable price`,
       text: `${sides(blocked)} are in loan accounts that use a price the protocol cannot use right now (${namesOf('blocked')}). Until it updates, those accounts cannot borrow or withdraw, and cannot be liquidated.`,
     })
   }
@@ -400,7 +434,7 @@ const findings = computed<Finding[]>(() => {
     list.push({
       tone: 'info',
       eyebrow: 'Paused · US market closed',
-      headline: `${usd(sum(paused))} held up until the US market reopens`,
+      headline: `${heldUp(paused)} held up until the US market reopens`,
       text: `${sides(paused)} are in loan accounts that use a tokenized-stock price (${namesOf('paused')}), paused while the US market is closed. This is expected, but until it reopens those accounts cannot borrow or withdraw, and cannot be liquidated.`,
     })
   }
@@ -454,229 +488,253 @@ const others = computed(() => findings.value.slice(1))
 </script>
 
 <template>
-  <div class="ax-page-head">
-    <div class="ax-page-head__row">
-      <div>
-        <h1 class="ax-page-head__title">My positions</h1>
-        <p class="ax-page-head__subtitle">Is the price behind your deposits and loans working? Read-only: nothing is signed.</p>
-      </div>
-    </div>
-  </div>
-
-  <div class="ax-dash-grid">
-    <!-- Before a wallet: the lookup is the page. -->
-    <section v-if="!address || changing" class="ax-card ax-welcome ax-col--12" aria-label="Check a wallet">
-      <div class="ax-welcome__body">
-        <div class="ax-welcome__text start">
-          <span class="ax-welcome__eyebrow">Kamino · marginfi · Kamino vaults</span>
-          <h2 class="ax-welcome__title">Check any Solana wallet</h2>
-          <p class="ax-welcome__lede">
-            Paste an address or connect a wallet. Each deposit, loan and vault share is matched with the health of the price it depends on.
-          </p>
-          <WalletLookup large :initial="address" @lookup="lookup" />
-        </div>
-        <PositionLegend />
-      </div>
-    </section>
-
-    <!-- With a wallet: a one-line bar, so the result takes the page. -->
-    <section v-else class="ax-card ax-col--12" aria-label="Wallet">
-      <div class="walletbar">
-        <span class="ax-eyebrow">Wallet</span>
-        <code class="walletbar__address">{{ address }}</code>
-        <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="changing = true">Check another wallet</button>
-        <button v-if="!loading" type="button" class="ax-btn ax-btn--ghost ax-btn--sm" @click="lookup(address)">Refresh</button>
-      </div>
-    </section>
-
-    <div v-if="error" class="ax-alert ax-alert--danger ax-col--12" role="alert">
-      {{ error }}
-      <button v-if="address && ADDRESS.test(address)" type="button" class="ax-btn ax-btn--secondary ax-btn--sm retry" @click="lookup(address)">
-        Try again
-      </button>
-    </div>
-
-    <template v-if="address && !error && !changing">
-      <!-- Always mounted, so screen readers announce the answer when it lands. -->
-      <section class="ax-card ax-col--12 verdict" :class="headline && !loading ? `verdict--${headline.tone}` : ''" role="status" aria-live="polite">
-        <div v-if="loading" class="ax-skeleton-card verdict__body" aria-label="Reading this wallet">
-          <span class="ax-skeleton ax-skeleton--line" style="width: 120px"></span>
-          <span class="ax-skeleton ax-skeleton--line" style="width: 60%; height: 1.6em"></span>
-          <span class="ax-skeleton ax-skeleton--line" style="width: 80%"></span>
-          <span class="muted">Reading this wallet from the Solana network…</span>
-        </div>
-        <div v-else-if="headline" class="verdict__body">
-          <span class="ax-eyebrow verdict__eyebrow">{{ headline.eyebrow }}</span>
-          <p class="verdict__headline">{{ headline.headline }}</p>
-          <p class="verdict__text">{{ headline.text }}</p>
-          <ul v-if="others.length" class="verdict__others">
-            <li v-for="(f, i) in others" :key="i">
-              <span class="dot" :class="`dot--${f.tone}`" aria-hidden="true"></span>
-              {{ f.text }}
-            </li>
-          </ul>
-        </div>
-        <div v-if="!loading && rows.length" class="ax-statgroup verdict__stats">
-          <div class="ax-statgroup__cell">
-            <div class="ax-statgroup__text">
-              <span class="ax-statgroup__label">Deposits</span><span class="ax-statgroup__value">{{ usd(deposits) }}</span>
-            </div>
-          </div>
-          <div class="ax-statgroup__cell">
-            <div class="ax-statgroup__text">
-              <span class="ax-statgroup__label">Borrowed</span><span class="ax-statgroup__value">{{ usd(borrowed) }}</span>
-            </div>
-          </div>
-          <div class="ax-statgroup__cell">
-            <div class="ax-statgroup__text">
-              <span class="ax-statgroup__label">Deposits at risk now</span>
-              <span class="ax-statgroup__value" :class="{ risk: atRiskNow > 0 }">{{ usd(atRiskNow) }}</span>
-            </div>
-          </div>
-          <div class="ax-statgroup__cell">
-            <div class="ax-statgroup__text">
-              <span class="ax-statgroup__label">Loan accounts</span><span class="ax-statgroup__value">{{ accountCount }}</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section v-if="!loading && accountCount" class="ax-card ax-col--12" aria-label="Alerts for this wallet">
-        <div class="alerts-cta">
+  <!-- One root: the layout pads every top-level block, which would stack the spacing. -->
+  <div class="page">
+    <div class="ax-page-head">
+      <div class="ax-page-head__row">
         <div>
-          <h2 class="ax-card__title">Get a message when this wallet is held up</h2>
-          <p class="muted">
-            OracleCanary checks it every 5 minutes and messages you on Telegram when a price the protocol cannot use holds up one of its
-            Kamino or marginfi loan accounts, and again when it recovers. Pauses while the US market is closed, and curator vaults, are not
-            alerted. Read-only: only the address is shared.
-          </p>
+          <h1 class="ax-page-head__title">My positions</h1>
+          <p class="ax-page-head__subtitle">Is the price behind your deposits and loans working? Read-only: nothing is signed.</p>
         </div>
-        <a class="ax-btn ax-btn--primary ax-btn--sm" :href="walletAlertsUrl(address)" target="_blank" rel="noopener">Get Telegram alerts</a>
+      </div>
+    </div>
+
+    <div class="ax-dash-grid">
+      <!-- Before a wallet: the lookup is the page. -->
+      <section v-if="!address || changing" class="ax-card ax-welcome ax-col--12" aria-label="Check a wallet">
+        <div class="ax-welcome__body">
+          <div class="ax-welcome__text start">
+            <span class="ax-welcome__eyebrow">Kamino · marginfi · Kamino vaults</span>
+            <h2 class="ax-welcome__title">Check any Solana wallet</h2>
+            <p class="ax-welcome__lede">
+              Paste an address or connect a wallet. Each deposit, loan and vault share is matched with the health of the price it depends on.
+            </p>
+            <WalletLookup large :initial="address" @lookup="lookup" />
+          </div>
+          <PositionLegend />
         </div>
       </section>
 
-      <section v-if="!loading && loanGroups.length" class="ax-card ax-col--12" aria-labelledby="whatif-title">
-        <div class="ax-card__header">
-          <div class="ax-card__titles">
-            <h2 id="whatif-title" class="ax-card__title">What if your deposits fall?</h2>
-            <p class="ax-card__subtitle">
-              Every deposit falls by the same share while loans keep their price, from the protocols' last stored prices: an estimate. While a
-              price is blocked or paused, the protocol cannot liquidate the account even past this point, so a fall keeps growing the loss
-              instead.
+      <!-- With a wallet: a one-line bar, so the result takes the page. -->
+      <section v-else class="ax-card ax-col--12" aria-label="Wallet">
+        <div class="walletbar">
+          <span class="ax-eyebrow">Wallet</span>
+          <code class="walletbar__address" :title="address">{{ shortAddress(address) }}</code>
+        <button type="button" class="ax-btn ax-btn--ghost ax-btn--sm copy" :aria-label="copied ? 'Address copied' : 'Copy the full address'" @click="copyAddress">
+          <AxIcon :name="copied ? 'check' : 'files'" :size="14" />
+          <span aria-live="polite">{{ copied ? 'Copied' : 'Copy' }}</span>
+        </button>
+        <span class="walletbar__spacer"></span>
+          <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="changing = true">Check another wallet</button>
+          <button v-if="!loading" type="button" class="ax-btn ax-btn--ghost ax-btn--sm" @click="lookup(address)">Refresh</button>
+        </div>
+      </section>
+
+      <div v-if="error" class="ax-alert ax-alert--danger ax-col--12" role="alert">
+        {{ error }}
+        <button v-if="address && ADDRESS.test(address)" type="button" class="ax-btn ax-btn--secondary ax-btn--sm retry" @click="lookup(address)">
+          Try again
+        </button>
+      </div>
+
+      <template v-if="address && !error && !changing">
+        <!-- Always mounted, so screen readers announce the answer when it lands. -->
+        <section class="ax-card ax-col--12 verdict" :class="headline && !loading ? `verdict--${headline.tone}` : ''" role="status" aria-live="polite">
+          <div v-if="loading" class="ax-skeleton-card verdict__body" aria-label="Reading this wallet">
+            <span class="ax-skeleton ax-skeleton--line" style="width: 120px"></span>
+            <span class="ax-skeleton ax-skeleton--line" style="width: 60%; height: 1.6em"></span>
+            <span class="ax-skeleton ax-skeleton--line" style="width: 80%"></span>
+            <span class="muted">Reading this wallet from the Solana network…</span>
+          </div>
+          <div v-else-if="headline" class="verdict__body">
+            <span class="ax-eyebrow verdict__eyebrow">{{ headline.eyebrow }}</span>
+            <p class="verdict__headline">{{ headline.headline }}</p>
+            <p class="verdict__text">{{ headline.text }}</p>
+            <ul v-if="others.length" class="verdict__others">
+              <li v-for="(f, i) in others" :key="i">
+                <span class="dot" :class="`dot--${f.tone}`" aria-hidden="true"></span>
+                {{ f.text }}
+              </li>
+            </ul>
+          </div>
+          <div v-if="!loading && rows.length" class="ax-statgroup verdict__stats">
+            <div class="ax-statgroup__cell">
+              <div class="ax-statgroup__text">
+                <span class="ax-statgroup__label">Deposits</span><span class="ax-statgroup__value">{{ usd(deposits) }}</span>
+              </div>
+            </div>
+            <div class="ax-statgroup__cell">
+              <div class="ax-statgroup__text">
+                <span class="ax-statgroup__label">Borrowed</span><span class="ax-statgroup__value">{{ usd(borrowed) }}</span>
+              </div>
+            </div>
+            <div class="ax-statgroup__cell">
+              <div class="ax-statgroup__text">
+                <span class="ax-statgroup__label">Deposits at risk now</span>
+                <span class="ax-statgroup__value" :class="{ risk: atRiskNow > 0 }">{{ usd(atRiskNow) }}</span>
+              </div>
+            </div>
+            <div class="ax-statgroup__cell">
+              <div class="ax-statgroup__text">
+                <span class="ax-statgroup__label">Loan accounts</span><span class="ax-statgroup__value">{{ accountCount }}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="!loading && accountCount" class="ax-card ax-col--12" aria-label="Alerts for this wallet">
+          <div class="alerts-cta">
+          <div>
+            <h2 class="ax-card__title">Get a message when this wallet is held up</h2>
+            <p class="muted">
+              OracleCanary checks it every 5 minutes and messages you on Telegram when a price the protocol cannot use holds up one of its
+              Kamino or marginfi loan accounts, and again when it recovers. Pauses while the US market is closed, and curator vaults, are not
+              alerted. Read-only: only the address is shared.
             </p>
           </div>
-        </div>
-        <div class="ax-card__body whatif">
-          <label class="whatif__slider">
-            <span>Deposit prices fall by <b class="ax-num">{{ shock }}%</b></span>
-            <input
-              v-model.number="shock"
-              type="range"
-              min="0"
-              max="90"
-              step="5"
-              aria-label="Fall of deposit prices"
-              :aria-valuetext="`${shock}%`"
-            />
-          </label>
-          <ul class="whatif__list" aria-live="polite">
-            <li v-for="g in loanGroups" :key="g.key">
-              <span class="whatif__name">{{ g.title }} <span class="muted">{{ g.subtitle }}</span></span>
-              <span
-                class="ax-badge ax-badge--soft ax-badge--pill"
-                :class="shockResult(g).liquidatable ? 'ax-badge--danger' : 'ax-badge--success'"
-              >
-                {{ shockResult(g).liquidatable ? 'Would be liquidated' : `Safe: can fall another ${pctDown(shockResult(g).buffer)}` }}
-              </span>
-            </li>
-          </ul>
-        </div>
-      </section>
+          <a class="ax-btn ax-btn--primary ax-btn--sm" :href="walletAlertsUrl(address)" target="_blank" rel="noopener">Get Telegram alerts</a>
+          </div>
+        </section>
 
-      <section v-if="loading || rows.length" class="ax-card ax-col--12" aria-label="Positions">
-        <div class="ax-card__header">
-          <div class="ax-card__titles">
-            <h2 class="ax-card__title">Positions</h2>
-            <p class="ax-card__subtitle">Grouped by loan account: one unusable price holds up the whole account.</p>
+        <section v-if="!loading && loanGroups.length" class="ax-card ax-col--12" aria-labelledby="whatif-title">
+          <div class="ax-card__header">
+            <div class="ax-card__titles">
+              <h2 id="whatif-title" class="ax-card__title">What if your deposits fall?</h2>
+              <p class="ax-card__subtitle">
+                Every deposit falls by the same share while loans keep their price, from the protocols' last stored prices: an estimate. While a
+                price is blocked or paused, the protocol cannot liquidate the account even past this point, so a fall keeps growing the loss
+                instead.
+              </p>
+            </div>
           </div>
-        </div>
-        <div v-if="loading" class="ax-card__body skeleton-rows" aria-hidden="true">
-          <div v-for="n in 3" :key="n" class="ax-skeleton-row">
-            <span class="ax-skeleton ax-skeleton--line" style="width: 18%"></span>
-            <span class="ax-skeleton ax-skeleton--line" style="width: 12%"></span>
-            <span class="ax-skeleton ax-skeleton--line" style="width: 10%"></span>
-            <span class="ax-skeleton ax-skeleton--line" style="width: 45%"></span>
+          <div class="ax-card__body whatif">
+            <label class="whatif__slider">
+              <span>Deposit prices fall by <b class="ax-num">{{ shock }}%</b></span>
+              <input
+                v-model.number="shock"
+                type="range"
+                min="0"
+                max="90"
+                step="5"
+                aria-label="Fall of deposit prices"
+                :aria-valuetext="`${shock}%`"
+              />
+            </label>
+            <ul class="whatif__list" aria-live="polite">
+              <li v-for="g in loanGroups" :key="g.key">
+                <span class="whatif__name">{{ g.title }} <span class="muted">{{ g.subtitle }}</span></span>
+                <span
+                  class="ax-badge ax-badge--soft ax-badge--pill"
+                  :class="shockResult(g).liquidatable ? 'ax-badge--danger' : 'ax-badge--success'"
+                >
+                  {{ shockResult(g).liquidatable ? 'Would be liquidated' : `Safe: can fall another ${pctDown(shockResult(g).buffer)}` }}
+                </span>
+              </li>
+            </ul>
           </div>
-        </div>
-        <div v-else class="ax-table-wrap">
-          <table class="ax-table">
-            <thead class="ax-table__head">
-              <tr>
-                <th scope="col" class="ax-table__th">Position</th>
-                <th scope="col" class="ax-table__th num">Value</th>
-                <th scope="col" class="ax-table__th">Status</th>
-                <th scope="col" class="ax-table__th">Price</th>
-              </tr>
-            </thead>
-            <tbody v-for="g in groups" :key="g.key">
-              <tr class="group" :class="{ 'ax-table__row--danger': g.state === 'blocked', 'group--info': g.state === 'paused' }">
-                <th colspan="4" scope="colgroup" class="group__cell">
-                  <div class="group__line">
-                    <span class="group__title">{{ g.title }}</span>
-                    <span v-if="g.subtitle" class="muted">{{ g.subtitle }}</span>
-                    <span v-if="g.by" class="group__by">
-                      {{ g.state === 'paused' ? 'Paused by' : 'Blocked by' }} {{ g.by }}: this account cannot borrow, withdraw or be liquidated
-                    </span>
-                    <span v-if="g.liquidation.kind === 'ok'" class="group__liq">
-                      Loans use {{ pctUp(g.liquidation.use) }} of the liquidation limit<template v-if="g.liquidation.price"
-                        >; liquidated if only {{ g.liquidation.price.asset }} falls to {{ money(g.liquidation.price.price) }}</template
-                      ><template v-else-if="g.liquidation.loansRise !== null"
-                        >; liquidated if the loans' prices rise {{ pctDown(g.liquidation.loansRise) }}</template
-                      >
-                    </span>
-                    <span v-else-if="g.liquidation.kind === 'past'" class="group__by">At or past its liquidation limit</span>
-                    <span v-else-if="g.liquidation.kind === 'unknown'" class="group__liq">Liquidation point unknown: a price is missing</span>
-                  </div>
-                </th>
-              </tr>
-              <tr v-for="r in g.rows" :key="r.key" class="ax-table__row">
-                <td class="ax-table__td">
-                  <RouterLink :to="r.to" class="name">{{ r.name }}</RouterLink>
-                  <span class="ax-badge ax-badge--outline ax-badge--sm side">{{ r.side }}</span>
-                  <div v-if="r.market && g.key === 'vaults'" class="muted">{{ r.market }}</div>
-                </td>
-                <td class="ax-table__td num ax-num">
-                  {{ r.usd === null ? '—' : usd(r.usd) }}
-                  <div v-if="r.tokens" class="muted">{{ r.tokens }}</div>
-                </td>
-                <td class="ax-table__td">
-                  <div class="status">
-                    <span class="ax-badge ax-badge--soft ax-badge--pill" :class="STATE_BADGE[r.state].badge">{{ STATE_BADGE[r.state].label }}</span>
-                    <ReserveTags :checks="r.checks" hide-empty />
-                  </div>
-                </td>
-                <td class="ax-table__td issue">{{ r.issue }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p v-if="data" class="muted footnote">
-          Values use the last price each protocol stored (marginfi's can lag while a bank is idle). {{ sourceNames(data.notCovered) }} positions,
-          and vault shares staked in a vault's farm, are not read yet.
-        </p>
-      </section>
-    </template>
+        </section>
+
+        <section v-if="loading || rows.length" class="ax-card ax-col--12" aria-label="Positions">
+          <div class="ax-card__header">
+            <div class="ax-card__titles">
+              <h2 class="ax-card__title">Positions</h2>
+              <p class="ax-card__subtitle">Grouped by loan account: one unusable price holds up the whole account.</p>
+            </div>
+          </div>
+          <div v-if="loading" class="ax-card__body skeleton-rows" aria-hidden="true">
+            <div v-for="n in 3" :key="n" class="ax-skeleton-row">
+              <span class="ax-skeleton ax-skeleton--line" style="width: 18%"></span>
+              <span class="ax-skeleton ax-skeleton--line" style="width: 12%"></span>
+              <span class="ax-skeleton ax-skeleton--line" style="width: 10%"></span>
+              <span class="ax-skeleton ax-skeleton--line" style="width: 45%"></span>
+            </div>
+          </div>
+          <div v-else class="ax-table-wrap">
+            <table class="ax-table positions">
+              <thead class="ax-table__head">
+                <tr>
+                  <th scope="col" class="ax-table__th">Position</th>
+                  <th scope="col" class="ax-table__th ax-table__th--num">Value</th>
+                  <th scope="col" class="ax-table__th">Status</th>
+                  <th scope="col" class="ax-table__th">Price</th>
+                </tr>
+              </thead>
+              <tbody v-for="g in groups" :key="g.key">
+                <tr class="group" :class="{ 'ax-table__row--danger': g.state === 'blocked', 'group--info': g.state === 'paused' }">
+                  <th colspan="4" scope="colgroup" class="group__cell">
+                    <div class="group__line">
+                      <span class="group__title">{{ g.title }}</span>
+                      <span v-if="g.subtitle" class="muted">{{ g.subtitle }}</span>
+                      <span v-if="g.by" class="group__by">
+                        {{ g.state === 'paused' ? 'Paused by' : 'Blocked by' }} {{ g.by }}: this account cannot borrow, withdraw or be liquidated
+                      </span>
+                      <span v-if="g.liquidation.kind === 'ok'" class="group__liq">
+                        Loans use {{ pctUp(g.liquidation.use) }} of the liquidation limit<template v-if="g.liquidation.price"
+                          >; liquidated if only {{ g.liquidation.price.asset }} falls to {{ money(g.liquidation.price.price) }}</template
+                        ><template v-else-if="g.liquidation.loansRise !== null"
+                          >; liquidated if the loans' prices rise {{ pctDown(g.liquidation.loansRise) }}</template
+                        >
+                      </span>
+                      <span v-else-if="g.liquidation.kind === 'past'" class="group__by">At or past its liquidation limit</span>
+                      <span v-else-if="g.liquidation.kind === 'unknown'" class="group__liq">Liquidation point unknown: a price is missing</span>
+                    </div>
+                  </th>
+                </tr>
+                <tr v-for="r in g.rows" :key="r.key" class="ax-table__row">
+                  <td class="ax-table__td">
+                    <RouterLink :to="r.to" class="name">{{ r.name }}</RouterLink>
+                    <span class="ax-badge ax-badge--outline ax-badge--sm side">{{ r.side }}</span>
+                    <div v-if="r.market && g.key === 'vaults'" class="muted">{{ r.market }}</div>
+                  </td>
+                  <td class="ax-table__td ax-table__td--num">
+                    {{ r.usd === null ? '—' : usd(r.usd) }}
+                    <div v-if="r.tokens" class="muted">{{ r.tokens }}</div>
+                  </td>
+                  <td class="ax-table__td">
+                    <div class="status">
+                      <span v-if="heldUpBy(r)" class="ax-badge ax-badge--outline ax-badge--neutral ax-badge--pill">Held up by {{ heldUpBy(r) }}</span>
+                      <span v-else class="ax-badge ax-badge--soft ax-badge--pill" :class="STATE_BADGE[r.state].badge">{{ STATE_BADGE[r.state].label }}</span>
+                      <ReserveTags :checks="r.checks" hide-empty />
+                    </div>
+                  </td>
+                  <td class="ax-table__td issue">{{ r.issue }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-if="data" class="muted footnote">
+            Values use the last price each protocol stored (marginfi's can lag while a bank is idle). {{ sourceNames(data.notCovered) }} positions,
+            and vault shares staked in a vault's farm, are not read yet.
+          </p>
+        </section>
+      </template>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* Card subtitles stay at a readable line length. */
+.ax-card__subtitle {
+  max-width: 72ch;
+}
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ax-space-6);
+}
+.page > .ax-page-head {
+  margin-block-end: 0;
+}
+.alerts-cta .muted {
+  max-width: 80ch;
+}
 .alerts-cta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--ax-space-4);
-  padding: var(--ax-space-5);
+  padding: var(--ax-space-6);
 }
 .start {
   gap: var(--ax-space-3);
@@ -686,10 +744,17 @@ const others = computed(() => findings.value.slice(1))
   flex-wrap: wrap;
   align-items: center;
   gap: var(--ax-space-3);
-  padding: var(--ax-space-3) var(--ax-space-5);
+  padding: var(--ax-space-3) var(--ax-space-6);
+}
+.walletbar__spacer {
+  flex: 1 1 auto;
+}
+.copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ax-space-1);
 }
 .walletbar__address {
-  flex: 1 1 280px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -882,9 +947,57 @@ th {
 }
 .issue {
   font-size: var(--ax-text-sm);
+  min-width: 200px;
   max-width: 60ch;
 }
 .footnote {
-  padding: var(--ax-space-3) var(--ax-space-5);
+  padding: var(--ax-space-3) var(--ax-space-6) var(--ax-space-4);
+}
+/* Phones: each position becomes a card (name and value, then status, then what the price says). */
+@media (max-width: 640px) {
+  .positions thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .positions,
+  .positions tbody,
+  .positions .group,
+  .positions .group__cell {
+    display: block;
+  }
+  .positions .ax-table__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'name value'
+      'status status'
+      'issue issue';
+    gap: var(--ax-space-2) var(--ax-space-3);
+    padding: var(--ax-space-3) var(--ax-space-4);
+    border-bottom: 1px solid var(--ax-border);
+  }
+  .positions .ax-table__row > td {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+    max-width: none;
+  }
+  .positions .ax-table__row > td:nth-child(1) {
+    grid-area: name;
+  }
+  .positions .ax-table__row > td:nth-child(2) {
+    grid-area: value;
+  }
+  .positions .ax-table__row > td:nth-child(3) {
+    grid-area: status;
+  }
+  .positions .ax-table__row > td:nth-child(4) {
+    grid-area: issue;
+    color: var(--ax-text-muted);
+  }
 }
 </style>

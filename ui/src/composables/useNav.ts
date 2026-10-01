@@ -41,7 +41,7 @@ export function isGroup(item: NavItem): item is NavGroup {
 
 /** SPA href for a slug: the overview is the home page, every other slug maps to its path. */
 export function slugToHref(slug: string): string {
-  if (slug === 'overview') return '/'
+  if (slug === 'overview') return '/app'
   if (/^https?:\/\//.test(slug)) return slug
   return '/' + slug
 }
@@ -130,7 +130,7 @@ export function resolveActive(slug: string): { activeId: string | null; openGrou
   const openGroups = new Set<string>()
   for (const n of trail) if (n.id !== node?.id) openGroups.add(n.id)
 
-  const crumbs: Crumb[] = [{ label: 'Home', href: '/', current: false, home: true }]
+  const crumbs: Crumb[] = [{ label: 'Home', href: '/app', current: false, home: true }]
   const middle = trail.slice(0, Math.max(0, trail.length - 1))
   for (const n of middle) {
     if (n.slug === 'overview') continue

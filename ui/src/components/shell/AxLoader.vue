@@ -1,7 +1,6 @@
 <script setup lang="ts">
 /*
- * Vireo — page preloader. Mirrors src/html/partials/loader.html + the boot
- * hide logic in vireo.js: a full-screen overlay removed after first paint.
+ * Page preloader: a full-screen overlay removed right after the first paint.
  */
 import { ref, onMounted } from 'vue'
 

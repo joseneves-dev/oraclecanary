@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { ReserveSnapshot, Severity } from '@/api/client'
-import { dateHour, dateTime, day, duration, SEVERITY_LABEL } from '@/lib/format'
+import type { ReserveSnapshot } from '@/api/client'
+import { dateHour, dateTime, day, duration, HEALTH_LABEL } from '@/lib/format'
+import { healthState, type HealthState } from '@/lib/priceState'
 
 const props = defineProps<{
   samples: ReserveSnapshot[]
@@ -12,10 +13,12 @@ const props = defineProps<{
 
 const HOUR_MS = 3_600_000
 
-const SEVERITY_COLOR: Record<Severity, string> = {
+/** Each hour is coloured by its health as the rest of the app reads it: a market-hours pause is not critical. */
+const SEVERITY_COLOR: Record<HealthState, string> = {
   ok: 'var(--ax-viz-emerald)',
   info: 'var(--ax-viz-cyan)',
   warning: 'var(--ax-viz-amber)',
+  paused: 'var(--ax-info-500)',
   critical: 'var(--ax-viz-red)',
 }
 
@@ -27,10 +30,13 @@ const slots = computed(() => {
 })
 
 const hoursBySeverity = computed(() => {
-  const counts: Record<Severity, number> = { ok: 0, info: 0, warning: 0, critical: 0 }
-  for (const s of props.samples) counts[s.severity]++
+  const counts: Record<HealthState, number> = { ok: 0, info: 0, warning: 0, paused: 0, critical: 0 }
+  for (const s of props.samples) counts[healthState(s)]++
   return counts
 })
+
+/** Hours of the range with no record (before recording began, or missed). */
+const notRecorded = computed(() => slots.value.filter((s) => !s.sample).length)
 
 const hovered = ref<number | null>(null)
 const shown = computed(() => {
@@ -52,7 +58,7 @@ const ticks = computed(() => {
 const describe = (sample: ReserveSnapshot) =>
   [
     `Score ${sample.score}`,
-    SEVERITY_LABEL[sample.severity],
+    HEALTH_LABEL[healthState(sample)],
     sample.priceAgeSeconds !== null ? `price up to ${duration(sample.priceAgeSeconds)} old` : null,
     sample.checks.length ? sample.checks.map((c) => c.code).join(', ') : null,
   ]
@@ -63,10 +69,12 @@ const describe = (sample: ReserveSnapshot) =>
 <template>
   <div class="chart">
     <p class="chart__summary">
-      <span v-for="severity in (['critical', 'warning', 'ok'] as const)" :key="severity" class="chart__legend">
-        <i :style="{ background: SEVERITY_COLOR[severity] }" />{{ SEVERITY_LABEL[severity] }} {{ hoursBySeverity[severity] }}h
-      </span>
-      <span class="muted">of {{ samples.length }}h recorded</span>
+      <template v-for="severity in (['critical', 'paused', 'warning', 'ok'] as const)" :key="severity">
+        <span v-if="severity !== 'paused' || hoursBySeverity.paused" class="chart__legend">
+          <i :style="{ background: SEVERITY_COLOR[severity] }" />{{ HEALTH_LABEL[severity] }} {{ hoursBySeverity[severity] }}h
+        </span>
+      </template>
+      <span v-if="notRecorded" class="chart__legend muted"><i class="chart__gap-swatch" />{{ notRecorded }}h not recorded</span>
     </p>
 
     <div class="chart__plot">
@@ -76,7 +84,7 @@ const describe = (sample: ReserveSnapshot) =>
         :viewBox="`0 0 ${slots.length} 100`"
         preserveAspectRatio="none"
         role="img"
-        :aria-label="`Health score per hour: ${hoursBySeverity.critical} critical, ${hoursBySeverity.warning} warning and ${hoursBySeverity.ok} healthy hours`"
+        :aria-label="`Health score per hour: ${hoursBySeverity.critical} critical, ${hoursBySeverity.paused} paused, ${hoursBySeverity.warning} warning and ${hoursBySeverity.ok} healthy hours`"
         @mouseleave="hovered = null"
       >
         <line v-for="y in [0, 50]" :key="y" x1="0" :x2="slots.length" :y1="y" :y2="y" class="chart__grid" />
@@ -84,18 +92,20 @@ const describe = (sample: ReserveSnapshot) =>
           <!-- Full-height hit area so thin or low bars are easy to hover. -->
           <rect :x="i" y="0" width="1" height="100" fill="transparent" />
           <rect
+            class="ax-chart-bar"
             v-if="slot.sample"
             :x="i + 0.1"
             :y="100 - Math.max(slot.sample.score, 3)"
             width="0.8"
             :height="Math.max(slot.sample.score, 3)"
-            :fill="SEVERITY_COLOR[slot.sample.severity]"
+            :fill="SEVERITY_COLOR[healthState(slot.sample)]"
             :opacity="hovered === null || hovered === i ? 1 : 0.45"
           />
+          <rect v-else class="chart__gap" :x="i + 0.1" y="98" width="0.8" height="2"><title>Not recorded</title></rect>
         </g>
       </svg>
     </div>
-    <div class="chart__x" aria-hidden="true">
+    <div class="chart__x ax-chart-axis" aria-hidden="true">
       <span v-for="(tick, i) in ticks" :key="i">{{ tick }}</span>
     </div>
 
@@ -148,6 +158,17 @@ const describe = (sample: ReserveSnapshot) =>
   display: block;
   width: 100%;
   height: 180px;
+}
+/* Hours with no record: a faint baseline stub, so a gap reads as "not recorded" rather than as nothing. */
+.chart__gap {
+  fill: var(--ax-text-subtle);
+  fill-opacity: 0.35;
+}
+.chart__legend .chart__gap-swatch {
+  height: 3px;
+  align-self: center;
+  background: repeating-linear-gradient(90deg, var(--ax-text-subtle) 0 2px, transparent 2px 4px);
+  opacity: 0.7;
 }
 .chart__grid {
   stroke: var(--ax-border);

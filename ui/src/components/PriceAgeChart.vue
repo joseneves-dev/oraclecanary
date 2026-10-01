@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { ReserveSnapshot } from '@/api/client'
 import { dateHour, dateTime, day, duration } from '@/lib/format'
+import { healthState } from '@/lib/priceState'
 
 /**
  * How old the reserve's price was, hour by hour, against the protocol's limit. A price past the
@@ -32,11 +33,23 @@ const slots = computed(() => {
  * but never goes stale, so it is never shown as rejected.
  */
 const isStale = (s: ReserveSnapshot) => s.checks.some((c) => c.code === 'STALE')
+/** Past the limit only because the US market is closed: the info colour, as everywhere else. */
+const isPaused = (s: ReserveSnapshot) => isStale(s) && healthState(s) === 'paused'
 const color = (s: ReserveSnapshot) =>
-  isStale(s) ? 'var(--ax-viz-red)' : s.checks.some((c) => c.code === 'NEAR_STALE') ? 'var(--ax-viz-amber)' : 'var(--ax-viz-emerald)'
+  isPaused(s)
+    ? 'var(--ax-info-500)'
+    : isStale(s)
+      ? 'var(--ax-viz-red)'
+      : s.checks.some((c) => c.code === 'NEAR_STALE')
+        ? 'var(--ax-viz-amber)'
+        : 'var(--ax-viz-emerald)'
 
-const hoursPastLimit = computed(() => props.samples.filter(isStale).length)
+const hoursPastLimit = computed(() => props.samples.filter((s) => isStale(s) && !isPaused(s)).length)
+const hoursPaused = computed(() => props.samples.filter(isPaused).length)
 const withAge = computed(() => props.samples.filter((s) => s.priceAgeSeconds !== null).length)
+
+/** Hours of the range with no record (before recording began, or missed). */
+const notRecorded = computed(() => slots.value.filter((s) => !s.sample).length)
 
 const hovered = ref<number | null>(null)
 const shown = computed(() => (hovered.value !== null ? slots.value[hovered.value] : ([...slots.value].reverse().find((s) => s.sample) ?? null)))
@@ -54,8 +67,10 @@ const ticks = computed(() => {
   <div class="chart">
     <p class="chart__summary">
       <span class="chart__legend"><i style="background: var(--ax-viz-red)" />Past the limit {{ hoursPastLimit }}h</span>
+      <span v-if="hoursPaused" class="chart__legend"><i style="background: var(--ax-info-500)" />Paused · market closed {{ hoursPaused }}h</span>
       <span class="chart__legend"><i class="chart__dash" />Limit: {{ duration(maxAgeSeconds) }}</span>
-      <span class="muted">of {{ withAge }}h recorded, sampled hourly (the oldest price seen in each hour; the limit shown is today's)</span>
+      <span v-if="notRecorded" class="chart__legend muted"><i class="chart__gap-swatch" />{{ notRecorded }}h not recorded</span>
+      <span class="muted">Sampled hourly: the oldest price seen in each hour; the limit shown is today's</span>
     </p>
     <div class="chart__plot">
       <div class="chart__y" aria-hidden="true">
@@ -73,6 +88,7 @@ const ticks = computed(() => {
         <g v-for="(slot, i) in slots" :key="i" @mouseenter="hovered = i">
           <rect :x="i" y="0" width="1" height="100" fill="transparent" />
           <rect
+            class="ax-chart-bar"
             v-if="slot.sample && slot.sample.priceAgeSeconds !== null"
             :x="i + 0.1"
             :y="100 - Math.max(2, Math.min(100, (slot.sample.priceAgeSeconds / ceiling) * 100))"
@@ -81,16 +97,17 @@ const ticks = computed(() => {
             :fill="color(slot.sample)"
             :opacity="hovered === null || hovered === i ? 1 : 0.45"
           />
+          <rect v-else-if="!slot.sample" class="chart__gap" :x="i + 0.1" y="98" width="0.8" height="2"><title>Not recorded</title></rect>
         </g>
       </svg>
     </div>
-    <div class="chart__x" aria-hidden="true">
+    <div class="chart__x ax-chart-axis" aria-hidden="true">
       <span v-for="(tick, i) in ticks" :key="i">{{ tick }}</span>
     </div>
     <p class="chart__detail" aria-live="polite">
       <template v-if="shown?.sample && shown.sample.priceAgeSeconds !== null">
         <b>{{ dateTime(shown.hour) }}</b> · price up to {{ duration(shown.sample.priceAgeSeconds) }} old
-        {{ isStale(shown.sample) ? '· past the limit: the protocol rejects it' : '' }}
+        {{ isPaused(shown.sample) ? '· paused while the US market is closed' : isStale(shown.sample) ? '· past the limit: the protocol rejects it' : '' }}
       </template>
       <template v-else-if="shown">{{ dateTime(shown.hour) }} · not recorded</template>
       <template v-else>No price age recorded for this range yet.</template>
@@ -157,6 +174,17 @@ const ticks = computed(() => {
   display: block;
   width: 100%;
   height: 140px;
+}
+/* Hours with no record: a faint baseline stub, so a gap reads as "not recorded" rather than as nothing. */
+.chart__gap {
+  fill: var(--ax-text-subtle);
+  fill-opacity: 0.35;
+}
+.chart__legend .chart__gap-swatch {
+  height: 3px;
+  align-self: center;
+  background: repeating-linear-gradient(90deg, var(--ax-text-subtle) 0 2px, transparent 2px 4px);
+  opacity: 0.7;
 }
 .chart__limit {
   stroke: var(--ax-text-muted);
