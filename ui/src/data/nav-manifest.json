@@ -195,6 +195,54 @@
       "inMenu": true,
       "alias": null,
       "external": true
+    },
+    {
+      "id": "rates",
+      "title": "Lending rates",
+      "slug": "rates",
+      "icon": "chart-histogram",
+      "parent": null,
+      "section": "MONITOR",
+      "order": 4.5,
+      "badge": {
+        "type": "new",
+        "value": "New"
+      },
+      "keywords": [
+        "rates",
+        "yield",
+        "apy",
+        "supply",
+        "lend",
+        "earn",
+        "collateral"
+      ],
+      "inMenu": true,
+      "alias": null
+    },
+    {
+      "id": "blast-radius",
+      "title": "If an oracle fails",
+      "slug": "blast-radius",
+      "icon": "components",
+      "parent": null,
+      "section": "MONITOR",
+      "order": 6.5,
+      "badge": {
+        "type": "new",
+        "value": "New"
+      },
+      "keywords": [
+        "blast",
+        "radius",
+        "oracle",
+        "feed",
+        "dependency",
+        "fails",
+        "exposure"
+      ],
+      "inMenu": true,
+      "alias": null
     }
   ]
 }
