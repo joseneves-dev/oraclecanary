@@ -51,7 +51,7 @@ const elapsed = (i: ReserveIncident) =>
           </td>
           <td class="ax-table__td nowrap" data-label="Ended">
             <template v-if="i.endedAt">{{ dateTime(i.endedAt) }}</template>
-            <span v-else class="ax-badge ax-badge--soft ax-badge--pill ax-badge--danger">Ongoing</span>
+            <span v-else class="ax-badge ax-badge--soft ax-badge--pill" :class="marketClosed(i) ? 'ax-badge--info' : 'ax-badge--danger'">{{ marketClosed(i) ? 'Paused now' : 'Ongoing' }}</span>
           </td>
           <td class="ax-table__td ax-table__td--num nowrap">{{ duration(elapsed(i)) }}<span v-if="!i.endedAt" class="so-far"> so far</span></td>
           <td class="ax-table__td ax-table__td--num nowrap">{{ usd(i.totalSupplyUsd) }}</td>

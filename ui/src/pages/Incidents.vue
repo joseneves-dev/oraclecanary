@@ -7,7 +7,7 @@ import IncidentLog from '@/components/IncidentLog.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import ReserveTags from '@/components/ReserveTags.vue'
 import { checkMessage, dateTime, duration, protocolName, shortAddress, usd } from '@/lib/format'
-import { MIN_EXPOSED_USD, openIncidents } from '@/lib/incidents'
+import { MIN_EXPOSED_USD, openIncidents, pausedReserves } from '@/lib/incidents'
 
 const router = useRouter()
 
@@ -49,6 +49,11 @@ onMounted(() => {
 
 const open = computed(() => openIncidents(reserves.value))
 const openSupply = computed(() => open.value.reduce((sum, r) => sum + r.totalSupplyUsd, 0))
+/** Stocks paused only because the US market is closed: expected, so listed apart from incidents. */
+const paused = computed(() => pausedReserves(reserves.value))
+const pausedSupply = computed(() => paused.value.reduce((sum, r) => sum + r.totalSupplyUsd, 0))
+/** For a paused stock, the market closure explains it better than the stale-price check. */
+const pausedIssue = (r: Reserve) => checkMessage(r.checks.find((c) => c.code === 'MARKET_CLOSED')?.message ?? mainIssue(r))
 /** How long the oldest open incident has lasted, from the age of its price. */
 const longestOpen = computed(() => Math.max(0, ...open.value.map((r) => r.price.ageSeconds ?? 0)))
 
@@ -106,14 +111,14 @@ watch(
         :loading="loading"
         :tone="open.length ? 'danger' : undefined"
         :value="error ? '—' : String(open.length)"
-        :hint="error ? null : 'Listed reserves with a critical issue and money in them'"
+        :hint="error ? null : 'Listed reserves with a broken price and money in them'"
       />
       <KpiCard
         label="Supply affected"
         :loading="loading"
         :tone="openSupply > 0 ? 'danger' : undefined"
         :value="error ? '—' : usd(openSupply)"
-        :hint="error ? null : 'Deposits in those reserves'"
+        :hint="error ? null : paused.length ? `In those reserves; +${usd(pausedSupply)} paused, market closed` : 'Deposits in those reserves'"
       />
       <KpiCard
         label="Oldest price"
@@ -132,7 +137,7 @@ watch(
         <div class="ax-card__header">
           <div class="ax-card__titles">
             <h2 class="ax-card__title">Open now</h2>
-            <p class="ax-card__subtitle">Borrowing and liquidations are blocked until these prices recover</p>
+            <p class="ax-card__subtitle">Prices the protocol can't use right now</p>
           </div>
         </div>
         <EmptyState v-if="error" tone="error" title="Can't reach the API right now">
@@ -141,8 +146,10 @@ watch(
             <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="loadReserves">Retry</button>
           </template>
         </EmptyState>
-        <EmptyState v-else-if="!loading && !open.length" title="No open incident">Every listed reserve has a price the protocol can use.</EmptyState>
-        <div v-else class="ax-table-wrap">
+        <EmptyState v-else-if="!loading && !open.length" title="No open incident" :compact="paused.length > 0">
+          No listed reserve holding money has a broken price<template v-if="paused.length">; the stocks below are only paused</template>.
+        </EmptyState>
+        <div v-if="!error && (loading || open.length || paused.length)" class="ax-table-wrap">
           <table class="ax-table ax-table--hover ax-table--compact open">
             <thead class="ax-table__head">
               <tr>
@@ -168,6 +175,25 @@ watch(
                 <td class="ax-table__td issue">{{ mainIssue(r) }}</td>
                 <td class="ax-table__td"><ReserveTags :checks="r.checks" /></td>
                 <td class="ax-table__td ax-table__td--num nowrap danger">{{ duration(r.price.ageSeconds) }}</td>
+                <td class="ax-table__td ax-table__td--num nowrap">{{ usd(r.totalSupplyUsd) }}</td>
+              </tr>
+            </tbody>
+            <!-- Paused stocks: expected, so a neutral group of their own rather than incidents. -->
+            <tbody v-if="!loading && paused.length" class="paused">
+              <tr class="paused__head">
+                <th colspan="5" scope="colgroup" class="ax-table__td">
+                  <span class="ax-badge ax-badge--soft ax-badge--pill ax-badge--info">Paused · market closed</span>
+                  Expected: these clear when the US market opens.
+                </th>
+              </tr>
+              <tr v-for="r in paused" :key="r.address" class="ax-table__row row-link" @click="router.push({ name: 'reserve', params: { address: r.address } })">
+                <td class="ax-table__td">
+                  <RouterLink class="asset" :to="{ name: 'reserve', params: { address: r.address } }">{{ r.asset }}</RouterLink>
+                  <div class="muted">{{ protocolName(r.protocol) }} · {{ r.market.name }}</div>
+                </td>
+                <td class="ax-table__td issue">{{ pausedIssue(r) }}</td>
+                <td class="ax-table__td"><ReserveTags :checks="r.checks" /></td>
+                <td class="ax-table__td ax-table__td--num nowrap">{{ duration(r.price.ageSeconds) }}</td>
                 <td class="ax-table__td ax-table__td--num nowrap">{{ usd(r.totalSupplyUsd) }}</td>
               </tr>
             </tbody>
@@ -301,6 +327,16 @@ watch(
   font-size: var(--ax-text-sm);
   max-width: 56ch;
 }
+.paused__head th {
+  font-weight: normal;
+  text-align: start;
+  font-size: var(--ax-text-sm);
+  color: var(--ax-text-muted);
+  background: var(--ax-surface-subtle);
+}
+.paused__head .ax-badge {
+  margin-inline-end: var(--ax-space-2);
+}
 .footnote {
   margin: 0;
   padding: var(--ax-space-3) var(--ax-space-6) var(--ax-space-4);
@@ -344,6 +380,14 @@ watch(
     padding: 0;
     border: 0;
     max-width: none;
+  }
+  .open .paused__head {
+    display: block;
+    padding: 0;
+  }
+  .open .paused__head th {
+    display: block;
+    padding: var(--ax-space-3) var(--ax-space-4);
   }
   .open td:nth-child(1) { grid-area: reserve; }
   .open td:nth-child(2) { grid-area: issue; }

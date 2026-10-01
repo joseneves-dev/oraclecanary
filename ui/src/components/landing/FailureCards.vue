@@ -6,7 +6,7 @@ import type { Severity } from '@/api/client'
 import { fmtInt, fmtUsd } from '@/composables/useLanding'
 
 const props = defineProps<{
-  failing: (codes: string[], severity?: Severity) => { count: number; usd: number } | null
+  failing: (codes: string[], severity?: Severity, excludePaused?: boolean) => { count: number; usd: number } | null
 }>()
 
 interface Card {
@@ -14,6 +14,8 @@ interface Card {
   codes: string[]
   /** Count only checks at this severity, so the number matches the sentence. */
   severity?: Severity
+  /** Leave out stocks paused by market hours (counted on their own card). */
+  excludePaused?: boolean
   issue: string
   tone: 'crit' | 'risk' | 'info'
   tag?: string
@@ -25,6 +27,7 @@ const cards: Card[] = [
   {
     key: 'stale',
     codes: ['STALE'],
+    excludePaused: true,
     issue: 'STALE',
     tone: 'crit',
     title: 'Stale price',
@@ -66,7 +69,7 @@ const cards: Card[] = [
   },
 ]
 
-const rows = computed(() => cards.map((c) => ({ ...c, live: props.failing(c.codes, c.severity) })))
+const rows = computed(() => cards.map((c) => ({ ...c, live: props.failing(c.codes, c.severity, c.excludePaused) })))
 </script>
 
 <template>

@@ -369,6 +369,14 @@ function sides(list: Row[]): string {
   const loans = sum(list.filter((r) => r.side === 'Borrow'))
   return [dep > 0 ? `${usd(dep)} of deposits` : '', loans > 0 ? `${usd(loans)} of loans` : ''].filter(Boolean).join(' and ')
 }
+/**
+ * The amount a headline leads with: the deposits held up (loans are told in the line under it), or
+ * the loans when an account holds no deposit in that state. Deposits and loans are never added up.
+ */
+function heldUp(list: Row[]): string {
+  const dep = sum(list.filter((r) => r.side !== 'Borrow'))
+  return dep > 0 ? `${usd(dep)} of deposits` : `${usd(sum(list.filter((r) => r.side === 'Borrow')))} of loans`
+}
 const namesOf = (state: 'blocked' | 'paused') =>
   [...new Set([...accountStates.value.values()].filter((a) => a.state === state).flatMap((a) => [...a.by]))].join(', ')
 
@@ -389,7 +397,7 @@ const findings = computed<Finding[]>(() => {
     list.push({
       tone: 'danger',
       eyebrow: 'Blocked now',
-      headline: `${usd(sum(blocked))} held up by an unusable price`,
+      headline: `${heldUp(blocked)} held up by an unusable price`,
       text: `${sides(blocked)} are in loan accounts that use a price the protocol cannot use right now (${namesOf('blocked')}). Until it updates, those accounts cannot borrow or withdraw, and cannot be liquidated.`,
     })
   }
@@ -415,7 +423,7 @@ const findings = computed<Finding[]>(() => {
     list.push({
       tone: 'info',
       eyebrow: 'Paused · US market closed',
-      headline: `${usd(sum(paused))} held up until the US market reopens`,
+      headline: `${heldUp(paused)} held up until the US market reopens`,
       text: `${sides(paused)} are in loan accounts that use a tokenized-stock price (${namesOf('paused')}), paused while the US market is closed. This is expected, but until it reopens those accounts cannot borrow or withdraw, and cannot be liquidated.`,
     })
   }

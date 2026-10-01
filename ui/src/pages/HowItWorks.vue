@@ -1,11 +1,57 @@
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { fetchAllReserves, type Reserve } from '@/api/client'
+import { healthState, type HealthState } from '@/lib/priceState'
 
 /**
  * What OracleCanary reads, how it judges a price, and what it does with the result. Written for
  * someone checking whether to trust the numbers; every figure here matches the code (health.ts,
  * run.ts, notify.ts, onchain/).
  */
+
+/** The four parts of the method, as numbered steps that jump to their section. */
+const STEPS = [
+  { no: '01', id: 'reads', title: 'Read the chain', body: 'Every 5 minutes, the oracle setup and price accounts behind every reserve, straight from Solana mainnet.' },
+  { no: '02', id: 'checks', title: 'Score each price', body: 'Each reserve starts at 100 and loses points for every check it fails; its level is its worst check.' },
+  { no: '03', id: 'acts', title: 'Open an incident', body: 'A critical issue that lasts a few minutes opens an incident; reserves holding $10K or more also get a Telegram alert.' },
+  { no: '04', id: 'guard', title: 'Guard on-chain', body: 'A signed attestation lets a Solana program refuse a broken price. Live on devnet only.' },
+]
+
+// ---- Scores right now: how the live listed reserves spread over the 0–100 score. ----
+const reserves = ref<Reserve[] | null>(null)
+const controller = new AbortController()
+onMounted(() => {
+  fetchAllReserves({ listed: true }, controller.signal).then(
+    (rows) => (reserves.value = rows),
+    () => {},
+  )
+})
+onBeforeUnmount(() => controller.abort())
+
+/** Stacking order of a bin, worst at the bottom. */
+const STACK: HealthState[] = ['critical', 'paused', 'warning', 'info', 'ok']
+const BIN_LABELS = ['0–9', '10–19', '20–29', '30–39', '40–49', '50–59', '60–69', '70–79', '80–89', '90–100']
+/** Ten bins (0–9 … 90–100), each split by health; a square-root scale keeps the few low scores visible. */
+const bins = computed(() => {
+  if (!reserves.value) return null
+  const out = BIN_LABELS.map((label) => ({ label, total: 0, by: { critical: 0, paused: 0, warning: 0, info: 0, ok: 0 } as Record<HealthState, number> }))
+  for (const r of reserves.value) {
+    const bin = out[Math.min(9, Math.floor(r.score / 10))]!
+    bin.by[healthState(r)]++
+    bin.total++
+  }
+  const maxRoot = Math.sqrt(Math.max(1, ...out.map((b) => b.total)))
+  return out.map((b) => ({
+    ...b,
+    height: b.total ? 6 + 94 * (Math.sqrt(b.total) / maxRoot) : 0,
+    segments: STACK.filter((h) => b.by[h] > 0).map((h) => ({ h, share: b.by[h] / b.total })),
+  }))
+})
+const HEALTH_NAME: Record<HealthState, string> = { critical: 'critical', paused: 'paused (market closed)', warning: 'warning', info: 'info', ok: 'healthy' }
+const describeBin = (b: { label: string; total: number; by: Record<HealthState, number> }) =>
+  `Score ${b.label}: ${b.total} ${b.total === 1 ? 'reserve' : 'reserves'}` +
+  (b.total ? ` (${STACK.filter((h) => b.by[h]).map((h) => `${b.by[h]} ${HEALTH_NAME[h]}`).join(', ')})` : '')
 
 const REPO = 'https://github.com/joseneves-dev/oraclecanary'
 const GUARD = '444eBJsPgQGT6QfKtESvd21vZQa4YFsuKTodCokTasTT'
@@ -51,10 +97,22 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
       </div>
     </div>
 
+    <nav aria-label="The method in four steps">
+      <ol class="steps">
+        <li v-for="step in STEPS" :key="step.no" class="step">
+          <a :href="`#${step.id}`" class="step__link">
+            <span class="step__no" aria-hidden="true">{{ step.no }}</span>
+            <span class="step__title">{{ step.title }}</span>
+            <span class="step__body">{{ step.body }}</span>
+          </a>
+        </li>
+      </ol>
+    </nav>
+
     <div class="ax-dash-grid">
       <section class="ax-card ax-col--12" aria-labelledby="reads">
         <div class="ax-card__header">
-          <div class="ax-card__titles"><h2 id="reads" class="ax-card__title">1. It reads the chain, not a dashboard</h2></div>
+          <div class="ax-card__titles"><h2 id="reads" class="ax-card__title"><span class="no" aria-hidden="true">01</span>It reads the chain, not a dashboard</h2></div>
         </div>
         <div class="ax-card__body prose">
           <p>
@@ -74,7 +132,7 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
       <section class="ax-card ax-col--12" aria-labelledby="checks">
         <div class="ax-card__header">
           <div class="ax-card__titles">
-            <h2 id="checks" class="ax-card__title">2. The checks and the score</h2>
+            <h2 id="checks" class="ax-card__title"><span class="no" aria-hidden="true">02</span>The checks and the score</h2>
             <p class="ax-card__subtitle">
               Each reserve starts at 100 and loses points for every check it fails, down to 0; its level is its worst check. Both are worked
               out every 5 minutes, and for listed markets the worst of each hour is kept as history. The rules are in
@@ -117,9 +175,44 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
         </div>
       </section>
 
+      <section class="ax-card ax-col--12" aria-labelledby="scores">
+        <div class="ax-card__header">
+          <div class="ax-card__titles">
+            <h2 id="scores" class="ax-card__title">Scores right now</h2>
+            <p class="ax-card__subtitle">Every listed reserve by its live score, coloured by its level</p>
+          </div>
+        </div>
+        <div class="ax-card__body">
+          <div v-if="!bins" class="hist hist--loading" aria-hidden="true">
+            <span v-for="n in 10" :key="n" class="ax-skeleton hist__skeleton" :style="{ height: `${20 + n * 7}%` }"></span>
+          </div>
+          <template v-else>
+            <ol class="hist" :aria-label="`Scores of ${reserves?.length ?? 0} listed reserves`">
+              <li v-for="b in bins" :key="b.label" class="hist__bin" :title="describeBin(b)">
+                <span class="hist__count ax-num">{{ b.total || '' }}</span>
+                <span class="hist__bar" :style="{ height: `${b.height}%` }">
+                  <span v-for="seg in b.segments" :key="seg.h" class="hist__seg" :class="`hist__seg--${seg.h}`" :style="{ flexGrow: seg.share }"></span>
+                </span>
+                <span class="ax-visually-hidden">{{ describeBin(b) }}</span>
+              </li>
+            </ol>
+            <div class="hist__axis ax-chart-axis" aria-hidden="true">
+              <span v-for="b in bins" :key="b.label">{{ b.label }}</span>
+            </div>
+            <p class="hist__legend">
+              <span><i class="hist__seg--critical"></i>Critical</span>
+              <span><i class="hist__seg--paused"></i>Paused, market closed</span>
+              <span><i class="hist__seg--warning"></i>Warning</span>
+              <span><i class="hist__seg--info"></i>Info</span>
+              <span><i class="hist__seg--ok"></i>Healthy</span>
+            </p>
+          </template>
+        </div>
+      </section>
+
       <section class="ax-card ax-col--6" aria-labelledby="acts">
         <div class="ax-card__header">
-          <div class="ax-card__titles"><h2 id="acts" class="ax-card__title">3. When a price breaks</h2></div>
+          <div class="ax-card__titles"><h2 id="acts" class="ax-card__title"><span class="no" aria-hidden="true">03</span>When a price breaks</h2></div>
         </div>
         <div class="ax-card__body prose">
           <p>
@@ -142,7 +235,7 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
 
       <section class="ax-card ax-col--6" aria-labelledby="guard">
         <div class="ax-card__header">
-          <div class="ax-card__titles"><h2 id="guard" class="ax-card__title">4. An on-chain guard (devnet)</h2></div>
+          <div class="ax-card__titles"><h2 id="guard" class="ax-card__title"><span class="no" aria-hidden="true">04</span>An on-chain guard (devnet)</h2></div>
         </div>
         <div class="ax-card__body prose">
           <p>
@@ -208,6 +301,157 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
 }
 .page > .ax-page-head {
   margin-block-end: 0;
+}
+/* The method as numbered steps, in the front page's style. */
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--ax-space-4);
+}
+@media (max-width: 992px) {
+  .steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 480px) {
+  .steps {
+    grid-template-columns: 1fr;
+  }
+}
+.step__link {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    'no title'
+    'no body';
+  gap: var(--ax-space-1) var(--ax-space-3);
+  height: 100%;
+  padding: var(--ax-space-4);
+  border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-lg);
+  background: var(--ax-surface);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+.step__link:hover {
+  border-color: var(--ax-border-strong);
+}
+.step__no {
+  grid-area: no;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--ax-accent);
+  color: var(--ax-accent-text, var(--ax-accent));
+  font-family: var(--ax-font-mono);
+  font-size: var(--ax-text-xs);
+  font-weight: 600;
+}
+.step__title {
+  grid-area: title;
+  font-weight: 600;
+  color: var(--ax-text-strong);
+}
+.step__body {
+  grid-area: body;
+  font-size: var(--ax-text-sm);
+  line-height: 1.5;
+  color: var(--ax-text-muted);
+}
+.ax-card__title .no {
+  display: inline-block;
+  margin-inline-end: var(--ax-space-2);
+  font-family: var(--ax-font-mono);
+  font-size: 0.8em;
+  font-weight: 600;
+  color: var(--ax-accent-text, var(--ax-accent));
+}
+/* Scores right now: ten bins, each stacked by level. */
+.hist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  align-items: end;
+  gap: var(--ax-space-2);
+  height: 160px;
+}
+.hist__bin {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: stretch;
+  height: 100%;
+  min-width: 0;
+}
+.hist__count {
+  text-align: center;
+  font-family: var(--ax-font-mono);
+  font-size: var(--ax-text-2xs);
+  color: var(--ax-text-muted);
+  margin-bottom: 2px;
+}
+.hist__bar {
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: var(--ax-chart-bar-radius, 2px) var(--ax-chart-bar-radius, 2px) 0 0;
+  overflow: hidden;
+  opacity: var(--ax-chart-bar-opacity, 1);
+}
+.hist__seg {
+  display: block;
+  min-height: 2px;
+}
+.hist__seg--critical {
+  background: var(--ax-danger-500);
+}
+.hist__seg--paused {
+  background: var(--ax-info-500);
+}
+.hist__seg--warning {
+  background: var(--ax-warning-500);
+}
+.hist__seg--info {
+  background: var(--ax-text-subtle);
+}
+.hist__seg--ok {
+  background: var(--ax-success-500);
+}
+.hist__skeleton {
+  display: block;
+  align-self: end;
+}
+.hist__axis {
+  margin-top: var(--ax-space-2);
+}
+.hist__axis > span {
+  flex: 1 1 0;
+  text-align: center;
+}
+.hist__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ax-space-2) var(--ax-space-4);
+  margin: var(--ax-space-3) 0 0;
+  font-size: var(--ax-text-xs);
+  color: var(--ax-text-muted);
+}
+.hist__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ax-space-1);
+}
+.hist__legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
 }
 .prose {
   display: grid;

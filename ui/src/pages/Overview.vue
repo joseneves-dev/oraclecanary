@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { fetchAllReserves, fetchIncidents, fetchReserves, fetchStats, type Reserve, type ReserveIncident, type Severity, type Stats } from '@/api/client'
+import { fetchAllReserves, fetchIncidents, fetchReserves, fetchStats, type Reserve, type ReserveIncident, type Stats } from '@/api/client'
 import EmptyState from '@/components/EmptyState.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import ReserveField from '@/components/landing/ReserveField.vue'
@@ -9,11 +9,12 @@ import ReserveTable from '@/components/ReserveTable.vue'
 import { buildLanes, countBySeverity } from '@/composables/useLanding'
 import WalletLookup from '@/components/WalletLookup.vue'
 import { duration, time, usd } from '@/lib/format'
-import { openIncidents } from '@/lib/incidents'
-import { priceState } from '@/lib/priceState'
+import { openIncidents, pausedReserves } from '@/lib/incidents'
+import { healthState, priceState } from '@/lib/priceState'
 
 const router = useRouter()
-const ATTENTION_ROWS = 10
+/** Warnings shown in Needs attention; most are the same single-feed issue, so the rest are counted. */
+const ATTENTION_WARNINGS = 5
 
 const reserves = ref<Reserve[]>([])
 const loading = ref(true)
@@ -61,7 +62,8 @@ const largestFreeze = computed(() => {
   const closures = incidents.value.filter((i) => i.checks.some((c) => c.code === 'MARKET_CLOSED') && seconds(i) >= 3600)
   const largest = [...closures].sort((a, b) => b.totalSupplyUsd - a.totalSupplyUsd)[0]
   if (!largest) return null
-  return { incident: largest, ongoing: !largest.endedAt, label: duration(Math.round(seconds(largest))) }
+  const age = reserves.value.find((r) => r.address === largest.reserve)?.price.ageSeconds ?? null
+  return { incident: largest, ongoing: !largest.endedAt, label: duration(Math.round(seconds(largest))), age: age === null ? null : duration(age) }
 })
 
 const switchboardListed = computed(() => switchboard.value?.filter((r) => r.market.name) ?? [])
@@ -71,6 +73,8 @@ const totalSupply = computed(() => reserves.value.reduce((sum, r) => sum + r.tot
 const protocolCount = computed(() => new Set(reserves.value.map((r) => r.protocol)).size)
 /** Same definition as the Incidents page and the front page. */
 const openNow = computed(() => openIncidents(reserves.value))
+/** Stocks paused only because the US market is closed: expected, so counted apart from incidents. */
+const pausedNow = computed(() => pausedReserves(reserves.value))
 const warnings = computed(() => reserves.value.filter((r) => r.severity === 'warning'))
 /**
  * Deposits whose price the protocol cannot use right now, apart from stocks paused by their closed
@@ -82,7 +86,7 @@ const paused = computed(() => reserves.value.filter((r) => r.totalSupplyUsd >= B
 const supplyOf = (list: Reserve[]) => list.reduce((sum, r) => sum + r.totalSupplyUsd, 0)
 
 /** Critical reserves under the $1K floor: told apart, so the figures above them stay meaningful. */
-const smallCritical = computed(() => reserves.value.filter((r) => r.severity === 'critical' && r.totalSupplyUsd < BLOCKED_MIN_USD))
+const smallCritical = computed(() => reserves.value.filter((r) => healthState(r) === 'critical' && r.totalSupplyUsd < BLOCKED_MIN_USD))
 
 /** The plain-language answer at the top of the page, from the same figures as the tiles. */
 const verdict = computed(() => {
@@ -96,15 +100,12 @@ const verdict = computed(() => {
   return `${head}${pausedPart}.${smallPart}`
 })
 
-const SEVERITY_RANK: Record<Severity, number> = { ok: 0, info: 1, warning: 2, critical: 3 }
-
-/** Critical issues first, then the largest warnings. */
-const needsAttention = computed(() =>
-  reserves.value
-    .filter((r) => (r.severity === 'critical' && r.totalSupplyUsd >= BLOCKED_MIN_USD) || r.severity === 'warning')
-    .sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || b.totalSupplyUsd - a.totalSupplyUsd)
-    .slice(0, ATTENTION_ROWS),
-)
+const bySupply = (a: Reserve, b: Reserve) => b.totalSupplyUsd - a.totalSupplyUsd
+const bigCritical = computed(() => reserves.value.filter((r) => healthState(r) === 'critical' && r.totalSupplyUsd >= BLOCKED_MIN_USD).sort(bySupply))
+const warningRows = computed(() => reserves.value.filter((r) => healthState(r) === 'warning').sort(bySupply))
+/** Broken prices first, then market-hours pauses, then the largest warnings. */
+const needsAttention = computed(() => [...bigCritical.value, ...pausedNow.value, ...warningRows.value.slice(0, ATTENTION_WARNINGS)])
+const moreWarnings = computed(() => Math.max(0, warningRows.value.length - ATTENTION_WARNINGS))
 
 /**
  * Scope entry types that describe a token's structure (a peg, a staking or maturity rate)
@@ -131,12 +132,8 @@ const lastChecked = computed(() => (Number.isFinite(latestCheck.value) ? time(la
 /** Checks run every 5 minutes; three missed runs in a row mean the figures are no longer live. */
 const STALE_AFTER_MS = 15 * 60_000
 const fresh = computed(() => Number.isFinite(latestCheck.value) && Date.now() - latestCheck.value < STALE_AFTER_MS)
-/** The status dot: grey offline, amber when the data is not live, red while any listed reserve is critical, green otherwise. */
-const statusTone = computed(() => {
-  if (error.value || loading.value) return 'muted'
-  if (!fresh.value) return 'warning'
-  return reserves.value.some((r) => r.severity === 'critical') ? 'danger' : 'success'
-})
+/** The status dot is about the data only: grey offline, amber when not live, green when fresh. Health is in the tiles. */
+const statusTone = computed(() => (error.value || loading.value ? 'muted' : fresh.value ? 'success' : 'warning'))
 </script>
 
 <template>
@@ -180,7 +177,11 @@ const statusTone = computed(() => {
         :loading="loading"
         :value="error ? '—' : String(openNow.length)"
         :tone="openNow.length ? 'danger' : undefined"
-        :hint="error ? null : 'Listed reserves with a critical issue and money in them'"
+        :hint="
+          error
+            ? null
+            : `Listed reserves with a broken price and money in them${pausedNow.length ? `; +${pausedNow.length} paused while the US market is closed` : ''}`
+        "
         :to="error ? undefined : { name: 'incidents' }"
       />
       <KpiCard
@@ -239,8 +240,9 @@ const statusTone = computed(() => {
           <span class="story__kicker">Frozen by market hours</span>
           <span class="story__text">
             <template v-if="largestFreeze.ongoing">
-              {{ largestFreeze.incident.asset }} ({{ usd(largestFreeze.incident.totalSupplyUsd) }}) has had no usable price for
-              {{ largestFreeze.label }} while the US market is closed, so loans against it cannot be liquidated.
+              <!-- The same figure as the reserve's row: the age of its last price. -->
+              {{ largestFreeze.incident.asset }} ({{ usd(largestFreeze.incident.totalSupplyUsd) }}) is paused while the US market is
+              closed<template v-if="largestFreeze.age">: its last price is {{ largestFreeze.age }} old</template>, so loans against it cannot be liquidated.
             </template>
             <template v-else>
               {{ largestFreeze.incident.asset }} ({{ usd(largestFreeze.incident.totalSupplyUsd) }}) had no usable price for {{ largestFreeze.label }}
@@ -264,18 +266,26 @@ const statusTone = computed(() => {
           <div class="ax-card__header">
             <div class="ax-card__titles">
               <h2 id="attention-title" class="ax-card__title">Needs attention</h2>
-              <p class="ax-card__subtitle">Critical issues first, then the largest warnings</p>
+              <p class="ax-card__subtitle">Broken prices first, then market-hours pauses, then the largest warnings</p>
             </div>
             <div class="ax-card__actions">
               <RouterLink class="ax-btn ax-btn--secondary ax-btn--sm" :to="{ name: 'reserves', query: { health: 'issues' } }">All with issues</RouterLink>
             </div>
           </div>
-          <ReserveTable v-if="loading || needsAttention.length" compact :rows="needsAttention" :loading-rows="loading ? 6 : 0" />
-          <p v-if="!loading && smallCritical.length" class="attention-note">
-            + {{ smallCritical.length }} critical {{ smallCritical.length === 1 ? 'reserve' : 'reserves' }} holding under $1K, left out of this list.
-            <RouterLink :to="{ name: 'reserves', query: { health: 'critical' } }">All with score ≤ 50 →</RouterLink>
-          </p>
-          <EmptyState v-else title="All clear">No reserve holding $1K or more has a critical issue, and none has a warning.</EmptyState>
+          <template v-if="loading || needsAttention.length">
+            <ReserveTable compact :rows="needsAttention" :loading-rows="loading ? 6 : 0" />
+            <div v-if="!loading && (moreWarnings || smallCritical.length)" class="attention-note">
+              <p v-if="moreWarnings">
+                + {{ moreWarnings }} more {{ moreWarnings === 1 ? 'reserve' : 'reserves' }} with a warning.
+                <RouterLink :to="{ name: 'reserves', query: { health: 'issues' } }">All with issues →</RouterLink>
+              </p>
+              <p v-if="smallCritical.length">
+                + {{ smallCritical.length }} critical {{ smallCritical.length === 1 ? 'reserve' : 'reserves' }} holding under $1K.
+                <RouterLink :to="{ name: 'reserves', query: { health: 'critical' } }">All with score ≤ 50 →</RouterLink>
+              </p>
+            </div>
+          </template>
+          <EmptyState v-else title="All clear">No reserve holding $1K or more has a broken price, and none has a warning.</EmptyState>
         </section>
 
         <section class="ax-card ax-col--4" aria-labelledby="providers-title">
@@ -430,6 +440,8 @@ const statusTone = computed(() => {
 }
 
 .attention-note {
+  display: grid;
+  gap: var(--ax-space-1);
   margin: 0;
   padding: var(--ax-space-3) var(--ax-space-6);
   font-size: var(--ax-text-xs);

@@ -17,3 +17,11 @@ export function priceState(reserve: { checks: { code: string; severity: string }
   if (critical.length || reserve.severity === 'warning') return 'weak'
   return 'ok'
 }
+
+/** What a reserve's health reads as on every page: a market-hours pause is shown apart from critical. */
+export type HealthState = 'critical' | 'paused' | 'warning' | 'info' | 'ok'
+
+export function healthState(reserve: { checks: { code: string; severity: string }[]; severity: string }): HealthState {
+  if (reserve.severity === 'critical' && priceState(reserve) === 'paused') return 'paused'
+  return reserve.severity as HealthState
+}

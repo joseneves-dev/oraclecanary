@@ -1,4 +1,5 @@
 import type { Severity } from '@/api/client'
+import type { HealthState } from '@/lib/priceState'
 
 // Three significant digits everywhere (the front page uses the same function), so a figure reads
 // the same on every page: $4.01B, $26.9M, $628M, $1.00K. Under $1,000 there is no unit to scale, so
@@ -107,6 +108,20 @@ export const PROTOCOL_NAME: Record<string, string> = { kamino: 'Kamino', marginf
 /** Kamino, marginfi, Jupiter Lend; unknown ids are shown as they are. */
 export function protocolName(protocol: string): string {
   return PROTOCOL_NAME[protocol] ?? protocol
+}
+
+/**
+ * How a reserve's health reads (lib/priceState.ts healthState): a stock paused only because its
+ * market is closed is told apart from a broken price, in the info colour, on every page.
+ */
+export const HEALTH_LABEL: Record<HealthState, string> = { ...SEVERITY_LABEL, paused: 'Paused · market closed' }
+export const HEALTH_BADGE: Record<HealthState, string> = { ...SEVERITY_BADGE, paused: 'ax-badge--info' }
+export const HEALTH_TONE: Record<HealthState, 'danger' | 'warning' | 'info' | undefined> = {
+  critical: 'danger',
+  paused: 'info',
+  warning: 'warning',
+  info: undefined,
+  ok: undefined,
 }
 
 /** The colour a value takes for each health level: only bad news is coloured. */

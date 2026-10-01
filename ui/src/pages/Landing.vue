@@ -3,7 +3,7 @@
  * The front page, outside the app shell. A dark "mine" lit by a canary-yellow lamp (warm paper in
  * light mode), with the live reserve field as its signature. Every number comes from the API.
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { fmtAgo, fmtInt, fmtUsd, useLanding } from '@/composables/useLanding'
 import LandingNav from '@/components/landing/LandingNav.vue'
@@ -19,6 +19,12 @@ import LandingFooter from '@/components/landing/LandingFooter.vue'
 const L = useLanding()
 const { reservesFailed, reserves, incidents, changes, now, totalUsd, bySeverity, lastChecked, protocols, failing, unusable, open } = L
 
+const mainEl = ref<HTMLElement | null>(null)
+function skipToMain() {
+  mainEl.value?.focus()
+  mainEl.value?.scrollIntoView()
+}
+
 function retry() {
   reservesFailed.value = false
   void L.reload()
@@ -33,9 +39,10 @@ const sample = computed(() => {
 
 <template>
   <div class="landing">
+    <a href="#main" class="skip" @click.prevent="skipToMain">Skip to content</a>
     <LandingNav />
 
-    <main>
+    <main id="main" ref="mainEl" tabindex="-1">
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero__lamp" aria-hidden="true" />
         <svg class="hero__strata" viewBox="0 0 1440 640" preserveAspectRatio="none" aria-hidden="true">
@@ -80,7 +87,7 @@ const sample = computed(() => {
                 <dt>Money blocked now</dt>
                 <dd v-if="!unusable || !bySeverity" class="lp-num">—</dd>
                 <dd v-else-if="unusable.blockedUsd > 0" class="lp-num crit">{{ fmtUsd(unusable.blockedUsd) }}</dd>
-                <dd v-else-if="bySeverity.critical > 0" class="lp-num">$0 <small class="plain">blocked</small></dd>
+                <dd v-else-if="bySeverity.critical > 0" class="lp-num">$0</dd>
                 <dd v-else class="lp-num calm">$0 <small>every price usable</small></dd>
                 <template v-if="unusable">
                   <p v-if="unusable.blockedCount > 0" class="readout__note">
@@ -96,6 +103,7 @@ const sample = computed(() => {
                 <dt>Open incidents</dt>
                 <dd class="lp-num" :class="{ warn: (open?.count ?? 0) > 0 }">{{ open ? fmtInt(open.count) : '—' }}</dd>
                 <p v-if="open && open.count > 0" class="readout__note">{{ open.atStake }} with $10K+ at stake</p>
+                <p v-if="open && open.paused > 0" class="readout__note">+{{ open.paused }} paused, market closed</p>
               </div>
             </dl>
           </ReserveField>
@@ -197,6 +205,28 @@ const sample = computed(() => {
   --lp-em-mark: none;
 }
 
+.landing .skip {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 200;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--lp-accent);
+  color: #1a1400;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-160%);
+  transition: transform 0.15s;
+}
+.landing .skip:focus {
+  transform: none;
+  outline: 2px solid var(--lp-ink);
+  outline-offset: 2px;
+}
+.landing main:focus {
+  outline: none;
+}
 .landing ::selection {
   background: var(--lp-accent);
   color: #1a1400;

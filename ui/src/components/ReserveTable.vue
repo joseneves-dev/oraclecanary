@@ -3,7 +3,8 @@ import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Reserve, Severity } from '@/api/client'
 import ReserveTags from '@/components/ReserveTags.vue'
-import { SEVERITY_LABEL, SEVERITY_TONE, checkMessage, duration, protocolName, shortAddress, usd } from '@/lib/format'
+import { HEALTH_LABEL, HEALTH_TONE, checkMessage, duration, protocolName, shortAddress, usd } from '@/lib/format'
+import { healthState } from '@/lib/priceState'
 import { hasTags } from '@/lib/tags'
 
 export type SortKey = 'score' | 'totalSupplyUsd' | 'priceAgeSeconds' | 'asset'
@@ -44,8 +45,12 @@ const ariaSort = (key: SortKey) => (props.sortKey === key ? (props.sortDir === '
 
 const SEVERITY_ORDER: Severity[] = ['critical', 'warning', 'info']
 
-/** The check a user should read first: the most severe one. */
+/** The check a user should read first: the most severe one, or the market closure for a paused stock. */
 function mainIssue(r: Reserve): string {
+  if (healthState(r) === 'paused') {
+    const closed = r.checks.find((c) => c.code === 'MARKET_CLOSED')
+    if (closed) return checkMessage(closed.message)
+  }
   for (const severity of SEVERITY_ORDER) {
     const check = r.checks.find((c) => c.severity === severity)
     if (check) return checkMessage(check.message)
@@ -103,13 +108,13 @@ const MAX_ORACLES = 2
               {{ subLine(r) }}
             </span>
           </td>
-          <td class="ax-table__td col-score" :title="`${SEVERITY_LABEL[r.severity]}: health score ${r.score} of 100`">
+          <td class="ax-table__td col-score" :title="`${HEALTH_LABEL[healthState(r)]}: health score ${r.score} of 100`">
             <span class="health">
-              <span class="score ax-num" :class="SEVERITY_TONE[r.severity] && `score--${SEVERITY_TONE[r.severity]}`">{{ r.score }}</span>
-              <span class="meter" :class="SEVERITY_TONE[r.severity] && `meter--${SEVERITY_TONE[r.severity]}`" aria-hidden="true">
+              <span class="score ax-num" :class="HEALTH_TONE[healthState(r)] && `score--${HEALTH_TONE[healthState(r)]}`">{{ r.score }}</span>
+              <span class="meter" :class="HEALTH_TONE[healthState(r)] && `meter--${HEALTH_TONE[healthState(r)]}`" aria-hidden="true">
                 <span :style="{ width: `${Math.max(0, Math.min(100, r.score))}%` }"></span>
               </span>
-              <span class="ax-visually-hidden">{{ SEVERITY_LABEL[r.severity] }}</span>
+              <span class="ax-visually-hidden">{{ HEALTH_LABEL[healthState(r)] }}</span>
             </span>
           </td>
           <td class="ax-table__td col-issue">
@@ -265,6 +270,9 @@ th.col-asset {
 .score--danger {
   color: var(--ax-danger-500);
 }
+.score--info {
+  color: var(--ax-info-500);
+}
 .score--warning {
   color: var(--ax-warning-500);
 }
@@ -284,6 +292,9 @@ th.col-asset {
 }
 .meter--danger span {
   background: var(--ax-danger-500);
+}
+.meter--info span {
+  background: var(--ax-info-500);
 }
 .meter--warning span {
   background: var(--ax-warning-500);

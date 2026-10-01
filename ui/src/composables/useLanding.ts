@@ -13,9 +13,9 @@ import {
   type ReserveIncident,
   type Severity,
 } from '@/api/client'
-import { priceState } from '@/lib/priceState'
+import { healthState, priceState, type HealthState } from '@/lib/priceState'
 import { usd } from '@/lib/format'
-import { openIncidents as listOpenIncidents } from '@/lib/incidents'
+import { openIncidents as listOpenIncidents, pausedReserves } from '@/lib/incidents'
 
 export const PROTOCOLS = [
   { id: 'kamino', name: 'Kamino' },
@@ -30,6 +30,19 @@ export function protocolName(id: string): string {
 }
 
 export const SEVERITIES: Severity[] = ['ok', 'info', 'warning', 'critical']
+
+/** The five ways a reserve's health reads on every page (lib/priceState healthState), legend order. */
+export const HEALTH_STATES: HealthState[] = ['ok', 'info', 'warning', 'paused', 'critical']
+
+export const HEALTH_LABEL: Record<HealthState, string> = {
+  ok: 'Healthy',
+  info: 'Info',
+  warning: 'Warning',
+  paused: 'Paused · market closed',
+  critical: 'Critical',
+}
+
+export type HealthCounts = Record<HealthState, number>
 
 export const SEVERITY_LABEL: Record<Severity, string> = {
   ok: 'Healthy',
@@ -111,11 +124,12 @@ export function useLanding() {
   })
 
   /** Reserves failing any of `codes`, and the deposits in them. */
-  function failing(codes: string[], severity?: Severity): { count: number; usd: number } | null {
+  function failing(codes: string[], severity?: Severity, excludePaused = false): { count: number; usd: number } | null {
     if (!reserves.value) return null
     let count = 0
     let usd = 0
     for (const r of reserves.value) {
+      if (excludePaused && healthState(r) === 'paused') continue
       if (r.checks.some((c) => codes.includes(c.code) && (!severity || c.severity === severity))) {
         count++
         usd += r.totalSupplyUsd ?? 0
@@ -134,7 +148,7 @@ export function useLanding() {
     for (const r of reserves.value) {
       const usd = r.totalSupplyUsd ?? 0
       if (usd < BLOCKED_FLOOR_USD) {
-        if (r.severity === 'critical') out.criticalUnderFloor++
+        if (healthState(r) === 'critical') out.criticalUnderFloor++
         continue
       }
       const state = priceState(r)
@@ -153,7 +167,11 @@ export function useLanding() {
   const open = computed(() => {
     if (!reserves.value) return null
     const rows = listOpenIncidents(reserves.value)
-    return { count: rows.length, atStake: rows.filter((r) => (r.totalSupplyUsd ?? 0) >= FEED_MIN_USD).length }
+    return {
+      count: rows.length,
+      atStake: rows.filter((r) => (r.totalSupplyUsd ?? 0) >= FEED_MIN_USD).length,
+      paused: pausedReserves(reserves.value).length,
+    }
   })
 
   const protocols = computed(() => buildLanes(reserves.value))
@@ -188,9 +206,10 @@ export function buildLanes(reserves: Reserve[] | null): FieldLane[] {
   })
 }
 
-export function countBySeverity(reserves: Reserve[]): Record<Severity, number> {
-  const out: Record<Severity, number> = { ok: 0, info: 0, warning: 0, critical: 0 }
-  for (const r of reserves) out[r.severity] = (out[r.severity] ?? 0) + 1
+/** Reserves per health state (healthState: a market-hours pause counts as paused, not critical). */
+export function countBySeverity(reserves: Reserve[]): HealthCounts {
+  const out: HealthCounts = { ok: 0, info: 0, warning: 0, paused: 0, critical: 0 }
+  for (const r of reserves) out[healthState(r)]++
   return out
 }
 

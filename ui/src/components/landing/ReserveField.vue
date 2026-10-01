@@ -10,15 +10,16 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import { useRouter } from 'vue-router'
-import type { Reserve, Severity } from '@/api/client'
-import { checkLabel, fmtInt, fmtSeconds, fmtUsd, protocolName, SEVERITIES, SEVERITY_LABEL, type FieldLane } from '@/composables/useLanding'
+import type { Reserve } from '@/api/client'
+import { healthState, type HealthState } from '@/lib/priceState'
+import { checkLabel, fmtInt, fmtSeconds, fmtUsd, protocolName, HEALTH_LABEL, HEALTH_STATES, type FieldLane, type HealthCounts } from '@/composables/useLanding'
 
 const props = withDefaults(
   defineProps<{
     /** One lane per protocol (buildLanes(reserves) from useLanding); rows null while loading. */
     lanes: FieldLane[]
-    /** countBySeverity(reserves), or null while loading. */
-    bySeverity: Record<Severity, number> | null
+    /** countBySeverity(reserves) (five health states), or null while loading. */
+    bySeverity: HealthCounts | null
     /** The reserves could not be loaded: shows a retry instead of the loading note. */
     failed?: boolean
     /** Shorter plot, no hint line: for embedding in the app. */
@@ -33,7 +34,7 @@ const titleId = `rf-${useId()}`
 const ready = computed(() => props.lanes.every((l) => l.rows))
 
 /** Worst first, so each protocol reads as bands of colour. */
-const SEV_ORDER: Record<Severity, number> = { critical: 0, warning: 1, info: 2, ok: 3 }
+const SEV_ORDER: Record<HealthState, number> = { critical: 0, paused: 1, warning: 2, info: 3, ok: 4 }
 
 /** Height: deposits on a log scale from $1K (floor) to $10B, as a share of the lane. */
 function height(usd: number): number {
@@ -43,6 +44,8 @@ function height(usd: number): number {
 
 interface Mark {
   r: Reserve
+  /** healthState: a market-hours pause is drawn apart from critical. */
+  s: HealthState
   i: number
   y: number
   h: number
@@ -50,14 +53,14 @@ interface Mark {
 
 const segments = computed(() =>
   props.lanes.map((l) => {
-    const rows = [...(l.rows ?? [])].sort(
-      (a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity] || (b.totalSupplyUsd ?? 0) - (a.totalSupplyUsd ?? 0),
-    )
-    const marks: Mark[] = rows.map((r, i) => {
+    const rows = (l.rows ?? [])
+      .map((r) => ({ r, s: healthState(r) }))
+      .sort((a, b) => SEV_ORDER[a.s] - SEV_ORDER[b.s] || (b.r.totalSupplyUsd ?? 0) - (a.r.totalSupplyUsd ?? 0))
+    const marks: Mark[] = rows.map(({ r, s }, i) => {
       const h = height(r.totalSupplyUsd ?? 0)
-      return { r, i, h, y: 50 - h / 2 }
+      return { r, s, i, h, y: 50 - h / 2 }
     })
-    const critical = marks.filter((m) => m.r.severity === 'critical').length
+    const critical = marks.filter((m) => m.s === 'critical').length
     return { ...l, marks, critical, n: Math.max(1, marks.length) }
   }),
 )
@@ -69,11 +72,12 @@ const placeholder = Array.from({ length: 64 }, (_, i) => {
 })
 
 /* ── hover / tap ─────────────────────────────────────────────────── */
-const hover = ref<{ seg: number; idx: number; x: number; y: number; touch: boolean } | null>(null)
-const hovered = computed(() => {
+const hover = ref<{ seg: number; idx: number; x: number; y: number; flip: boolean; above: boolean; touch: boolean } | null>(null)
+const hoveredMark = computed(() => {
   const h = hover.value
-  return h ? (segments.value[h.seg]?.marks[h.idx]?.r ?? null) : null
+  return h ? (segments.value[h.seg]?.marks[h.idx] ?? null) : null
 })
+const hovered = computed(() => hoveredMark.value?.r ?? null)
 
 // A shown tooltip is fixed to the viewport: drop it on scroll, or on a tap outside the field.
 const strip = ref<HTMLElement | null>(null)
@@ -97,11 +101,18 @@ function pick(e: PointerEvent, seg: number): number | null {
   const n = segments.value[seg]?.marks.length ?? 0
   if (!n) return null
   const idx = Math.min(n - 1, Math.max(0, Math.floor(((e.clientX - rect.left) / rect.width) * n)))
+  // Anchored beside the mark, at the middle of the plot; flips to the left near the right edge.
+  // On a phone there is no room beside it: centred above the lane instead.
+  const markX = rect.left + ((idx + 0.5) / n) * rect.width
+  const narrow = window.innerWidth < 600
+  const flip = !narrow && markX > window.innerWidth - 320
   hover.value = {
     seg,
     idx,
-    x: Math.min(window.innerWidth - 150, Math.max(150, rect.left + ((idx + 0.5) / n) * rect.width)),
-    y: rect.top,
+    x: narrow ? Math.min(window.innerWidth - 150, Math.max(150, markX)) : flip ? markX - 14 : markX + 14,
+    y: narrow ? rect.top : rect.top + rect.height / 2,
+    flip,
+    above: narrow,
     touch: e.pointerType !== 'mouse',
   }
   return idx
@@ -145,8 +156,8 @@ function worstCheck(r: Reserve): string | null {
         <span class="field__sub">One mark per listed reserve · height = deposits (log) · colour = price health</span>
       </div>
       <ul class="field__legend" aria-label="Reserves by price health">
-        <li v-for="s in SEVERITIES" :key="s" :class="`sev-${s}`">
-          <i class="dot" aria-hidden="true" />{{ SEVERITY_LABEL[s] }}
+        <li v-for="s in HEALTH_STATES" :key="s" :class="`sev-${s}`">
+          <i class="dot" aria-hidden="true" />{{ HEALTH_LABEL[s] }}
           <b class="num">{{ bySeverity ? fmtInt(bySeverity[s]) : '—' }}</b>
         </li>
       </ul>
@@ -180,7 +191,7 @@ function worstCheck(r: Reserve): string | null {
               <line x1="0" x2="100%" y1="50" y2="50" class="axis" vector-effect="non-scaling-stroke" />
               <rect v-if="hover && hover.seg === si" :x="hover.idx" y="0" width="1" height="100" class="hover-col" />
               <rect
-                v-for="m in s.marks.filter((m) => m.r.severity === 'critical')"
+                v-for="m in s.marks.filter((m) => m.s === 'critical')"
                 :key="'c' + m.r.address"
                 :x="m.i - 0.6"
                 y="0"
@@ -196,7 +207,7 @@ function worstCheck(r: Reserve): string | null {
                 width="0.68"
                 :height="m.h"
                 rx="0.3"
-                :class="['bar', `sev-${m.r.severity}`, { 'is-hover': hover && hover.seg === si && hover.idx === m.i }]"
+                :class="['bar', `sev-${m.s}`, { 'is-hover': hover && hover.seg === si && hover.idx === m.i }]"
               />
             </svg>
             <svg v-else viewBox="0 0 64 100" preserveAspectRatio="none" aria-hidden="true">
@@ -216,7 +227,7 @@ function worstCheck(r: Reserve): string | null {
           </div>
           <div class="seg__plot">
             <svg v-if="ready" :viewBox="`0 0 ${s.n} 100`" preserveAspectRatio="none">
-              <rect v-for="m in s.marks" :key="m.r.address" :x="m.i + 0.16" :y="m.y" width="0.68" :height="m.h" rx="0.3" :class="['bar', `sev-${m.r.severity}`]" />
+              <rect v-for="m in s.marks" :key="m.r.address" :x="m.i + 0.16" :y="m.y" width="0.68" :height="m.h" rx="0.3" :class="['bar', `sev-${m.s}`]" />
             </svg>
             <svg v-else viewBox="0 0 100 100" preserveAspectRatio="none">
               <line x1="0" x2="100" y1="50" y2="50" class="axis axis--lit" vector-effect="non-scaling-stroke" />
@@ -242,11 +253,18 @@ function worstCheck(r: Reserve): string | null {
     </footer>
 
     <Teleport to="body">
-      <div v-if="hover && hovered" class="lp-tip" :class="`sev-${hovered.severity}`" :style="{ left: `${hover.x}px`, top: `${hover.y}px` }" role="tooltip">
+      <div
+        v-if="hover && hovered && hoveredMark"
+        class="lp-tip"
+        :class="[`sev-${hoveredMark.s}`, { 'lp-tip--flip': hover.flip, 'lp-tip--above': hover.above }]"
+        :style="{ left: `${hover.x}px`, top: `${hover.y}px` }"
+        role="tooltip"
+      >
         <div class="lp-tip__row">
           <b class="lp-tip__asset">{{ hovered.asset }}</b>
           <span class="lp-tip__score"><i class="lp-tip__dot" />{{ hovered.score }}<small>/100</small></span>
         </div>
+        <div v-if="hoveredMark.s === 'paused'" class="lp-tip__state">Paused · market closed</div>
         <div class="lp-tip__meta">{{ protocolName(hovered.protocol) }}<template v-if="hovered.market?.name"> · {{ hovered.market.name }}</template></div>
         <dl class="lp-tip__grid">
           <dt>Price age</dt>
@@ -281,7 +299,7 @@ function worstCheck(r: Reserve): string | null {
 .lp-tip {
   position: fixed;
   z-index: 100;
-  transform: translate(-50%, calc(-100% - 10px));
+  transform: translateY(-50%);
   min-width: 220px;
   max-width: 280px;
   padding: 12px 14px;
@@ -293,6 +311,18 @@ function worstCheck(r: Reserve): string | null {
   font-family: 'Inter', system-ui, sans-serif;
   font-size: 13px;
   pointer-events: none;
+}
+.lp-tip--flip {
+  transform: translate(-100%, -50%);
+}
+.lp-tip--above {
+  transform: translate(-50%, calc(-100% - 10px));
+}
+.lp-tip__state {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8fb3d9;
 }
 .lp-tip__row {
   display: flex;
@@ -330,6 +360,9 @@ function worstCheck(r: Reserve): string | null {
   --sev: #4ade80;
 }
 .lp-tip.sev-info {
+  --sev: #a8a090;
+}
+.lp-tip.sev-paused {
   --sev: #8fb3d9;
 }
 .lp-tip.sev-warning {
@@ -388,6 +421,7 @@ function worstCheck(r: Reserve): string | null {
   --rf-focus: var(--lp-focus, var(--ax-focus-ring, #935a06));
   --rf-ok: var(--lp-ok, var(--ax-sev-ok, #16a34a));
   --rf-info: var(--lp-info, var(--ax-sev-info, #4a6f96));
+  --rf-neutral: var(--lp-ink-3, var(--ax-text-muted, #8a8170));
   --rf-warn: var(--lp-warn, var(--ax-sev-warn, #ea580c));
   --rf-crit: var(--lp-crit, var(--ax-sev-crit, #dc2626));
   --rf-crit-text: var(--lp-crit-text, var(--ax-sev-crit-text, #c81e1e));
@@ -484,6 +518,9 @@ function worstCheck(r: Reserve): string | null {
   --c: var(--rf-ok);
 }
 .sev-info {
+  --c: var(--rf-neutral);
+}
+.sev-paused {
   --c: var(--rf-info);
 }
 .sev-warning {
@@ -651,6 +688,9 @@ function worstCheck(r: Reserve): string | null {
 .bar.sev-info {
   opacity: var(--rf-bar-warn);
 }
+.bar.sev-paused {
+  opacity: 0.9;
+}
 .bar.sev-critical {
   opacity: 1;
   animation: lp-pulse 1.6s ease-in-out infinite;
@@ -709,7 +749,7 @@ function worstCheck(r: Reserve): string | null {
 .only-coarse {
   display: none;
 }
-@media (hover: none) {
+@media (hover: none), (pointer: coarse) {
   .only-fine {
     display: none;
   }

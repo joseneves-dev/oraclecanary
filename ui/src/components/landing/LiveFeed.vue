@@ -8,7 +8,7 @@ import { duration } from '@/lib/format'
 
 const props = defineProps<{
   incidents: ReserveIncident[] | null
-  open: { count: number; atStake: number } | null
+  open: { count: number; atStake: number; paused: number } | null
   changes: ConfigChange[] | null
   now: number
 }>()
@@ -21,6 +21,8 @@ interface Group {
   ongoing: boolean
   paused: boolean
   why: string
+  /** Start of the oldest incident in the group. */
+  oldest: number
 }
 
 /** Incidents of the same reserve collapse into one row ("FWDI ×4"), at its most recent one. */
@@ -33,6 +35,7 @@ const groups = computed<Group[] | null>(() => {
     if (seen) {
       seen.count++
       if (!i.endedAt) seen.ongoing = true
+      seen.oldest = Math.min(seen.oldest, Date.parse(i.startedAt))
       continue
     }
     const codes = [...new Set(i.checks.filter((c) => c.severity === 'critical').map((c) => checkLabel(c.code)))]
@@ -42,6 +45,7 @@ const groups = computed<Group[] | null>(() => {
       ongoing: !i.endedAt,
       paused: i.checks.some((c) => c.code === 'MARKET_CLOSED'),
       why: codes.join(', '),
+      oldest: Date.parse(i.startedAt),
     })
     byReserve.set(i.reserve, out[out.length - 1]!)
   }
@@ -49,6 +53,12 @@ const groups = computed<Group[] | null>(() => {
 })
 
 const hasChanges = computed(() => !!props.changes?.length)
+
+/** "4 times in 3 days": how often this reserve broke within the incidents shown. */
+function timesLabel(g: Group): string {
+  const days = Math.max(1, Math.ceil((props.now - g.oldest) / 86_400_000))
+  return `${g.count} times in ${days} ${days === 1 ? 'day' : 'days'}`
+}
 
 /** Measured from the incident's start, as the app's incident log does. */
 function timing(i: ReserveIncident): string {
@@ -71,6 +81,7 @@ function timing(i: ReserveIncident): string {
           <template v-if="open">
             <b class="lp-num" :class="{ hot: open.count > 0 }">{{ fmtInt(open.count) }}</b> open
             <template v-if="open.count > 0">· <b class="lp-num">{{ fmtInt(open.atStake) }}</b> with $10K+ at stake</template>
+            <template v-if="open.paused > 0">· <b class="lp-num">{{ fmtInt(open.paused) }}</b> paused, market closed</template>
           </template>
           <template v-else>—</template>
         </p>
@@ -92,7 +103,7 @@ function timing(i: ReserveIncident): string {
                 <span class="row__main">
                   <span class="row__title">
                     <b>{{ g.first.asset }}</b>
-                    <span v-if="g.count > 1" class="times lp-num">×{{ g.count }}</span>
+                    <span v-if="g.count > 1" class="times" :title="timesLabel(g)">{{ timesLabel(g) }}</span>
                     <span v-if="g.paused" class="chip">paused · market closed</span>
                   </span>
                   <span class="row__meta">{{ protocolName(g.first.protocol) }}<template v-if="g.first.marketName"> · {{ g.first.marketName }}</template></span>
@@ -249,6 +260,7 @@ function timing(i: ReserveIncident): string {
   font-size: 15px;
 }
 .times {
+  white-space: nowrap;
   font-size: 12px;
   font-weight: 600;
   color: var(--lp-ink-2);

@@ -9,7 +9,7 @@ import { RouterLink, type RouteLocationRaw } from 'vue-router'
 const props = defineProps<{
   label: string
   value: string
-  tone?: 'danger' | 'warning' | 'success'
+  tone?: 'danger' | 'warning' | 'info' | 'success'
   /** A line under the value; left out while loading so it never states a placeholder figure. */
   hint?: string | null
   /** Shows a placeholder instead of the value (and hides the hint). */
@@ -95,6 +95,9 @@ const tag = computed(() => (props.to ? RouterLink : 'div'))
 }
 .kpi__value--warning {
   color: var(--ax-warning-500);
+}
+.kpi__value--info {
+  color: var(--ax-info-500);
 }
 .kpi__value--success {
   color: var(--ax-success-500);

@@ -2,7 +2,8 @@
 /* How it works in three steps, each with a small diagram drawn from live data. */
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import type { Reserve, ReserveIncident, Severity } from '@/api/client'
+import type { Reserve, ReserveIncident } from '@/api/client'
+import { healthState, type HealthState } from '@/lib/priceState'
 import { checkLabel, fmtAgo, fmtInt, fmtUsd, protocolName } from '@/composables/useLanding'
 
 const props = defineProps<{
@@ -14,20 +15,21 @@ const props = defineProps<{
 }>()
 
 /** Scores in ten bins (0–9 … 90–100), each split by severity. */
-const SEV: Severity[] = ['critical', 'warning', 'info', 'ok']
+const SEV: HealthState[] = ['critical', 'paused', 'warning', 'info', 'ok']
+type Bin = Record<HealthState, number> & { total: number }
 const bins = computed(() => {
   if (!props.reserves) return null
-  const out = Array.from({ length: 10 }, () => ({ critical: 0, warning: 0, info: 0, ok: 0, total: 0 }))
+  const out: Bin[] = Array.from({ length: 10 }, () => ({ critical: 0, paused: 0, warning: 0, info: 0, ok: 0, total: 0 }))
   for (const r of props.reserves) {
     const b = out[Math.min(9, Math.floor(r.score / 10))]!
-    b[r.severity]++
+    b[healthState(r)]++
     b.total++
   }
   return out
 })
 /** Square-root scale, so the few low scores stay visible next to the many healthy ones. */
 const maxRoot = computed(() => Math.sqrt(Math.max(1, ...(bins.value ?? []).map((b) => b.total))))
-function segs(b: { critical: number; warning: number; info: number; ok: number; total: number }) {
+function segs(b: Bin) {
   const h = b.total ? 6 + 70 * (Math.sqrt(b.total) / maxRoot.value) : 0
   let y = 96
   return SEV.filter((s) => b[s] > 0).map((s) => {
@@ -261,6 +263,9 @@ const latestWhy = computed(() => {
   fill: var(--lp-warn);
 }
 .v-info {
+  fill: var(--lp-ink-3);
+}
+.v-paused {
   fill: var(--lp-info);
 }
 .v-ok {

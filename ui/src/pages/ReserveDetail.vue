@@ -8,14 +8,15 @@ import PriceAgeChart from '@/components/PriceAgeChart.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import ReserveTags from '@/components/ReserveTags.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
-import { SEVERITY_TONE, checkMessage, dateTime, duration, protocolName, shortAddress, solscanAccount, usd } from '@/lib/format'
-import { priceState } from '@/lib/priceState'
+import { HEALTH_TONE, checkMessage, dateTime, duration, protocolName, shortAddress, solscanAccount, usd } from '@/lib/format'
+import { healthState } from '@/lib/priceState'
 
 const props = defineProps<{ address: string }>()
 
 const reserve = ref<Reserve | null>(null)
 /** A tokenized stock whose price only paused because its market is closed (same rule as My positions). */
-const paused = computed(() => !!reserve.value && priceState(reserve.value) === 'paused')
+const health = computed(() => (reserve.value ? healthState(reserve.value) : 'ok'))
+const paused = computed(() => health.value === 'paused')
 const loading = ref(true)
 const error = ref<string | null>(null)
 
@@ -120,11 +121,8 @@ const accountRows = (r: Reserve) =>
               <h1 class="ax-page-head__title">{{ reserve.asset || shortAddress(reserve.mint) }}</h1>
               <!-- A stock paused by its closed market is expected, so it reads as on My positions, not as an alarm. -->
               <span class="title-badges">
-                <span v-if="paused" class="ax-badge ax-badge--soft ax-badge--pill ax-badge--info">Paused · market closed</span>
-                <template v-else>
-                  <SeverityBadge :severity="reserve.severity" />
-                  <ReserveTags :checks="reserve.checks" hide-empty />
-                </template>
+                <SeverityBadge :severity="health" />
+                <ReserveTags v-if="!paused" :checks="reserve.checks" hide-empty />
               </span>
             </div>
             <p class="ax-page-head__subtitle">
@@ -138,7 +136,7 @@ const accountRows = (r: Reserve) =>
         <KpiCard
           label="Health score"
           :value="`${reserve.score} / 100`"
-          :tone="paused ? undefined : SEVERITY_TONE[reserve.severity]"
+          :tone="HEALTH_TONE[health]"
           :hint="paused ? 'Paused while the US market is closed: expected' : null"
         />
         <KpiCard label="Supply" :value="usd(reserve.totalSupplyUsd)" />
@@ -146,7 +144,7 @@ const accountRows = (r: Reserve) =>
           label="Price age"
           :value="duration(reserve.price.ageSeconds)"
          
-          :tone="reserve.price.isStale && !paused ? 'danger' : undefined"
+          :tone="reserve.price.isStale ? (paused ? 'info' : 'danger') : undefined"
           :hint="`The protocol rejects prices older than ${duration(reserve.price.maxAgeSeconds)}`"
         />
         <KpiCard label="Oracle providers" :value="String(reserve.providers.length)" :hint="reserve.providers.join(', ') || 'None found'" />
