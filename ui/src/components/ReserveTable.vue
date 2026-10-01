@@ -17,6 +17,8 @@ const props = defineProps<{
   compact?: boolean
   /** Placeholder rows to show while there are no rows yet. */
   loadingRows?: number
+  /** Leaves out the Oracles column, e.g. where every row has the same provider. */
+  hideOracles?: boolean
 }>()
 
 const emit = defineEmits<{ sort: [key: SortKey] }>()
@@ -33,7 +35,9 @@ const ALL_COLUMNS: Column[] = [
 ]
 /** The Tags column only when a row has one (loading rows keep it, so the layout does not jump). */
 const showTags = computed(() => !props.compact && (!props.rows.length || props.rows.some((r) => hasTags(r.checks))))
-const columns = computed(() => ALL_COLUMNS.filter((c) => (props.compact ? !c.full : c.id !== 'tags' || showTags.value)))
+const columns = computed(() =>
+  ALL_COLUMNS.filter((c) => (props.compact ? !c.full : (c.id !== 'tags' || showTags.value) && (c.id !== 'oracles' || !props.hideOracles))),
+)
 
 const isSortable = (key: SortKey | null): key is SortKey => key !== null && props.sortKey !== undefined
 const ariaSort = (key: SortKey) => (props.sortKey === key ? (props.sortDir === 'asc' ? 'ascending' : 'descending') : 'none')
@@ -112,7 +116,7 @@ const MAX_ORACLES = 2
             <span class="issue" :title="mainIssue(r)">{{ mainIssue(r) }}</span>
           </td>
           <td v-if="showTags" class="ax-table__td col-tags"><ReserveTags :checks="r.checks" /></td>
-          <td v-if="!compact" class="ax-table__td col-oracles">
+          <td v-if="!compact && !hideOracles" class="ax-table__td col-oracles">
             <span v-if="r.providers.length" class="chips">
               <span v-for="p in r.providers.slice(0, MAX_ORACLES)" :key="p" class="ax-badge ax-badge--soft ax-badge--neutral chip" :title="p">{{ p }}</span>
               <span
@@ -126,7 +130,12 @@ const MAX_ORACLES = 2
             <span v-else class="subtle">—</span>
           </td>
           <td v-if="!compact" class="ax-table__td ax-table__td--num nowrap col-age" data-label="Price age">
-            <span :class="{ stale: r.price.isStale === true }">{{ duration(r.price.ageSeconds) }}</span><span class="subtle"> / {{ duration(r.price.maxAgeSeconds) }}</span>
+            <span v-if="r.price.ageSeconds === null" class="subtle" :title="`No price at all; the protocol accepts prices up to ${duration(r.price.maxAgeSeconds)} old`"
+              >No price<span class="subtle"> / {{ duration(r.price.maxAgeSeconds) }}</span></span
+            >
+            <template v-else>
+              <span :class="{ stale: r.price.isStale === true }">{{ duration(r.price.ageSeconds) }}</span><span class="subtle"> / {{ duration(r.price.maxAgeSeconds) }}</span>
+            </template>
           </td>
           <td class="ax-table__td ax-table__td--num nowrap col-supply" data-label="Supply">{{ usd(r.totalSupplyUsd) }}</td>
         </tr>
@@ -351,6 +360,7 @@ th.col-asset {
   }
   .reserves tr {
     display: grid;
+    /* Health is pinned to the right edge, so it never shifts with the length of the market name. */
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       'asset score'
@@ -380,6 +390,7 @@ th.col-asset {
   .reserves .col-score {
     grid-area: score;
     align-self: start;
+    justify-self: end;
   }
   .reserves .col-issue {
     grid-area: issue;
@@ -392,6 +403,7 @@ th.col-asset {
   }
   .reserves .col-supply {
     grid-area: supply;
+    justify-self: end;
   }
   .reserves:not(.reserves--compact) .col-age::before,
   .reserves .col-supply::before {

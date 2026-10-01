@@ -85,7 +85,7 @@ const byProtocol = computed(() =>
         :tone="broken.length ? 'danger' : undefined"
         hint="Nothing else can replace Switchboard: critical"
       />
-      <KpiCard label="By protocol" :loading="loading" :value="error ? '—' : String(reserves.length)" :hint="error ? null : byProtocol || 'None'" />
+      <KpiCard label="At stake" :loading="loading" :value="error ? '—' : usd(sum(reserves))" :hint="error ? null : byProtocol ? `${reserves.length} reserves: ${byProtocol}` : 'None'" />
 
       <section class="ax-card ax-col--12" aria-label="Reserves that still depend on Switchboard">
         <div class="ax-card__header">
@@ -102,7 +102,10 @@ const byProtocol = computed(() =>
             <button type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="load">Retry</button>
           </template>
         </EmptyState>
-        <ReserveTable v-else-if="loading || reserves.length" :rows="pageRows" :loading-rows="loading ? 8 : 0" />
+        <ReserveTable v-else-if="loading || reserves.length" :rows="pageRows" :loading-rows="loading ? 8 : 0" hide-oracles />
+        <p v-if="!error && !loading && reserves.some((r) => r.price.ageSeconds === null)" class="note">
+          "No price" means the feed publishes nothing the protocol can read; the figure after the slash is the age the protocol would accept.
+        </p>
         <EmptyState v-else title="No reserve depends on Switchboard any more" />
         <div v-if="!error && pageCount > 1" class="ax-card__footer pager">
           <span class="ax-num muted">Page {{ page }} of {{ pageCount }} · {{ reserves.length }} reserves</span>
@@ -139,6 +142,13 @@ const byProtocol = computed(() =>
 }
 .page > .ax-page-head {
   margin-block-end: 0;
+}
+.note {
+  margin: 0;
+  padding: var(--ax-space-3) var(--ax-space-6);
+  font-size: var(--ax-text-xs);
+  color: var(--ax-text-subtle);
+  border-top: 1px solid var(--ax-border);
 }
 .pager {
   display: flex;

@@ -23,7 +23,7 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
     <div class="nav__inner lp-wrap">
       <RouterLink to="/" class="nav__brand" aria-label="OracleCanary home">
         <CanaryMark :size="26" />
-        <span class="nav__word">OracleCanary</span>
+        <span class="nav__word">Oracle<span class="wm-accent">Canary</span></span>
       </RouterLink>
 
       <nav id="lp-menu" class="nav__links" aria-label="Main">
@@ -98,9 +98,12 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
 }
 .nav__word {
   font-family: var(--lp-display);
-  font-weight: 700;
-  font-size: 17px;
+  font-weight: 600;
+  font-size: 16px;
   letter-spacing: -0.02em;
+}
+.wm-accent {
+  color: var(--lp-accent-text);
 }
 .nav__links {
   display: flex;

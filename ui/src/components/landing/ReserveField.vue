@@ -1,30 +1,34 @@
 <script setup lang="ts">
 /*
  * The reserve field: one mark per listed reserve, grouped by protocol, like a seismograph trace.
- * Height is the reserve's deposits on a log scale, colour its worst failing check. A lamp sweeps
- * across and briefly lights the marks; critical reserves pulse. Hover or tap for details; click
- * (or tap twice) to open the reserve.
+ * Height is the reserve's deposits on a log scale, colour its worst failing check; each protocol is
+ * sorted worst first, so it reads as bands of colour. A lamp sweeps across and briefly lights the
+ * marks. Hover or tap for details; click (or tap twice) to open the reserve.
+ *
+ * Portable: it styles itself from the front page's --lp-* palette when inside .landing and falls
+ * back to the shared --ax-* tokens anywhere else (e.g. the Overview, with `compact`).
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Reserve, Severity } from '@/api/client'
-import { checkLabel, fmtInt, fmtSeconds, fmtUsd, protocolName, SEVERITIES, SEVERITY_LABEL } from '@/composables/useLanding'
+import { checkLabel, fmtInt, fmtSeconds, fmtUsd, protocolName, SEVERITIES, SEVERITY_LABEL, type FieldLane } from '@/composables/useLanding'
 
-interface Lane {
-  id: string
-  name: string
-  rows: Reserve[] | null
-  count: number | null
-  usd: number | null
-}
-
-const props = defineProps<{
-  lanes: Lane[]
-  bySeverity: Record<Severity, number> | null
-  failed: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    /** One lane per protocol (buildLanes(reserves) from useLanding); rows null while loading. */
+    lanes: FieldLane[]
+    /** countBySeverity(reserves), or null while loading. */
+    bySeverity: Record<Severity, number> | null
+    /** The reserves could not be loaded: shows a retry instead of the loading note. */
+    failed?: boolean
+    /** Shorter plot, no hint line: for embedding in the app. */
+    compact?: boolean
+  }>(),
+  { failed: false, compact: false },
+)
 const emit = defineEmits<{ retry: [] }>()
 const router = useRouter()
+const titleId = `rf-${useId()}`
 
 const ready = computed(() => props.lanes.every((l) => l.rows))
 
@@ -79,11 +83,11 @@ function dismiss(e: Event) {
   hover.value = null
 }
 onMounted(() => {
-  window.addEventListener('scroll', dismiss, { passive: true })
+  window.addEventListener('scroll', dismiss, { passive: true, capture: true })
   document.addEventListener('pointerdown', dismiss)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', dismiss)
+  window.removeEventListener('scroll', dismiss, { capture: true })
   document.removeEventListener('pointerdown', dismiss)
 })
 
@@ -133,45 +137,48 @@ function worstCheck(r: Reserve): string | null {
 </script>
 
 <template>
-  <section class="field" aria-labelledby="field-title">
-    <slot />
+  <section class="field" :class="{ 'field--compact': compact }" :aria-labelledby="titleId">
+    <slot v-if="!compact" />
     <header class="field__head">
       <div class="field__title">
-        <span class="lp-kicker" id="field-title">Reserve field</span>
+        <span :id="titleId" class="field__kicker">Reserve field</span>
         <span class="field__sub">One mark per listed reserve · height = deposits (log) · colour = price health</span>
       </div>
       <ul class="field__legend" aria-label="Reserves by price health">
         <li v-for="s in SEVERITIES" :key="s" :class="`sev-${s}`">
           <i class="dot" aria-hidden="true" />{{ SEVERITY_LABEL[s] }}
-          <b class="lp-num">{{ bySeverity ? fmtInt(bySeverity[s]) : '—' }}</b>
+          <b class="num">{{ bySeverity ? fmtInt(bySeverity[s]) : '—' }}</b>
         </li>
       </ul>
     </header>
 
-    <div class="field__strip" :class="{ 'is-loading': !ready, 'is-failed': failed && !ready }" ref="strip" @pointerleave="(e: PointerEvent) => { if (e.pointerType === 'mouse') hover = null }">
+    <div
+      ref="strip"
+      class="field__strip"
+      :class="{ 'is-loading': !ready, 'is-failed': failed && !ready }"
+      @pointerleave="(e: PointerEvent) => { if (e.pointerType === 'mouse') hover = null }"
+    >
       <!-- base layer -->
       <div class="field__layer">
         <div v-for="(s, si) in segments" :key="s.id" class="seg" :style="{ '--n': s.n }">
           <div class="seg__label">
-            <span class="seg__name">{{ s.name }}</span>
-            <span class="seg__meta lp-num">{{ fmtInt(s.count) }} · {{ fmtUsd(s.usd) }}</span>
+            <span class="seg__name">
+              {{ s.name }}
+              <RouterLink
+                v-if="s.critical"
+                class="crit-tag"
+                :to="{ name: 'reserves', query: { health: 'critical', protocol: s.id } }"
+                :aria-label="`${s.critical} critical ${s.critical === 1 ? 'reserve' : 'reserves'} on ${s.name}`"
+              >
+                <i aria-hidden="true" />{{ s.critical }} critical
+              </RouterLink>
+            </span>
+            <span class="seg__meta num">{{ fmtInt(s.count) }} · {{ fmtUsd(s.usd) }}</span>
           </div>
-          <div
-            class="seg__plot"
-            @pointermove="onMove($event, si)"
-            @pointerdown="onDown($event, si)"
-            @click="onClick($event, si)"
-          >
-            <svg v-if="ready" :viewBox="`0 0 ${s.n} 100`" preserveAspectRatio="none" role="img" :aria-label="`${s.name}: ${s.marks.length} reserves`">
+          <div class="seg__plot" @pointermove="onMove($event, si)" @pointerdown="onDown($event, si)" @click="onClick($event, si)">
+            <svg v-if="ready" :viewBox="`0 0 ${s.n} 100`" preserveAspectRatio="none" role="img" :aria-label="`${s.name}: ${s.marks.length} reserves, ${s.critical} critical`">
               <line x1="0" x2="100%" y1="50" y2="50" class="axis" vector-effect="non-scaling-stroke" />
-              <rect
-                v-if="hover && hover.seg === si"
-                :x="hover.idx"
-                y="0"
-                width="1"
-                height="100"
-                class="hover-col"
-              />
+              <rect v-if="hover && hover.seg === si" :x="hover.idx" y="0" width="1" height="100" class="hover-col" />
               <rect
                 v-for="m in s.marks.filter((m) => m.r.severity === 'critical')"
                 :key="'c' + m.r.address"
@@ -204,7 +211,8 @@ function worstCheck(r: Reserve): string | null {
       <div class="field__layer field__layer--lit" aria-hidden="true">
         <div v-for="s in segments" :key="s.id" class="seg" :style="{ '--n': s.n }">
           <div class="seg__label" style="visibility: hidden">
-            <span class="seg__name">{{ s.name }}</span><span class="seg__meta">&nbsp;</span>
+            <span class="seg__name">{{ s.name }}<span v-if="s.critical" class="crit-tag"><i />{{ s.critical }} critical</span></span>
+            <span class="seg__meta num">{{ fmtInt(s.count) }} · {{ fmtUsd(s.usd) }}</span>
           </div>
           <div class="seg__plot">
             <svg v-if="ready" :viewBox="`0 0 ${s.n} 100`" preserveAspectRatio="none">
@@ -218,54 +226,29 @@ function worstCheck(r: Reserve): string | null {
       </div>
       <div class="field__scan" aria-hidden="true" />
 
-      <!-- critical reserves: one pulsing tag per lane over its red band, keyboard reachable -->
-      <div class="field__beacons">
-        <div v-for="s in segments" :key="s.id" class="seg" :style="{ '--n': s.n }">
-          <div class="seg__label" style="visibility: hidden" aria-hidden="true">
-            <span class="seg__name">{{ s.name }}</span><span class="seg__meta">&nbsp;</span>
-          </div>
-          <div class="seg__plot seg__plot--beacons">
-            <RouterLink
-              v-if="s.critical"
-              class="beacon"
-              :to="{ name: 'reserves', query: { health: 'critical', protocol: s.id } }"
-              :aria-label="`${s.critical} critical ${s.critical === 1 ? 'reserve' : 'reserves'} on ${s.name}`"
-            >
-              <i aria-hidden="true" />{{ s.critical }} critical
-            </RouterLink>
-          </div>
-        </div>
-      </div>
-
       <p v-if="failed && !ready" class="field__state">
         Could not read the reserves right now.
-        <button type="button" class="lp-link" @click="emit('retry')">Try again</button>
+        <button type="button" class="field__link" @click="emit('retry')">Try again</button>
       </p>
-      <p v-else-if="!ready" class="field__state lp-num">Reading the chain…</p>
+      <p v-else-if="!ready" class="field__state num">Reading the chain…</p>
     </div>
 
     <footer class="field__foot">
-      <span class="field__hint">
+      <span v-if="!compact" class="field__hint">
         <span class="only-fine">Hover a mark for its price health, click to open it.</span>
         <span class="only-coarse">Tap a mark for its price health, tap again to open it.</span>
       </span>
-      <RouterLink :to="{ name: 'reserves' }" class="lp-link">All reserves →</RouterLink>
+      <RouterLink :to="{ name: 'reserves' }" class="field__link">All reserves →</RouterLink>
     </footer>
 
     <Teleport to="body">
-      <div
-        v-if="hover && hovered"
-        class="lp-tip"
-        :class="`sev-${hovered.severity}`"
-        :style="{ left: `${hover.x}px`, top: `${hover.y}px` }"
-        role="tooltip"
-      >
+      <div v-if="hover && hovered" class="lp-tip" :class="`sev-${hovered.severity}`" :style="{ left: `${hover.x}px`, top: `${hover.y}px` }" role="tooltip">
         <div class="lp-tip__row">
           <b class="lp-tip__asset">{{ hovered.asset }}</b>
-          <span class="lp-tip__score lp-num"><i class="lp-tip__dot" />{{ hovered.score }}<small>/100</small></span>
+          <span class="lp-tip__score"><i class="lp-tip__dot" />{{ hovered.score }}<small>/100</small></span>
         </div>
         <div class="lp-tip__meta">{{ protocolName(hovered.protocol) }}<template v-if="hovered.market?.name"> · {{ hovered.market.name }}</template></div>
-        <dl class="lp-tip__grid lp-num">
+        <dl class="lp-tip__grid">
           <dt>Price age</dt>
           <dd>{{ fmtSeconds(hovered.price?.ageSeconds) }}<template v-if="hovered.price?.maxAgeSeconds"> / {{ fmtSeconds(hovered.price.maxAgeSeconds) }}</template></dd>
           <dt>Deposits</dt>
@@ -294,6 +277,7 @@ function worstCheck(r: Reserve): string | null {
     --lp-scan: 112%;
   }
 }
+/* the tooltip is teleported to <body>, so it carries its own (always dark) colours */
 .lp-tip {
   position: fixed;
   z-index: 100;
@@ -302,8 +286,8 @@ function worstCheck(r: Reserve): string | null {
   max-width: 280px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: var(--lp-tip-bg, #16140f);
-  color: var(--lp-tip-ink, #f5f1e6);
+  background: #16140f;
+  color: #f5f1e6;
   border: 1px solid rgba(255, 240, 200, 0.14);
   box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.55);
   font-family: 'Inter', system-ui, sans-serif;
@@ -318,7 +302,6 @@ function worstCheck(r: Reserve): string | null {
 }
 .lp-tip__asset {
   color: #fff8e6;
-  font-family: 'Inter', system-ui, sans-serif;
   font-size: 16px;
   font-weight: 700;
   overflow: hidden;
@@ -333,7 +316,7 @@ function worstCheck(r: Reserve): string | null {
   font-weight: 600;
 }
 .lp-tip__score small {
-  opacity: 0.55;
+  opacity: 0.6;
   font-weight: 500;
 }
 .lp-tip__dot {
@@ -356,7 +339,7 @@ function worstCheck(r: Reserve): string | null {
   --sev: #f87171;
 }
 .lp-tip__meta {
-  color: rgba(245, 241, 230, 0.6);
+  color: rgba(245, 241, 230, 0.65);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -372,30 +355,60 @@ function worstCheck(r: Reserve): string | null {
   font-family: var(--ax-font-mono, 'IBM Plex Mono', ui-monospace, monospace);
   font-size: 12px;
 }
+.lp-tip__grid dt {
+  color: rgba(245, 241, 230, 0.6);
+}
+.lp-tip__grid dd {
+  margin: 0;
+  text-align: end;
+}
 .lp-tip__hint {
   margin: 10px 0 0;
   font-size: 12px;
   font-weight: 600;
   color: #fde047;
 }
-.lp-tip__grid dt {
-  color: rgba(245, 241, 230, 0.5);
-}
-.lp-tip__grid dd {
-  margin: 0;
-  text-align: end;
-}
 </style>
 
 <style scoped>
 .field {
+  /* the front page's palette when inside .landing, the app's tokens anywhere else */
+  --rf-panel: var(--lp-panel, var(--ax-surface-solid, #fff));
+  --rf-panel-shadow: var(--lp-panel-shadow, none);
+  --rf-line: var(--lp-line, var(--ax-border, rgba(0, 0, 0, 0.1)));
+  --rf-line-strong: var(--lp-line-strong, var(--ax-border-strong, rgba(0, 0, 0, 0.2)));
+  --rf-grid: var(--lp-grid, transparent);
+  --rf-fill-strong: var(--lp-fill-strong, var(--ax-fill-active, rgba(0, 0, 0, 0.08)));
+  --rf-ink: var(--lp-ink, var(--ax-text-strong, #1c1810));
+  --rf-ink-2: var(--lp-ink-2, var(--ax-text, #463e2f));
+  --rf-ink-3: var(--lp-ink-3, var(--ax-text-muted, #6b614e));
+  --rf-accent: var(--lp-accent, var(--ax-accent, #facc15));
+  --rf-accent-text: var(--lp-accent-text, var(--ax-accent-text, #935a06));
+  --rf-accent-glow: var(--lp-accent-glow, rgba(250, 204, 21, 0.35));
+  --rf-focus: var(--lp-focus, var(--ax-focus-ring, #935a06));
+  --rf-ok: var(--lp-ok, var(--ax-sev-ok, #16a34a));
+  --rf-info: var(--lp-info, var(--ax-sev-info, #4a6f96));
+  --rf-warn: var(--lp-warn, var(--ax-sev-warn, #ea580c));
+  --rf-crit: var(--lp-crit, var(--ax-sev-crit, #dc2626));
+  --rf-crit-text: var(--lp-crit-text, var(--ax-sev-crit-text, #c81e1e));
+  --rf-bar-ok: var(--lp-bar-ok, 0.5);
+  --rf-bar-warn: var(--lp-bar-warn, 0.62);
+  --rf-mono: var(--lp-mono, var(--ax-font-mono, 'IBM Plex Mono', ui-monospace, monospace));
+  --rf-plot: 160px;
+
   position: relative;
-  border: 1px solid var(--lp-line);
+  border: 1px solid var(--rf-line);
   border-radius: 20px;
-  background: var(--lp-panel);
-  box-shadow: var(--lp-panel-shadow);
+  background: var(--rf-panel);
+  box-shadow: var(--rf-panel-shadow);
   padding: 20px 24px 16px;
   overflow: hidden;
+  color: var(--rf-ink-2);
+}
+.field--compact {
+  --rf-plot: 110px;
+  border-radius: var(--ax-radius-lg, 16px);
+  padding: 16px 18px 12px;
 }
 .field::before {
   /* instrument grid */
@@ -403,14 +416,19 @@ function worstCheck(r: Reserve): string | null {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(var(--lp-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--lp-grid) 1px, transparent 1px);
+    linear-gradient(var(--rf-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rf-grid) 1px, transparent 1px);
   background-size: 100% 24px, 24px 100%;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 25%, #000 75%, transparent);
   mask-image: linear-gradient(180deg, transparent, #000 25%, #000 75%, transparent);
   pointer-events: none;
 }
 .field > * {
   position: relative;
+}
+.num {
+  font-family: var(--rf-mono);
+  font-variant-numeric: tabular-nums;
 }
 .field__head {
   display: flex;
@@ -418,15 +436,23 @@ function worstCheck(r: Reserve): string | null {
   align-items: flex-end;
   justify-content: space-between;
   gap: 12px 24px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 .field__title {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
+.field__kicker {
+  font-family: var(--rf-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rf-accent-text);
+}
 .field__sub {
-  color: var(--lp-ink-3);
+  color: var(--rf-ink-3);
   font-size: 13px;
 }
 .field__legend {
@@ -437,7 +463,7 @@ function worstCheck(r: Reserve): string | null {
   padding: 0;
   margin: 0;
   font-size: 13px;
-  color: var(--lp-ink-2);
+  color: var(--rf-ink-2);
 }
 .field__legend li {
   display: inline-flex;
@@ -445,7 +471,7 @@ function worstCheck(r: Reserve): string | null {
   gap: 7px;
 }
 .field__legend b {
-  color: var(--lp-ink);
+  color: var(--rf-ink);
   font-weight: 600;
 }
 .dot {
@@ -455,16 +481,31 @@ function worstCheck(r: Reserve): string | null {
   background: var(--c);
 }
 .sev-ok {
-  --c: var(--lp-ok);
+  --c: var(--rf-ok);
 }
 .sev-info {
-  --c: var(--lp-info);
+  --c: var(--rf-info);
 }
 .sev-warning {
-  --c: var(--lp-warn);
+  --c: var(--rf-warn);
 }
 .sev-critical {
-  --c: var(--lp-crit);
+  --c: var(--rf-crit);
+}
+.field__link {
+  color: var(--rf-accent-text);
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+.field__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* strip */
@@ -476,15 +517,12 @@ function worstCheck(r: Reserve): string | null {
   display: flex;
   gap: 18px;
 }
-.field__layer--lit,
-.field__beacons {
+.field__layer--lit {
   position: absolute;
   inset: 0;
   display: flex;
   gap: 18px;
   pointer-events: none;
-}
-.field__layer--lit {
   -webkit-mask-image: linear-gradient(
     90deg,
     transparent calc(var(--lp-scan) - 16%),
@@ -502,12 +540,12 @@ function worstCheck(r: Reserve): string | null {
 }
 .field__scan {
   position: absolute;
-  top: -6px;
-  bottom: 22px;
+  top: -4px;
+  bottom: 32px;
   left: var(--lp-scan);
   width: 1px;
-  background: linear-gradient(180deg, transparent, var(--lp-accent) 20%, var(--lp-accent) 80%, transparent);
-  box-shadow: 0 0 14px 2px var(--lp-accent-glow);
+  background: linear-gradient(180deg, transparent, var(--rf-accent) 20%, var(--rf-accent) 80%, transparent);
+  box-shadow: 0 0 14px 2px var(--rf-accent-glow);
   pointer-events: none;
 }
 .seg {
@@ -519,7 +557,7 @@ function worstCheck(r: Reserve): string | null {
 }
 .seg__plot {
   position: relative;
-  height: 170px;
+  height: var(--rf-plot);
   cursor: crosshair;
   touch-action: pan-y;
 }
@@ -530,53 +568,88 @@ function worstCheck(r: Reserve): string | null {
   overflow: visible;
 }
 .seg__label {
+  /* two fixed lines (name + tag, then count · deposits), so every lane's plot lines up */
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  height: 46px;
   padding-top: 8px;
-  border-top: 1px solid var(--lp-line-strong);
+  border-top: 1px solid var(--rf-line-strong);
   font-size: 13px;
   white-space: nowrap;
 }
 .seg__name {
-  color: var(--lp-ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--rf-ink);
   font-weight: 600;
 }
 .seg__meta {
-  color: var(--lp-ink-3);
+  color: var(--rf-ink-3);
   font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+.crit-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px 1px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--rf-crit) 55%, transparent);
+  color: var(--rf-crit-text);
+  font: 600 11px/1.4 var(--rf-mono);
+  text-decoration: none;
+}
+.crit-tag i {
+  position: relative;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rf-crit);
+}
+.crit-tag i::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px solid var(--rf-crit);
+  animation: lp-ring 1.8s ease-out infinite;
+}
+.crit-tag:hover {
+  border-color: var(--rf-crit);
+}
+.crit-tag:focus-visible,
+.field__link:focus-visible {
+  outline: 2px solid var(--rf-focus);
+  outline-offset: 3px;
 }
 .axis {
-  stroke: var(--lp-line-strong);
+  stroke: var(--rf-line-strong);
   stroke-width: 1;
 }
 .axis--lit {
-  stroke: var(--lp-accent);
+  stroke: var(--rf-accent);
   stroke-width: 2;
 }
 .crit-col {
-  fill: var(--lp-crit);
+  fill: var(--rf-crit);
   opacity: 0.14;
 }
 .hover-col {
-  fill: var(--lp-fill-strong);
+  fill: var(--rf-fill-strong);
 }
-
 .bar {
   fill: var(--c);
   opacity: 0.42;
   transition: opacity 0.2s;
 }
 .bar.sev-ok {
-  opacity: var(--lp-bar-ok, 0.3);
+  opacity: var(--rf-bar-ok);
 }
 .bar.sev-warning,
 .bar.sev-info {
-  opacity: var(--lp-bar-warn, 0.5);
+  opacity: var(--rf-bar-warn);
 }
 .bar.sev-critical {
   opacity: 1;
@@ -584,65 +657,19 @@ function worstCheck(r: Reserve): string | null {
 }
 .bar.is-hover {
   opacity: 1;
-  fill: var(--lp-ink);
+  fill: var(--rf-ink);
   animation: none;
 }
 .field__layer--lit .bar {
   opacity: 1;
   animation: none;
 }
-.field__layer--lit .bar.sev-ok {
-  fill: var(--lp-accent);
-}
+.field__layer--lit .bar.sev-ok,
 .field__layer--lit .bar.sev-info {
-  fill: var(--lp-accent);
-}
-
-.seg__plot--beacons {
-  cursor: default;
-}
-.beacon {
-  position: absolute;
-  top: -14px;
-  left: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px 3px 7px;
-  border-radius: 999px;
-  background: var(--lp-panel);
-  border: 1px solid color-mix(in srgb, var(--lp-crit) 55%, transparent);
-  color: var(--lp-crit-text);
-  font: 600 11.5px/1.2 var(--lp-mono);
-  white-space: nowrap;
-  text-decoration: none;
-  pointer-events: auto;
-  z-index: 2;
-}
-.beacon i {
-  position: relative;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--lp-crit);
-}
-.beacon i::after {
-  content: '';
-  position: absolute;
-  inset: -3px;
-  border-radius: 50%;
-  border: 1.5px solid var(--lp-crit);
-  animation: lp-ring 1.8s ease-out infinite;
-}
-.beacon:hover {
-  border-color: var(--lp-crit);
-}
-.beacon:focus-visible {
-  outline: 2px solid var(--lp-focus);
-  outline-offset: 3px;
+  fill: var(--rf-accent);
 }
 .ph-bar {
-  fill: var(--lp-line-strong);
+  fill: var(--rf-line-strong);
   animation: lp-ph 1.6s ease-in-out infinite;
 }
 .is-failed .ph-bar {
@@ -653,23 +680,17 @@ function worstCheck(r: Reserve): string | null {
 .is-failed .field__scan {
   display: none;
 }
-@keyframes lp-ph {
-  50% {
-    opacity: 0.4;
-  }
-}
-
 .field__state {
   position: absolute;
-  top: 58px;
+  top: calc(var(--rf-plot) / 2 - 16px);
   left: 50%;
   transform: translateX(-50%);
   margin: 0;
   padding: 6px 12px;
   border-radius: 999px;
-  background: var(--lp-panel);
-  border: 1px solid var(--lp-line);
-  color: var(--lp-ink-2);
+  background: var(--rf-panel);
+  border: 1px solid var(--rf-line);
+  color: var(--rf-ink-2);
   font-size: 13px;
   white-space: nowrap;
 }
@@ -677,9 +698,13 @@ function worstCheck(r: Reserve): string | null {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 14px;
+  margin-top: 12px;
   font-size: 13px;
-  color: var(--lp-ink-3);
+  color: var(--rf-ink-3);
+}
+.field--compact .field__foot {
+  justify-content: flex-end;
+  margin-top: 8px;
 }
 .only-coarse {
   display: none;
@@ -692,7 +717,6 @@ function worstCheck(r: Reserve): string | null {
     display: inline;
   }
 }
-
 @keyframes lp-pulse {
   50% {
     opacity: 0.45;
@@ -708,15 +732,20 @@ function worstCheck(r: Reserve): string | null {
     opacity: 0;
   }
 }
+@keyframes lp-ph {
+  50% {
+    opacity: 0.4;
+  }
+}
 
 @media (max-width: 760px) {
   .field {
+    --rf-plot: 72px;
     padding: 16px 14px 14px;
     border-radius: 16px;
   }
   .field__layer,
-  .field__layer--lit,
-  .field__beacons {
+  .field__layer--lit {
     flex-direction: column;
     gap: 14px;
   }
@@ -727,16 +756,12 @@ function worstCheck(r: Reserve): string | null {
     gap: 6px;
   }
   .seg__label {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
     border-top: 0;
     padding-top: 0;
-  }
-  .seg__plot {
-    height: 72px;
-  }
-  .beacon {
-    top: -24px;
-    left: 50%;
-    transform: translateX(-50%);
+    height: 22px;
   }
   .field__scan {
     top: 0;
@@ -756,7 +781,7 @@ function worstCheck(r: Reserve): string | null {
     display: none;
   }
   .bar.sev-critical,
-  .beacon i::after,
+  .crit-tag i::after,
   .ph-bar {
     animation: none;
   }

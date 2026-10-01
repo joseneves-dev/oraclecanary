@@ -3,6 +3,7 @@ import { RouterLink, useRouter } from 'vue-router'
 import type { ReserveIncident } from '@/api/client'
 import ReserveTags from '@/components/ReserveTags.vue'
 import { dateTime, duration, protocolName, usd } from '@/lib/format'
+import { priceState } from '@/lib/priceState'
 
 defineProps<{ incidents: ReserveIncident[] }>()
 
@@ -10,6 +11,9 @@ const router = useRouter()
 
 /** The critical checks that caused an incident; tags such as MARKET_CLOSED are shown in their own column. */
 const cause = (i: ReserveIncident) => i.checks.filter((c) => c.severity === 'critical').map((c) => c.code).join(', ') || '—'
+
+/** A stock paused by its closed market, with nothing else wrong: said in words, as on My positions. */
+const marketClosed = (i: ReserveIncident) => priceState({ checks: i.checks, severity: 'critical' }) === 'paused'
 
 /** Ended incidents have a duration; ongoing ones are measured up to now. */
 const elapsed = (i: ReserveIncident) =>
@@ -37,7 +41,10 @@ const elapsed = (i: ReserveIncident) =>
             <RouterLink class="asset" :to="{ name: 'reserve', params: { address: i.reserve } }">{{ i.asset }}</RouterLink>
             <div class="muted">{{ protocolName(i.protocol) }} · {{ i.marketName }}</div>
           </td>
-          <td class="ax-table__td codes">{{ cause(i) }}</td>
+          <td class="ax-table__td">
+            <span v-if="marketClosed(i)" class="closed" :title="cause(i)">Market closed</span>
+            <span v-else class="codes">{{ cause(i) }}</span>
+          </td>
           <td class="ax-table__td"><ReserveTags :checks="i.checks" /></td>
           <td class="ax-table__td nowrap" data-label="Started">
             <span v-if="i.startEstimated" title="Already failing when tracking started: worked out from the age of its price">≈ </span>{{ dateTime(i.startedAt) }}
@@ -76,6 +83,11 @@ const elapsed = (i: ReserveIncident) =>
   font-family: var(--ax-font-sans, inherit);
   font-size: var(--ax-text-xs);
   color: var(--ax-text-muted);
+}
+.closed {
+  font-size: var(--ax-text-xs);
+  color: var(--ax-text-muted);
+  white-space: nowrap;
 }
 .codes {
   font-family: var(--ax-font-mono);

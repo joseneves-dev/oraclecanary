@@ -293,7 +293,8 @@ const ariaSort = (key: SortKey) => (state.value.sortKey === key ? (state.value.s
                 <td class="ax-table__td"><SeverityBadge :severity="v.worstSeverity" /></td>
                 <td class="ax-table__td ax-table__td--num nowrap">{{ usd(v.totalUsd) }}</td>
                 <td class="ax-table__td ax-table__td--num nowrap" :class="{ risk: v.atRiskUsd > 0 }">
-                  {{ v.atRiskUsd > 0 ? `${usd(v.atRiskUsd)} · ${share(v.atRiskUsd, v.totalUsd)}` : '—' }}
+                  <template v-if="v.atRiskUsd > 0">{{ usd(v.atRiskUsd) }} · {{ share(v.atRiskUsd, v.totalUsd) }}</template>
+                  <span v-else class="zero">$0</span>
                 </td>
                 <td class="ax-table__td ax-table__td--num nowrap">{{ v.allocations.length }}</td>
               </tr>
@@ -367,6 +368,9 @@ const ariaSort = (key: SortKey) => (state.value.sortKey === key ? (state.value.s
   gap: var(--ax-space-2);
 }
 /* The sort arrow sits right of the label, shown on hover and on the active column only. */
+.zero {
+  color: var(--ax-text-subtle);
+}
 .sort-icon {
   width: 12px;
   height: 12px;

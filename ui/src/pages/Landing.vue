@@ -77,14 +77,20 @@ const sample = computed(() => {
                 <dd class="lp-num">{{ fmtUsd(totalUsd) }}</dd>
               </div>
               <div>
-                <dt>Price unusable now</dt>
-                <dd v-if="!unusable" class="lp-num">—</dd>
-                <dd v-else-if="unusable.blockedUsd === 0" class="lp-num calm">$0 <small>every price usable</small></dd>
-                <dd v-else class="lp-num crit">{{ fmtUsd(unusable.blockedUsd) }}</dd>
-                <p v-if="unusable && unusable.pausedUsd > 0" class="readout__note">+{{ fmtUsd(unusable.pausedUsd) }} paused, market closed</p>
-                <p v-else-if="unusable && unusable.blockedCount > 0" class="readout__note">
-                  in {{ unusable.blockedCount }} {{ unusable.blockedCount === 1 ? 'reserve' : 'reserves' }}
-                </p>
+                <dt>Money blocked now</dt>
+                <dd v-if="!unusable || !bySeverity" class="lp-num">—</dd>
+                <dd v-else-if="unusable.blockedUsd > 0" class="lp-num crit">{{ fmtUsd(unusable.blockedUsd) }}</dd>
+                <dd v-else-if="bySeverity.critical > 0" class="lp-num">$0 <small class="plain">blocked</small></dd>
+                <dd v-else class="lp-num calm">$0 <small>every price usable</small></dd>
+                <template v-if="unusable">
+                  <p v-if="unusable.blockedCount > 0" class="readout__note">
+                    in {{ unusable.blockedCount }} {{ unusable.blockedCount === 1 ? 'reserve' : 'reserves' }} of $1K or more
+                  </p>
+                  <p v-if="unusable.criticalUnderFloor > 0" class="readout__note">
+                    {{ unusable.criticalUnderFloor }} critical {{ unusable.criticalUnderFloor === 1 ? 'reserve holds' : 'reserves hold' }} under $1K
+                  </p>
+                  <p v-if="unusable.pausedUsd > 0" class="readout__note">+{{ fmtUsd(unusable.pausedUsd) }} paused, market closed</p>
+                </template>
               </div>
               <div>
                 <dt>Open incidents</dt>
@@ -464,6 +470,9 @@ const sample = computed(() => {
 .readout dd.calm {
   color: var(--lp-ok-text);
 }
+.readout dd small.plain {
+  color: var(--lp-ink-3);
+}
 .readout dd small {
   font-family: var(--lp-sans);
   font-size: 13px;
@@ -473,12 +482,10 @@ const sample = computed(() => {
   margin-inline-start: 6px;
 }
 .readout__note {
-  margin: 4px 0 0;
+  margin: 3px 0 0;
+  line-height: 1.35;
   font-size: 12.5px;
   color: var(--lp-ink-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 @keyframes lp-beat {

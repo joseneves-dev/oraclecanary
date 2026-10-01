@@ -26,7 +26,7 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
     severity: 'Critical',
     trigger:
       'The oracle price is 10% or more above a liquid market price on Jupiter, or 50% above a thinner one with $25K of liquidity. From 3% above or 3% below it is a warning; a fixed price below the market, or any gap on a bank being wound down, is information. Reserves under $1K are skipped.',
-    meaning: 'Above the market, collateral is overvalued; below it, borrowers can be liquidated early. Published from October 2026.',
+    meaning: 'Above the market, collateral is overvalued; below it, borrowers can be liquidated early. Shown from 1 Oct 2026.',
   },
   { label: 'Sources disagree', severity: 'Critical', trigger: 'A reserve’s price sources differ by more than the protocol allows. A warning from half of that limit.', meaning: 'Sources that should agree do not, so at least one is off.' },
   { label: 'No fallback oracle', severity: 'Warning', trigger: 'A single feed with no backup.', meaning: 'If it stops, the price stops.' },
@@ -83,7 +83,7 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
           </div>
         </div>
         <div class="ax-table-wrap">
-          <table class="ax-table">
+          <table class="ax-table checks">
             <thead class="ax-table__head">
               <tr>
                 <th scope="col" class="ax-table__th">Check</th>
@@ -108,8 +108,8 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
                     >{{ c.severity }}</span
                   >
                 </td>
-                <td class="ax-table__td meaning">{{ c.trigger }}</td>
-                <td class="ax-table__td meaning">{{ c.meaning }}</td>
+                <td class="ax-table__td meaning" data-label="Triggers when">{{ c.trigger }}</td>
+                <td class="ax-table__td meaning" data-label="What it means">{{ c.meaning }}</td>
                 <td class="ax-table__td ax-table__td--num nowrap">{{ COST[c.severity] }}</td>
               </tr>
             </tbody>
@@ -152,9 +152,10 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
           </p>
           <p>For a client, adding it to any transaction is one call:</p>
           <pre class="snippet"><code>const ixs = await withOracleGuard([borrowIx], {
-    reserves: [collateralReserve, debtReserve],
-    maxSeverity: 'warning', // refuse any price with a critical issue; single-source prices pass
-  })</code></pre>
+  reserves: [collateralReserve, debtReserve],
+  // Refuse any price with a critical issue; single-source prices pass.
+  maxSeverity: 'warning',
+})</code></pre>
           <ul class="links">
             <li>
               <a :href="explorer(GUARD)" target="_blank" rel="noopener">oracle_guard on Solana Explorer (devnet)</a>
@@ -290,5 +291,51 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
 .muted {
   color: var(--ax-text-muted);
   font-size: var(--ax-text-sm);
+}
+/* Phones: each check becomes a card (name, level and points, then the rule and what it means). */
+@media (max-width: 640px) {
+  .checks thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .checks,
+  .checks tbody {
+    display: block;
+  }
+  .checks tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'name level score'
+      'trigger trigger trigger'
+      'meaning meaning meaning';
+    align-items: center;
+    gap: var(--ax-space-2) var(--ax-space-3);
+    padding: var(--ax-space-3) var(--ax-space-4);
+    border-bottom: 1px solid var(--ax-border);
+  }
+  .checks td {
+    display: block;
+    padding: 0;
+    border: 0;
+    max-width: none;
+    white-space: normal;
+  }
+  .checks td:nth-child(1) { grid-area: name; }
+  .checks td:nth-child(2) { grid-area: level; }
+  .checks td:nth-child(3) { grid-area: trigger; }
+  .checks td:nth-child(4) { grid-area: meaning; color: var(--ax-text-muted); }
+  .checks td:nth-child(5) { grid-area: score; }
+  .checks td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: var(--ax-text-2xs);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ax-text-subtle);
+  }
 }
 </style>

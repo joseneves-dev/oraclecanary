@@ -116,7 +116,7 @@ watch(
         :hint="error ? null : 'Deposits in those reserves'"
       />
       <KpiCard
-        label="Longest open"
+        label="Oldest price"
         :loading="loading"
         :value="!error && open.length ? duration(longestOpen) : '—'"
         :hint="error ? null : 'Age of the oldest price among open incidents'"

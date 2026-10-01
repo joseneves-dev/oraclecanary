@@ -32,6 +32,9 @@ const hoursBySeverity = computed(() => {
   return counts
 })
 
+/** Hours of the range with no record (before recording began, or missed). */
+const notRecorded = computed(() => slots.value.filter((s) => !s.sample).length)
+
 const hovered = ref<number | null>(null)
 const shown = computed(() => {
   if (hovered.value !== null) return slots.value[hovered.value]
@@ -66,7 +69,7 @@ const describe = (sample: ReserveSnapshot) =>
       <span v-for="severity in (['critical', 'warning', 'ok'] as const)" :key="severity" class="chart__legend">
         <i :style="{ background: SEVERITY_COLOR[severity] }" />{{ SEVERITY_LABEL[severity] }} {{ hoursBySeverity[severity] }}h
       </span>
-      <span class="muted">of {{ samples.length }}h recorded</span>
+      <span v-if="notRecorded" class="chart__legend muted"><i class="chart__gap-swatch" />{{ notRecorded }}h not recorded</span>
     </p>
 
     <div class="chart__plot">
@@ -93,6 +96,7 @@ const describe = (sample: ReserveSnapshot) =>
             :fill="SEVERITY_COLOR[slot.sample.severity]"
             :opacity="hovered === null || hovered === i ? 1 : 0.45"
           />
+          <rect v-else class="chart__gap" :x="i + 0.1" y="98" width="0.8" height="2"><title>Not recorded</title></rect>
         </g>
       </svg>
     </div>
@@ -149,6 +153,17 @@ const describe = (sample: ReserveSnapshot) =>
   display: block;
   width: 100%;
   height: 180px;
+}
+/* Hours with no record: a faint baseline stub, so a gap reads as "not recorded" rather than as nothing. */
+.chart__gap {
+  fill: var(--ax-text-subtle);
+  fill-opacity: 0.35;
+}
+.chart__legend .chart__gap-swatch {
+  height: 3px;
+  align-self: center;
+  background: repeating-linear-gradient(90deg, var(--ax-text-subtle) 0 2px, transparent 2px 4px);
+  opacity: 0.7;
 }
 .chart__grid {
   stroke: var(--ax-border);

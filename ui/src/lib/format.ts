@@ -69,28 +69,31 @@ export const SEVERITY_BADGE: Record<Severity, string> = {
 }
 
 // Dates come from the API in UTC and are shown in the viewer's own time zone, which is named so
-// the time cannot be mistaken for UTC.
-const dateTimeFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
-const dayFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' })
-const hourFormat = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-const timeFormat = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' })
+// the time cannot be mistaken for UTC. Day before month with the month spelled ("1 Oct, 00:57"),
+// whatever the browser's locale, so no date can be read as January.
+const dateTimeFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
+const dayFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
+const hourFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+const timeFormat = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' })
 
 type DateInput = Date | string | number
 const toDate = (value: DateInput) => (value instanceof Date ? value : new Date(value))
+/** Some engines write September as "Sept" in en-GB; every other month has three letters. */
+const short = (text: string) => text.replace('Sept', 'Sep')
 
 /** 27 Sep, 22:55 GMT+1 */
 export function dateTime(value: DateInput): string {
-  return dateTimeFormat.format(toDate(value))
+  return short(dateTimeFormat.format(toDate(value)))
 }
 
 /** 27 Sep, 22:55, for axis labels and lists where the zone is shown once nearby. */
 export function dateHour(value: DateInput): string {
-  return hourFormat.format(toDate(value))
+  return short(hourFormat.format(toDate(value)))
 }
 
 /** 27 Sep */
 export function day(value: DateInput): string {
-  return dayFormat.format(toDate(value))
+  return short(dayFormat.format(toDate(value)))
 }
 
 /** 22:55:12 GMT+1 */

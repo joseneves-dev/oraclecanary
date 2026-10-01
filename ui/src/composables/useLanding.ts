@@ -97,12 +97,7 @@ export function useLanding() {
 
   const totalUsd = computed(() => (reserves.value ? reserves.value.reduce((s, r) => s + (r.totalSupplyUsd ?? 0), 0) : null))
 
-  const bySeverity = computed(() => {
-    if (!reserves.value) return null
-    const out: Record<Severity, number> = { ok: 0, info: 0, warning: 0, critical: 0 }
-    for (const r of reserves.value) out[r.severity] = (out[r.severity] ?? 0) + 1
-    return out
-  })
+  const bySeverity = computed(() => (reserves.value ? countBySeverity(reserves.value) : null))
 
   /** Most recent chain read across the reserves. */
   const lastChecked = computed(() => {
@@ -135,10 +130,13 @@ export function useLanding() {
    */
   const unusable = computed(() => {
     if (!reserves.value) return null
-    const out = { blockedUsd: 0, blockedCount: 0, pausedUsd: 0, pausedCount: 0 }
+    const out = { blockedUsd: 0, blockedCount: 0, pausedUsd: 0, pausedCount: 0, criticalUnderFloor: 0 }
     for (const r of reserves.value) {
       const usd = r.totalSupplyUsd ?? 0
-      if (usd < 1000) continue
+      if (usd < BLOCKED_FLOOR_USD) {
+        if (r.severity === 'critical') out.criticalUnderFloor++
+        continue
+      }
       const state = priceState(r)
       if (state === 'blocked') {
         out.blockedUsd += usd
@@ -158,19 +156,42 @@ export function useLanding() {
     return { count: rows.length, atStake: rows.filter((r) => (r.totalSupplyUsd ?? 0) >= FEED_MIN_USD).length }
   })
 
-  const protocols = computed(() =>
-    PROTOCOLS.map((p) => {
-      const rows = reserves.value?.filter((r) => r.protocol === p.id) ?? null
-      return {
-        ...p,
-        rows,
-        count: rows ? rows.length : null,
-        usd: rows ? rows.reduce((s, r) => s + (r.totalSupplyUsd ?? 0), 0) : null,
-      }
-    }),
-  )
+  const protocols = computed(() => buildLanes(reserves.value))
 
   return { open, unusable, reservesFailed, reserves, incidents, changes, now, totalUsd, bySeverity, lastChecked, protocols, failing, reload: load }
+}
+
+/* ── pure helpers, also for embedding ReserveField elsewhere ─────────────── */
+
+/** Reserves under this much are left out of "money blocked" (same floor as the Overview). */
+export const BLOCKED_FLOOR_USD = 1000
+
+/** One lane per protocol, as ReserveField takes them; null rows while loading. */
+export interface FieldLane {
+  id: string
+  name: string
+  rows: Reserve[] | null
+  count: number | null
+  usd: number | null
+}
+
+export function buildLanes(reserves: Reserve[] | null): FieldLane[] {
+  return PROTOCOLS.map((p) => {
+    const rows = reserves ? reserves.filter((r) => r.protocol === p.id) : null
+    return {
+      id: p.id,
+      name: p.name,
+      rows,
+      count: rows ? rows.length : null,
+      usd: rows ? rows.reduce((s, r) => s + (r.totalSupplyUsd ?? 0), 0) : null,
+    }
+  })
+}
+
+export function countBySeverity(reserves: Reserve[]): Record<Severity, number> {
+  const out: Record<Severity, number> = { ok: 0, info: 0, warning: 0, critical: 0 }
+  for (const r of reserves) out[r.severity] = (out[r.severity] ?? 0) + 1
+  return out
 }
 
 /* ── formatting (null → "—") ─────────────────────────────────────────── */

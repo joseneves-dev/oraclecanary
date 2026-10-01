@@ -12,7 +12,7 @@ const REPO = 'https://github.com/joseneves-dev/oraclecanary'
         <div class="foot__brand">
           <RouterLink to="/" class="foot__logo" aria-label="OracleCanary home">
             <CanaryMark :size="30" />
-            <span>OracleCanary</span>
+            <span>Oracle<span class="wm-accent">Canary</span></span>
           </RouterLink>
           <p>The canary in the coal mine for Solana lending.</p>
           <p class="foot__small">An independent, open-source monitor of the oracles behind Kamino, marginfi and Jupiter Lend.</p>
@@ -65,9 +65,12 @@ const REPO = 'https://github.com/joseneves-dev/oraclecanary'
   color: var(--lp-ink);
   text-decoration: none;
   font-family: var(--lp-display);
-  font-weight: 700;
+  font-weight: 600;
   font-size: 18px;
   letter-spacing: -0.02em;
+}
+.wm-accent {
+  color: var(--lp-accent-text);
 }
 .foot__brand p {
   margin: 14px 0 0;

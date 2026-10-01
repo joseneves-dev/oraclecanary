@@ -3,7 +3,8 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { ConfigChange, ReserveIncident } from '@/api/client'
-import { checkLabel, fmtAgo, fmtInt, fmtSeconds, fmtUsd, protocolName } from '@/composables/useLanding'
+import { checkLabel, fmtAgo, fmtInt, fmtUsd, protocolName } from '@/composables/useLanding'
+import { duration } from '@/lib/format'
 
 const props = defineProps<{
   incidents: ReserveIncident[] | null
@@ -48,6 +49,14 @@ const groups = computed<Group[] | null>(() => {
 })
 
 const hasChanges = computed(() => !!props.changes?.length)
+
+/** Measured from the incident's start, as the app's incident log does. */
+function timing(i: ReserveIncident): string {
+  const start = Date.parse(i.startedAt)
+  if (!i.endedAt) return `ongoing · ${duration(Math.max(0, Math.round((props.now - start) / 1000)))} so far`
+  const seconds = i.durationSeconds ?? Math.round((Date.parse(i.endedAt) - start) / 1000)
+  return `lasted ${duration(seconds)}`
+}
 </script>
 
 <template>
@@ -76,7 +85,10 @@ const hasChanges = computed(() => !!props.changes?.length)
           <ul v-if="groups?.length" class="rows">
             <li v-for="g in groups" :key="g.first.id">
               <RouterLink :to="{ name: 'reserve', params: { address: g.first.reserve } }" class="row">
-                <span class="state" :class="g.paused ? 'is-paused' : g.ongoing ? 'is-open' : 'is-ended'" />
+                <span v-if="g.first.endedAt" class="state is-ended" title="Resolved">
+                  <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6.3 5 8.6 9.5 3.6" /></svg>
+                </span>
+                <span v-else class="state" :class="g.paused ? 'is-paused' : 'is-open'" :title="g.paused ? 'Paused' : 'Ongoing'" />
                 <span class="row__main">
                   <span class="row__title">
                     <b>{{ g.first.asset }}</b>
@@ -87,8 +99,8 @@ const hasChanges = computed(() => !!props.changes?.length)
                   <span v-if="g.why && !g.paused" class="row__why">{{ g.why }}</span>
                 </span>
                 <span class="row__side lp-num">
-                  <span :class="{ 'is-live': g.ongoing && !g.paused }">{{ g.ongoing ? 'ongoing' : fmtSeconds(g.first.durationSeconds) }}</span>
-                  <small>{{ fmtAgo(Date.parse(g.first.startedAt), now) }} · {{ fmtUsd(g.first.totalSupplyUsd) }}</small>
+                  <span :class="{ 'is-live': !g.first.endedAt && !g.paused, 'is-done': !!g.first.endedAt }">{{ timing(g.first) }}</span>
+                  <small>started {{ fmtAgo(Date.parse(g.first.startedAt), now) }} · {{ fmtUsd(g.first.totalSupplyUsd) }}</small>
                 </span>
               </RouterLink>
             </li>
@@ -181,7 +193,7 @@ const hasChanges = computed(() => !!props.changes?.length)
 }
 .row {
   display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
   gap: 14px;
   align-items: start;
   padding: 14px 20px;
@@ -203,6 +215,15 @@ const hasChanges = computed(() => !!props.changes?.length)
   background: var(--lp-crit);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--lp-crit) 22%, transparent);
   animation: lp-live 1.6s ease-in-out infinite;
+}
+.state.is-ended {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin: 3px 0 0 -3px;
+  background: none;
+  color: var(--lp-ink-3);
 }
 .state.is-paused {
   background: var(--lp-info);
@@ -236,6 +257,7 @@ const hasChanges = computed(() => !!props.changes?.length)
   background: var(--lp-fill-strong);
 }
 .chip {
+  white-space: nowrap;
   font-size: 11.5px;
   font-weight: 500;
   color: var(--lp-ink-2);
@@ -263,6 +285,9 @@ const hasChanges = computed(() => !!props.changes?.length)
   font-size: 13px;
   color: var(--lp-ink);
   white-space: nowrap;
+}
+.row__side .is-done {
+  color: var(--lp-ink-2);
 }
 .row__side .is-live {
   color: var(--lp-crit-text);
@@ -296,8 +321,17 @@ const hasChanges = computed(() => !!props.changes?.length)
 }
 @media (max-width: 480px) {
   .row {
+    grid-template-columns: 12px minmax(0, 1fr);
     padding: 14px 16px;
-    gap: 10px;
+    gap: 6px 10px;
+  }
+  .row__side {
+    grid-column: 2;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 10px;
+    white-space: normal;
   }
   .panel__head {
     padding: 14px 16px;

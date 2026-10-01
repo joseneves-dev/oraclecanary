@@ -8,11 +8,14 @@ import PriceAgeChart from '@/components/PriceAgeChart.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import ReserveTags from '@/components/ReserveTags.vue'
 import SeverityBadge from '@/components/SeverityBadge.vue'
-import { SEVERITY_TONE, checkMessage, dateTime, protocolName, duration, shortAddress, solscanAccount, usd } from '@/lib/format'
+import { SEVERITY_TONE, checkMessage, dateTime, duration, protocolName, shortAddress, solscanAccount, usd } from '@/lib/format'
+import { priceState } from '@/lib/priceState'
 
 const props = defineProps<{ address: string }>()
 
 const reserve = ref<Reserve | null>(null)
+/** A tokenized stock whose price only paused because its market is closed (same rule as My positions). */
+const paused = computed(() => !!reserve.value && priceState(reserve.value) === 'paused')
 const loading = ref(true)
 const error = ref<string | null>(null)
 
@@ -113,11 +116,17 @@ const accountRows = (r: Reserve) =>
       <div class="ax-page-head">
         <div class="ax-page-head__row">
           <div>
-            <h1 class="ax-page-head__title title">
-              {{ reserve.asset || shortAddress(reserve.mint) }}
-              <SeverityBadge :severity="reserve.severity" />
-              <ReserveTags :checks="reserve.checks" hide-empty />
-            </h1>
+            <div class="title-row">
+              <h1 class="ax-page-head__title">{{ reserve.asset || shortAddress(reserve.mint) }}</h1>
+              <!-- A stock paused by its closed market is expected, so it reads as on My positions, not as an alarm. -->
+              <span class="title-badges">
+                <span v-if="paused" class="ax-badge ax-badge--soft ax-badge--pill ax-badge--info">Paused · market closed</span>
+                <template v-else>
+                  <SeverityBadge :severity="reserve.severity" />
+                  <ReserveTags :checks="reserve.checks" hide-empty />
+                </template>
+              </span>
+            </div>
             <p class="ax-page-head__subtitle">
               {{ protocolName(reserve.protocol) }} · {{ reserve.market.name ?? 'Unlisted market' }} · checked {{ dateTime(reserve.checkedAt) }}
             </p>
@@ -126,13 +135,18 @@ const accountRows = (r: Reserve) =>
       </div>
 
       <div class="ax-dash-grid">
-        <KpiCard label="Health score" :value="`${reserve.score} / 100`" :tone="SEVERITY_TONE[reserve.severity]" />
+        <KpiCard
+          label="Health score"
+          :value="`${reserve.score} / 100`"
+          :tone="paused ? undefined : SEVERITY_TONE[reserve.severity]"
+          :hint="paused ? 'Paused while the US market is closed: expected' : null"
+        />
         <KpiCard label="Supply" :value="usd(reserve.totalSupplyUsd)" />
         <KpiCard
           label="Price age"
           :value="duration(reserve.price.ageSeconds)"
          
-          :tone="reserve.price.isStale ? 'danger' : undefined"
+          :tone="reserve.price.isStale && !paused ? 'danger' : undefined"
           :hint="`The protocol rejects prices older than ${duration(reserve.price.maxAgeSeconds)}`"
         />
         <KpiCard label="Oracle providers" :value="String(reserve.providers.length)" :hint="reserve.providers.join(', ') || 'None found'" />
@@ -248,6 +262,19 @@ const accountRows = (r: Reserve) =>
 .page > .ax-page-head {
   margin-block-end: 0;
 }
+.title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ax-space-2) var(--ax-space-3);
+}
+.title-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ax-space-1);
+  letter-spacing: normal;
+}
 .loading-page {
   display: flex;
   flex-direction: column;
@@ -265,12 +292,6 @@ const accountRows = (r: Reserve) =>
 .loading-page__card {
   height: 280px;
   padding: var(--ax-space-5);
-}
-.title {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--ax-space-3);
 }
 .state {
   padding: var(--ax-space-8);

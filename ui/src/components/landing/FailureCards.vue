@@ -279,10 +279,16 @@ const rows = computed(() => cards.map((c) => ({ ...c, live: props.failing(c.code
   .cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+  .card:last-child {
+    grid-column: span 2;
+  }
 }
 @media (max-width: 900px) {
   .cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .card:last-child {
+    grid-column: 1 / -1;
   }
 }
 @media (max-width: 600px) {
@@ -304,6 +310,9 @@ const rows = computed(() => cards.map((c) => ({ ...c, live: props.failing(c.code
   }
   .cards::-webkit-scrollbar {
     display: none;
+  }
+  .card:last-child {
+    grid-column: auto;
   }
   .card {
     scroll-snap-align: start;
