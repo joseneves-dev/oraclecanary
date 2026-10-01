@@ -212,7 +212,9 @@ const accountRows = (r: Reserve) =>
           <div class="ax-card__body">
             <ul v-if="reserve.checks.length" class="checks">
               <li v-for="c in reserve.checks" :key="c.code" class="checks__item">
-                <SeverityBadge :severity="c.severity" />
+                <!-- When the reserve is only paused, its stale-price check is the pause itself. -->
+                <span v-if="paused && c.code === 'STALE'" class="ax-badge ax-badge--soft ax-badge--pill ax-badge--info">Paused</span>
+                <SeverityBadge v-else :severity="c.severity" />
                 <div>
                   <b class="ax-mono checks__code">{{ c.code }}</b>
                   <p class="checks__message">{{ checkMessage(c.message) }}</p>

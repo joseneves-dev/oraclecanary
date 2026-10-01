@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { ReserveSnapshot } from '@/api/client'
 import { dateHour, dateTime, day, duration } from '@/lib/format'
+import { healthState } from '@/lib/priceState'
 
 /**
  * How old the reserve's price was, hour by hour, against the protocol's limit. A price past the
@@ -32,10 +33,19 @@ const slots = computed(() => {
  * but never goes stale, so it is never shown as rejected.
  */
 const isStale = (s: ReserveSnapshot) => s.checks.some((c) => c.code === 'STALE')
+/** Past the limit only because the US market is closed: the info colour, as everywhere else. */
+const isPaused = (s: ReserveSnapshot) => isStale(s) && healthState(s) === 'paused'
 const color = (s: ReserveSnapshot) =>
-  isStale(s) ? 'var(--ax-viz-red)' : s.checks.some((c) => c.code === 'NEAR_STALE') ? 'var(--ax-viz-amber)' : 'var(--ax-viz-emerald)'
+  isPaused(s)
+    ? 'var(--ax-info-500)'
+    : isStale(s)
+      ? 'var(--ax-viz-red)'
+      : s.checks.some((c) => c.code === 'NEAR_STALE')
+        ? 'var(--ax-viz-amber)'
+        : 'var(--ax-viz-emerald)'
 
-const hoursPastLimit = computed(() => props.samples.filter(isStale).length)
+const hoursPastLimit = computed(() => props.samples.filter((s) => isStale(s) && !isPaused(s)).length)
+const hoursPaused = computed(() => props.samples.filter(isPaused).length)
 const withAge = computed(() => props.samples.filter((s) => s.priceAgeSeconds !== null).length)
 
 /** Hours of the range with no record (before recording began, or missed). */
@@ -57,6 +67,7 @@ const ticks = computed(() => {
   <div class="chart">
     <p class="chart__summary">
       <span class="chart__legend"><i style="background: var(--ax-viz-red)" />Past the limit {{ hoursPastLimit }}h</span>
+      <span v-if="hoursPaused" class="chart__legend"><i style="background: var(--ax-info-500)" />Paused · market closed {{ hoursPaused }}h</span>
       <span class="chart__legend"><i class="chart__dash" />Limit: {{ duration(maxAgeSeconds) }}</span>
       <span v-if="notRecorded" class="chart__legend muted"><i class="chart__gap-swatch" />{{ notRecorded }}h not recorded</span>
       <span class="muted">Sampled hourly: the oldest price seen in each hour; the limit shown is today's</span>
@@ -96,7 +107,7 @@ const ticks = computed(() => {
     <p class="chart__detail" aria-live="polite">
       <template v-if="shown?.sample && shown.sample.priceAgeSeconds !== null">
         <b>{{ dateTime(shown.hour) }}</b> · price up to {{ duration(shown.sample.priceAgeSeconds) }} old
-        {{ isStale(shown.sample) ? '· past the limit: the protocol rejects it' : '' }}
+        {{ isPaused(shown.sample) ? '· paused while the US market is closed' : isStale(shown.sample) ? '· past the limit: the protocol rejects it' : '' }}
       </template>
       <template v-else-if="shown">{{ dateTime(shown.hour) }} · not recorded</template>
       <template v-else>No price age recorded for this range yet.</template>

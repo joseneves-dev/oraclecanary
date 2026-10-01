@@ -3,6 +3,7 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Reserve } from '@/api/client'
+import { healthState } from '@/lib/priceState'
 
 const props = defineProps<{ sample: Reserve | null }>()
 
@@ -19,7 +20,9 @@ const sample = computed(() => {
     score: r.score,
     severity: r.severity,
     age: r.price?.ageSeconds ?? null,
-    check: r.checks[0]?.code ?? null,
+    paused: healthState(r) === 'paused',
+    small: (r.totalSupplyUsd ?? 0) < 1000,
+    checks: [...new Set(r.checks.map((c) => c.code))].slice(0, 2),
   }
 })
 </script>
@@ -78,15 +81,16 @@ const sample = computed(() => {
     -H <span class="s">"Accept: application/json"</span> \
     -d listed=true -d itemsPerPage=1 \
     -d <span class="s">"order[score]=asc"</span></code></pre>
-            <pre class="out"><code><span class="c">// lowest score right now (live, trimmed)</span>
-<template v-if="sample">[{
+            <pre class="out"><code><span class="c">{{ sample && !sample.paused && !sample.small ? '// lowest score among reserves holding $1K+, outside market-hours pauses (live, trimmed)' : '// lowest score right now (live, trimmed)' }}</span>
+<template v-if="sample"><template v-if="sample.paused"><span class="c">// paused: market closed, expected</span>
+</template>[{
   <span class="a">"address"</span>: <span class="s">"{{ sample.address }}"</span>,
   <span class="a">"protocol"</span>: <span class="s">"{{ sample.protocol }}"</span>,
   <span class="a">"asset"</span>: <span class="s">"{{ sample.asset }}"</span>,
   <span class="a">"score"</span>: <span class="n">{{ sample.score }}</span>,
   <span class="a">"severity"</span>: <span :class="sample.severity === 'critical' ? 'x' : 's'">"{{ sample.severity }}"</span>,
   <span class="a">"price"</span>: { <span class="a">"ageSeconds"</span>: <span class="n">{{ sample.age ?? 'null' }}</span>, … },
-  <span class="a">"checks"</span>: [<template v-if="sample.check">{ <span class="a">"code"</span>: <span class="s">"{{ sample.check }}"</span>, … }</template>],
+  <span class="a">"checks"</span>: [<template v-for="(code, k) in sample.checks" :key="code">{{ k ? ', ' : '' }}{ <span class="a">"code"</span>: <span class="s">"{{ code }}"</span>, … }</template>],
   …
 }]</template><template v-else>—</template></code></pre>
           </div>
@@ -112,6 +116,7 @@ const sample = computed(() => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
+  align-items: start;
 }
 .code-card {
   display: flex;

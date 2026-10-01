@@ -9,15 +9,15 @@ defineProps<{ title?: string }>()
     <ul>
       <li>
         <span class="legend__dot legend__dot--danger"></span>
-        <span><b>Blocked</b> The protocol cannot use the price: the loan account cannot borrow, withdraw or be liquidated.</span>
+        <span><b>Blocked (critical)</b> The protocol cannot use the price: the loan account cannot borrow, withdraw or be liquidated.</span>
       </li>
       <li>
         <span class="legend__dot legend__dot--info"></span>
-        <span><b>Paused</b> A tokenized stock outside US market hours: expected, but the same freeze.</span>
+        <span><b>Paused · market closed</b> A tokenized stock outside US market hours: expected, but the same freeze.</span>
       </li>
       <li>
         <span class="legend__dot legend__dot--warning"></span>
-        <span><b>Weak</b> Usable now, but fragile, e.g. a single oracle with no fallback.</span>
+        <span><b>Weak (warning)</b> Usable now, but fragile, e.g. a single oracle with no fallback.</span>
       </li>
       <li>
         <span class="legend__dot legend__dot--success"></span>

@@ -79,10 +79,11 @@ function lookup(value: string) {
 type State = 'blocked' | 'paused' | 'overvalued' | 'weak' | 'unknown' | 'ok'
 const STATE_RANK: Record<State, number> = { blocked: 5, overvalued: 4, paused: 3, weak: 2, unknown: 1, ok: 0 }
 const STATE_BADGE: Record<State, { label: string; badge: string }> = {
-  blocked: { label: 'Blocked', badge: 'ax-badge--danger' },
-  paused: { label: 'Paused', badge: 'ax-badge--info' },
+  // The same words as the rest of the app, with the level each outcome corresponds to.
+  blocked: { label: 'Blocked (critical)', badge: 'ax-badge--danger' },
+  paused: { label: 'Paused · market closed', badge: 'ax-badge--info' },
   overvalued: { label: 'Overvalued', badge: 'ax-badge--warning' },
-  weak: { label: 'Weak', badge: 'ax-badge--warning' },
+  weak: { label: 'Weak (warning)', badge: 'ax-badge--warning' },
   unknown: { label: 'Unknown', badge: 'ax-badge--neutral' },
   ok: { label: 'Healthy', badge: 'ax-badge--success' },
 }
@@ -242,6 +243,16 @@ const accountStates = computed(() => {
   }
   return states
 })
+
+/**
+ * The prices holding up a row that is fine on its own, e.g. a USDC loan in an account paused by
+ * FWDI. Shown instead of a state badge, so a healthy price is never labelled paused or blocked.
+ */
+function heldUpBy(row: Row): string | null {
+  const own = rawRows.value.find((r) => r.key === row.key)?.state
+  const account = row.account ? accountStates.value.get(row.account) : undefined
+  return account && own !== row.state ? [...account.by].join(', ') : null
+}
 
 /** Rows with their account's state applied: a healthy row in a blocked account is blocked too. */
 const rows = computed(() =>
@@ -681,7 +692,8 @@ const others = computed(() => findings.value.slice(1))
                   </td>
                   <td class="ax-table__td">
                     <div class="status">
-                      <span class="ax-badge ax-badge--soft ax-badge--pill" :class="STATE_BADGE[r.state].badge">{{ STATE_BADGE[r.state].label }}</span>
+                      <span v-if="heldUpBy(r)" class="ax-badge ax-badge--outline ax-badge--neutral ax-badge--pill">Held up by {{ heldUpBy(r) }}</span>
+                      <span v-else class="ax-badge ax-badge--soft ax-badge--pill" :class="STATE_BADGE[r.state].badge">{{ STATE_BADGE[r.state].label }}</span>
                       <ReserveTags :checks="r.checks" hide-empty />
                     </div>
                   </td>

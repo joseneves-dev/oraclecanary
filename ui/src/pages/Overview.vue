@@ -103,7 +103,7 @@ const verdict = computed(() => {
 const bySupply = (a: Reserve, b: Reserve) => b.totalSupplyUsd - a.totalSupplyUsd
 const bigCritical = computed(() => reserves.value.filter((r) => healthState(r) === 'critical' && r.totalSupplyUsd >= BLOCKED_MIN_USD).sort(bySupply))
 const warningRows = computed(() => reserves.value.filter((r) => healthState(r) === 'warning').sort(bySupply))
-/** Broken prices first, then market-hours pauses, then the largest warnings. */
+/** Broken prices holding $1K or more first, then market-hours pauses, then the largest warnings. */
 const needsAttention = computed(() => [...bigCritical.value, ...pausedNow.value, ...warningRows.value.slice(0, ATTENTION_WARNINGS)])
 const moreWarnings = computed(() => Math.max(0, warningRows.value.length - ATTENTION_WARNINGS))
 
@@ -266,7 +266,7 @@ const statusTone = computed(() => (error.value || loading.value ? 'muted' : fres
           <div class="ax-card__header">
             <div class="ax-card__titles">
               <h2 id="attention-title" class="ax-card__title">Needs attention</h2>
-              <p class="ax-card__subtitle">Broken prices first, then market-hours pauses, then the largest warnings</p>
+              <p class="ax-card__subtitle">Broken prices holding $1K or more first, then market-hours pauses, then the largest warnings</p>
             </div>
             <div class="ax-card__actions">
               <RouterLink class="ax-btn ax-btn--secondary ax-btn--sm" :to="{ name: 'reserves', query: { health: 'issues' } }">All with issues</RouterLink>

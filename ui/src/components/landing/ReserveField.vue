@@ -32,6 +32,7 @@ const router = useRouter()
 const titleId = `rf-${useId()}`
 
 const ready = computed(() => props.lanes.every((l) => l.rows))
+const total = computed(() => (ready.value ? props.lanes.reduce((n, l) => n + (l.count ?? 0), 0) : null))
 
 /** Worst first, so each protocol reads as bands of colour. */
 const SEV_ORDER: Record<HealthState, number> = { critical: 0, paused: 1, warning: 2, info: 3, ok: 4 }
@@ -174,7 +175,7 @@ function worstCheck(r: Reserve): string | null {
         <div v-for="(s, si) in segments" :key="s.id" class="seg" :style="{ '--n': s.n }">
           <div class="seg__label">
             <span class="seg__name">
-              {{ s.name }}
+              <RouterLink class="seg__link" :to="{ name: 'reserves', query: { protocol: s.id } }" :aria-label="`${s.name}: browse its ${fmtInt(s.count)} reserves`">{{ s.name }}</RouterLink>
               <RouterLink
                 v-if="s.critical"
                 class="crit-tag"
@@ -249,7 +250,7 @@ function worstCheck(r: Reserve): string | null {
         <span class="only-fine">Hover a mark for its price health, click to open it.</span>
         <span class="only-coarse">Tap a mark for its price health, tap again to open it.</span>
       </span>
-      <RouterLink :to="{ name: 'reserves' }" class="field__link">All reserves →</RouterLink>
+      <RouterLink :to="{ name: 'reserves' }" class="field__link">Browse all {{ total != null ? fmtInt(total) + ' ' : '' }}reserves →</RouterLink>
     </footer>
 
     <Teleport to="body">
@@ -622,6 +623,19 @@ function worstCheck(r: Reserve): string | null {
   gap: 8px;
   color: var(--rf-ink);
   font-weight: 600;
+}
+.seg__link {
+  color: inherit;
+  text-decoration: none;
+}
+.seg__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.seg__link:focus-visible {
+  outline: 2px solid var(--rf-focus);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 .seg__meta {
   color: var(--rf-ink-3);

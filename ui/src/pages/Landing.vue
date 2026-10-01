@@ -4,8 +4,9 @@
  * light mode), with the live reserve field as its signature. Every number comes from the API.
  */
 import { computed, ref } from 'vue'
+import { healthState } from '@/lib/priceState'
 import { RouterLink } from 'vue-router'
-import { fmtAgo, fmtInt, fmtUsd, useLanding } from '@/composables/useLanding'
+import { BLOCKED_FLOOR_USD, fmtAgo, fmtInt, fmtUsd, useLanding } from '@/composables/useLanding'
 import LandingNav from '@/components/landing/LandingNav.vue'
 import HeroWallet from '@/components/landing/HeroWallet.vue'
 import ReserveField from '@/components/landing/ReserveField.vue'
@@ -31,8 +32,11 @@ function retry() {
 }
 const fresh = computed(() => lastChecked.value != null && now.value - lastChecked.value < 15 * 60_000)
 const sample = computed(() => {
-  const rows = reserves.value
-  if (!rows?.length) return null
+  const all = reserves.value
+  if (!all?.length) return null
+  // A stock paused by market hours is expected; show the lowest score outside those if there is one.
+  const live = all.filter((r) => healthState(r) !== 'paused' && (r.totalSupplyUsd ?? 0) >= BLOCKED_FLOOR_USD)
+  const rows = live.length ? live : all
   return rows.reduce((a, b) => (b.score < a.score || (b.score === a.score && b.totalSupplyUsd > a.totalSupplyUsd) ? b : a))
 })
 </script>

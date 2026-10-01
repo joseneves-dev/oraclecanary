@@ -32,18 +32,38 @@ export function duration(seconds: number | null): string {
   return hours % 24 ? `${days}d ${hours % 24}h` : `${days}d`
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+/** "Wed 30 Sep 20:00 UTC" (weekday optional), as the API writes market open and close times. */
+const UTC_DATE = /\b(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) )?(\d{1,2}) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{2}):(\d{2}) UTC\b/g
+
+/**
+ * A dated UTC time from a check message, in the viewer's zone like every other time on the site. The
+ * message carries no year, so the one that puts the date nearest to now is used. A bare "HH:MM UTC"
+ * has no date to resolve safely and is left as it is.
+ */
+function localizeUtc(message: string, now = Date.now()): string {
+  return message.replace(UTC_DATE, (match, dayOfMonth: string, month: string, hour: string, minute: string) => {
+    const year = new Date(now).getUTCFullYear()
+    const candidates = [year - 1, year, year + 1].map((y) => Date.UTC(y, MONTHS.indexOf(month), Number(dayOfMonth), Number(hour), Number(minute)))
+    const nearest = candidates.reduce((best, t) => (Math.abs(t - now) < Math.abs(best - now) ? t : best))
+    return Number.isFinite(nearest) ? dateTime(nearest) : match
+  })
+}
+
 /**
  * A check message as shown on screen: the API writes ages in seconds ("Price is 12987s old; the
  * protocol rejects prices older than 185s"), which read better as durations ("3h 36m", "3m 5s").
  * Under an hour the seconds are kept, so a price just past its limit never reads as equal to it.
+ * Dated UTC times become the viewer's local time.
  */
 export function checkMessage(message: string): string {
-  return message.replace(/\b(\d+)s\b/g, (_, digits: string) => {
+  const withDurations = message.replace(/\b(\d+)s\b/g, (_, digits: string) => {
     const seconds = Number(digits)
     if (seconds < 60 || seconds >= 3600) return duration(seconds)
     const rest = seconds % 60
     return rest ? `${Math.floor(seconds / 60)}m ${rest}s` : `${seconds / 60}m`
   })
+  return localizeUtc(withDurations)
 }
 
 /** 7u3HeH…PfF */

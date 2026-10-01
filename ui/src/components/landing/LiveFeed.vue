@@ -111,14 +111,13 @@ function timing(i: ReserveIncident): string {
                 </span>
                 <span class="row__side lp-num">
                   <span :class="{ 'is-live': !g.first.endedAt && !g.paused, 'is-done': !!g.first.endedAt }">{{ timing(g.first) }}</span>
-                  <small>started {{ fmtAgo(Date.parse(g.first.startedAt), now) }} · {{ fmtUsd(g.first.totalSupplyUsd) }}</small>
+                  <small><template v-if="g.first.endedAt">started {{ fmtAgo(Date.parse(g.first.startedAt), now) }} · </template>{{ fmtUsd(g.first.totalSupplyUsd) }}</small>
                 </span>
               </RouterLink>
             </li>
           </ul>
           <p v-else-if="groups" class="empty">No incident on a reserve holding $10K or more yet.</p>
           <p v-else class="empty lp-num">—</p>
-          <p v-if="changes && !hasChanges" class="note">No oracle configuration change recorded yet.</p>
         </div>
 
         <div v-if="hasChanges" class="panel">
