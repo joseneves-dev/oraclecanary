@@ -74,6 +74,34 @@ class LendingReserve
     #[ORM\Column]
     private \DateTimeImmutable $checkedAt;
 
+    /** Jupiter Lend vaults only: the token borrowed from the vault (its own mint is the collateral). */
+    #[ORM\Column(length: 44, nullable: true)]
+    private ?string $borrowMint = null;
+
+    /** The asset is a tokenized US stock, whose price follows the stock market's hours. */
+    #[ORM\Column(options: ['default' => false])]
+    private bool $marketHours = false;
+
+    /** What depositors earn per year as the protocol reports it, a fraction (0.05 = 5%), without incentives. */
+    #[ORM\Column(type: Types::FLOAT, nullable: true)]
+    private ?float $supplyApy = null;
+
+    /** What borrowers pay per year as the protocol reports it, a fraction. */
+    #[ORM\Column(type: Types::FLOAT, nullable: true)]
+    private ?float $borrowApy = null;
+
+    /** Share of a deposit that can be borrowed against it (0 to 1); 0 means it is not accepted as collateral. */
+    #[ORM\Column(type: Types::FLOAT, nullable: true)]
+    private ?float $maxLtv = null;
+
+    /** Where the rates come from: kamino-api or marginfi-onchain. */
+    #[ORM\Column(length: 32, nullable: true)]
+    private ?string $rateSource = null;
+
+    /** When the source computed (or the indexer read) the rates. */
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $rateAt = null;
+
     public function getAddress(): string
     {
         return $this->address;
@@ -147,5 +175,40 @@ class LendingReserve
     public function getCheckedAt(): \DateTimeImmutable
     {
         return $this->checkedAt;
+    }
+
+    public function getBorrowMint(): ?string
+    {
+        return $this->borrowMint;
+    }
+
+    public function isMarketHours(): bool
+    {
+        return $this->marketHours;
+    }
+
+    public function getSupplyApy(): ?float
+    {
+        return $this->supplyApy;
+    }
+
+    public function getBorrowApy(): ?float
+    {
+        return $this->borrowApy;
+    }
+
+    public function getMaxLtv(): ?float
+    {
+        return $this->maxLtv;
+    }
+
+    public function getRateSource(): ?string
+    {
+        return $this->rateSource;
+    }
+
+    public function getRateAt(): ?\DateTimeImmutable
+    {
+        return $this->rateAt;
     }
 }

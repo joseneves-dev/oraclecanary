@@ -4,6 +4,8 @@ import type { CuratorVault } from './adapters/kaminoVaults.js';
 import { configChanges, storedFeeds, type StoredConfig } from './configWatch.js';
 import type { HealthResult } from './health.js';
 import { checkKeys, hourOf, planIncidents, trackChanges, type AlertState, type HealthTransition } from './history.js';
+import { US_STOCK_MINTS } from './marketHours.js';
+import type { EarnPool } from './rates.js';
 import type { MarketOracleConfig, Protocol } from './types.js';
 
 export interface ReserveHealthRow {
@@ -34,9 +36,30 @@ async function insertRows(client: pg.PoolClient, table: string, columns: readonl
   }
 }
 
-const RESERVE_COLUMNS = [
+/** Written together from one source (see rates.ts); kept from the last run when no rate was read. */
+export const RATE_COLUMNS = ['supply_apy', 'borrow_apy', 'max_ltv', 'rate_source', 'rate_at'] as const;
+const RATE_COLUMN_SET = new Set<string>(RATE_COLUMNS);
+
+/**
+ * The SET clause of the lending_reserve upsert. The rate columns keep their stored values when this
+ * run read no rate for the reserve (rate_source null), so an API outage does not erase them.
+ */
+export function reserveUpdates(): string {
+  return RESERVE_COLUMNS.filter((c) => c !== 'address')
+    .map((c) => (RATE_COLUMN_SET.has(c) ? `${c} = CASE WHEN EXCLUDED.rate_source IS NULL THEN lending_reserve.${c} ELSE EXCLUDED.${c} END` : `${c} = EXCLUDED.${c}`))
+    .join(', ');
+}
+
+/** Values of RATE_COLUMNS for a reserve: all null when no rate was read this run. */
+export function rateValues(r: MarketOracleConfig): (number | string | null)[] {
+  if (!r.rate) return RATE_COLUMNS.map(() => null);
+  return [finite(r.rate.supplyApy), finite(r.rate.borrowApy), r.rate.maxLtv, r.rate.source, utc(r.rate.at)];
+}
+
+export const RESERVE_COLUMNS = [
   'address', 'protocol', 'market', 'market_name', 'asset', 'mint', 'status', 'total_supply_usd',
   'max_age_price_seconds', 'price_age_seconds', 'score', 'providers', 'checks', 'feeds', 'checked_at',
+  'borrow_mint', 'market_hours', ...RATE_COLUMNS,
 ] as const;
 
 const EVENT_COLUMNS = [
@@ -198,7 +221,7 @@ export async function saveReserveHealth(
       ]),
     );
 
-    const updates = RESERVE_COLUMNS.filter((c) => c !== 'address').map((c) => `${c} = EXCLUDED.${c}`).join(', ');
+    const updates = reserveUpdates();
     await insertRows(
       client,
       'lending_reserve',
@@ -210,6 +233,7 @@ export async function saveReserveHealth(
         // made meanwhile is still compared against what was there before.
         JSON.stringify({ ...storedFeeds(r), knownProviders: h.providers.length ? h.providers : (stored.get(r.reserve)?.providers ?? []) }),
         utc(checkedAt),
+        r.borrowMint ?? null, US_STOCK_MINTS.has(r.mint), ...rateValues(r),
       ]),
       `ON CONFLICT (address) DO UPDATE SET ${updates}`,
     );
@@ -313,6 +337,40 @@ export async function saveVaults(pool: pg.Pool, vaults: CuratorVault[], checkedA
       `ON CONFLICT (address) DO UPDATE SET ${updates}`,
     );
     await client.query('DELETE FROM curator_vault WHERE NOT (address = ANY($1))', [vaults.map((v) => v.address)]);
+    await client.query('COMMIT');
+  } catch (e) {
+    failure = e as Error;
+    await client.query('ROLLBACK').catch(() => {
+      // The connection itself is broken; the original error is the one worth reporting.
+    });
+    throw e;
+  } finally {
+    client.release(failure);
+  }
+}
+
+const EARN_COLUMNS = ['address', 'asset', 'mint', 'supply_apy', 'rewards_apy', 'total_supply_usd', 'rate_source', 'rate_at', 'checked_at'] as const;
+
+/**
+ * Replaces the stored Jupiter Lend Earn pools with this run's. Nothing is written when the list is
+ * empty, which more likely means the API failed than that every pool closed.
+ */
+export async function saveEarnPools(pool: pg.Pool, pools: EarnPool[], checkedAt: Date): Promise<void> {
+  if (!pools.length) return;
+  const client = await pool.connect();
+  let failure: Error | undefined;
+  try {
+    await client.query('BEGIN');
+    await insertRows(
+      client,
+      'lending_earn_pool',
+      EARN_COLUMNS,
+      pools.map((p) => [
+        p.address, p.asset.slice(0, ASSET_LENGTH), p.mint, finite(p.supplyApy), finite(p.rewardsApy), finite(p.totalSupplyUsd), p.source, utc(p.at), utc(checkedAt),
+      ]),
+      `ON CONFLICT (address) DO UPDATE SET ${EARN_COLUMNS.filter((c) => c !== 'address').map((c) => `${c} = EXCLUDED.${c}`).join(', ')}`,
+    );
+    await client.query('DELETE FROM lending_earn_pool WHERE NOT (address = ANY($1))', [pools.map((p) => p.address)]);
     await client.query('COMMIT');
   } catch (e) {
     failure = e as Error;

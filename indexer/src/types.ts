@@ -1,3 +1,5 @@
+import type { LendingRate } from './rates.js';
+
 export type Protocol = 'kamino' | 'marginfi' | 'jupiter-lend';
 
 /** One input of a Jupiter Lend oracle; every source is multiplied or divided into the price. */
@@ -56,4 +58,8 @@ export interface MarketOracleConfig {
   windingDown?: boolean;
   /** Kamino only: collateral tokens (cTokens) in circulation, in raw units. */
   ctokenSupply?: number;
+  /** Jupiter Lend only: the token borrowed from the vault (its supply token is the collateral). */
+  borrowMint?: string;
+  /** Supply and borrow rates as the protocol reports them, when read this run (see rates.ts). */
+  rate?: LendingRate;
 }

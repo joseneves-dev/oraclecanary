@@ -177,6 +177,7 @@ export async function fetchJupiterLendVaults(connection: Connection): Promise<Ma
       reserve: address,
       asset: supply && borrow ? `${supply.symbol}/${borrow.symbol}` : '',
       mint: config.supplyToken,
+      borrowMint: config.borrowToken,
       status: 'active',
       maxAgePriceSeconds: USER_ACTION_MAX_AGE_SECONDS,
       feeds: { pyth: null, switchboard: null, switchboardTwap: null, scope: null },

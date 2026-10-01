@@ -22,7 +22,8 @@ const sample = computed(() => {
     age: r.price?.ageSeconds ?? null,
     paused: healthState(r) === 'paused',
     small: (r.totalSupplyUsd ?? 0) < 1000,
-    checks: [...new Set(r.checks.map((c) => c.code))].slice(0, 2),
+    // A paused sample keeps two codes so MARKET_CLOSED shows next to STALE.
+    checks: [...new Set(r.checks.map((c) => c.code))].slice(0, healthState(r) === 'paused' ? 2 : 1),
   }
 })
 </script>
@@ -81,7 +82,8 @@ const sample = computed(() => {
     -H <span class="s">"Accept: application/json"</span> \
     -d listed=true -d itemsPerPage=1 \
     -d <span class="s">"order[score]=asc"</span></code></pre>
-            <pre class="out"><code><span class="c">{{ sample && !sample.paused && !sample.small ? '// lowest score among reserves holding $1K+, outside market-hours pauses (live, trimmed)' : '// lowest score right now (live, trimmed)' }}</span>
+            <pre class="out"><code><span class="c"><template v-if="sample && !sample.paused && !sample.small">// lowest score among reserves holding $1K+,
+// outside market-hours pauses (live, trimmed)</template><template v-else>// lowest score right now (live, trimmed)</template></span>
 <template v-if="sample"><template v-if="sample.paused"><span class="c">// paused: market closed, expected</span>
 </template>[{
   <span class="a">"address"</span>: <span class="s">"{{ sample.address }}"</span>,

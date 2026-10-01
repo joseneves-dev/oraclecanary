@@ -14,6 +14,7 @@ import CanaryMark from './CanaryMark.vue'
             <h2 id="start-title" class="band__title">Let the canary sing when something breaks.</h2>
             <p class="band__sub">Free, open source, no sign-up.</p>
           </div>
+          <RouterLink :to="{ name: 'overview' }" class="lp-btn lp-btn--primary lp-btn--lg band__app">Open app <span aria-hidden="true">→</span></RouterLink>
         </div>
         <ul class="band__doors">
           <li>
@@ -28,8 +29,11 @@ import CanaryMark from './CanaryMark.vue'
               <span class="door__body">Messages you when a price behind one of your Kamino or marginfi loan accounts can no longer be used, and when it recovers.</span>
             </a>
           </li>
-          <li class="band__app">
-            <RouterLink :to="{ name: 'overview' }" class="lp-btn lp-btn--primary lp-btn--lg">Open app <span aria-hidden="true">→</span></RouterLink>
+          <li>
+            <RouterLink :to="{ name: 'rates' }" class="door">
+              <span class="door__title">Lending rates <span aria-hidden="true">→</span></span>
+              <span class="door__body">Supply APY next to the oracle health of the collateral behind it.</span>
+            </RouterLink>
           </li>
         </ul>
       </div>
@@ -40,7 +44,7 @@ import CanaryMark from './CanaryMark.vue'
 <style scoped>
 .band {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 32px;
   align-items: center;
   padding: 28px;
@@ -53,7 +57,7 @@ import CanaryMark from './CanaryMark.vue'
 .band__intro {
   display: flex;
   gap: 18px;
-  align-items: flex-start;
+  align-items: center;
 }
 .band__mark {
   display: inline-flex;
@@ -80,7 +84,7 @@ import CanaryMark from './CanaryMark.vue'
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   align-items: stretch;
 }
@@ -111,8 +115,8 @@ import CanaryMark from './CanaryMark.vue'
   color: var(--lp-ink-2);
 }
 .band__app {
-  display: flex;
-  align-items: center;
+  margin-inline-start: auto;
+  flex: none;
 }
 @media (max-width: 1100px) {
   .band {
@@ -126,8 +130,12 @@ import CanaryMark from './CanaryMark.vue'
   .band__doors {
     grid-template-columns: minmax(0, 1fr);
   }
-  .band__app .lp-btn {
+  .band__intro {
+    flex-wrap: wrap;
+  }
+  .band__app {
     width: 100%;
+    margin: 0;
   }
 }
 </style>

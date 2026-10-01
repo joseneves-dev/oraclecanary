@@ -18,6 +18,8 @@ export const router = createRouter({
         { path: 'switchboard', name: 'switchboard', component: () => import('@/pages/Switchboard.vue'), meta: { slug: 'switchboard', title: 'Switchboard exposure' } },
         { path: 'positions', name: 'positions', component: () => import('@/pages/Positions.vue'), meta: { slug: 'positions', title: 'My positions' } },
         { path: 'how-it-works', name: 'how-it-works', component: () => import('@/pages/HowItWorks.vue'), meta: { slug: 'how-it-works', title: 'How it works' } },
+        { path: 'rates', name: 'rates', component: () => import('@/pages/Rates.vue'), meta: { slug: 'rates', title: 'Lending rates' } },
+        { path: 'blast-radius', name: 'blast-radius', component: () => import('@/pages/BlastRadius.vue'), meta: { slug: 'blast-radius', title: 'If an oracle fails' } },
         { path: 'vaults', name: 'vaults', component: () => import('@/pages/Vaults.vue'), meta: { slug: 'vaults', title: 'Curator vaults' } },
         {
           path: 'vaults/:address',

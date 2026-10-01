@@ -19,8 +19,9 @@
 		}
 	}
 
+	# /mcp: the MCP endpoint for AI agents (streamable HTTP, config/packages/mcp.yaml).
 	@symfony {
-		path /api /api/* /bundles/*
+		path /api /api/* /bundles/* /mcp
 		not path /api/wallets/*
 	}
 	handle @symfony {

@@ -164,3 +164,18 @@ export async function fetchConfigChanges(itemsPerPage: number, signal?: AbortSig
   if (!data) throw new ApiError(`Could not load configuration changes (HTTP ${status})`)
   return data as ConfigChange[]
 }
+
+// ---- Lending rates (/rates page) ----
+
+export type LendingRate = Complete<components['schemas']['LendingRate']>
+export type LentAgainst = LendingRate['lentAgainst']
+
+/** Supply pools with their reported rates and the oracle facts of their collateral, largest deposits first. */
+export async function fetchLendingRates(signal?: AbortSignal): Promise<LendingRate[]> {
+  const { data, response } = await api.GET('/api/rates', { signal })
+  const status: number = response.status
+  if (!data) throw new ApiError(`Could not load lending rates (HTTP ${status})`)
+  return data as LendingRate[]
+}
+
+// ---- end of lending rates ----

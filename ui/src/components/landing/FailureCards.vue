@@ -137,6 +137,7 @@ const rows = computed(() => cards.map((c) => ({ ...c, live: props.failing(c.code
           </RouterLink>
         </li>
       </ol>
+      <slot />
     </div>
   </section>
 </template>

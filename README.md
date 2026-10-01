@@ -55,6 +55,40 @@ GET /api/wallets/{address}/positions      a wallet's Kamino and marginfi deposit
 group, every Jupiter Lend vault): anyone can create a Kamino or marginfi market with arbitrary tokens
 and prices. `protocol=kamino`, `protocol=jupiter-lend` or `protocol=marginfi` narrows to one protocol.
 
+## Use with AI agents (MCP)
+
+The same data is served as an [MCP](https://modelcontextprotocol.io) server at
+`https://oraclecanary.com/mcp` (streamable HTTP, no key needed; locally `http://127.0.0.1:8000/mcp`).
+Read-only tools:
+
+```
+reserve_health(address)                       score, severity, price age vs max age, providers, checks, link
+search_reserves(protocol?, asset?, severity?, limit?)   reserves, largest deposits first
+open_incidents(limit?)                        ongoing incidents (as /api/incidents?resolved=false)
+wallet_positions(address)                     a wallet's positions, each with its reserve's health
+attestation(address)                          the signed health for oracle_guard (message, signature, publicKey)
+```
+
+Results are informational, not investment advice; data is refreshed every 5 minutes.
+
+Claude Code: `claude mcp add --transport http oraclecanary https://oraclecanary.com/mcp`. Claude Desktop:
+Settings → Connectors → Add custom connector with that URL, or in `claude_desktop_config.json`
+through the `mcp-remote` bridge (other clients that only start local servers work the same way):
+
+```json
+{
+  "mcpServers": {
+    "oraclecanary": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://oraclecanary.com/mcp"]
+    }
+  }
+}
+```
+
+Clients that speak streamable HTTP take the URL directly, e.g. `{"type": "http", "url": "https://oraclecanary.com/mcp"}`.
+Try it with `npx @modelcontextprotocol/inspector --cli https://oraclecanary.com/mcp --transport http --method tools/list`.
+
 ## Project structure
 
 ```

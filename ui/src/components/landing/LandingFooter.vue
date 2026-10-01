@@ -21,6 +21,8 @@ const REPO = 'https://github.com/joseneves-dev/oraclecanary'
           <h3>Product</h3>
           <RouterLink :to="{ name: 'overview' }">Dashboard</RouterLink>
           <RouterLink :to="{ name: 'reserves' }">Reserves</RouterLink>
+          <RouterLink :to="{ name: 'rates' }">Lending rates</RouterLink>
+          <RouterLink :to="{ name: 'blast-radius' }">If an oracle fails</RouterLink>
           <RouterLink :to="{ name: 'incidents' }">Incidents</RouterLink>
           <RouterLink :to="{ name: 'positions' }">My positions</RouterLink>
           <RouterLink :to="{ name: 'how-it-works' }">How it works</RouterLink>

@@ -9,6 +9,7 @@ import ReserveTable from '@/components/ReserveTable.vue'
 import { buildLanes, countBySeverity } from '@/composables/useLanding'
 import WalletLookup from '@/components/WalletLookup.vue'
 import { duration, time, usd } from '@/lib/format'
+import { SCOPE, providerSummaries } from '@/lib/blastRadius'
 import { openIncidents, pausedReserves } from '@/lib/incidents'
 import { healthState, priceState } from '@/lib/priceState'
 
@@ -99,6 +100,17 @@ const verdict = computed(() => {
   const smallPart = m ? ` ${m} critical ${m === 1 ? 'reserve holds' : 'reserves hold'} under $1K.` : ''
   return `${head}${pausedPart}.${smallPart}`
 })
+
+/**
+ * The largest single dependency today: the oracle provider whose failure alone would leave the most
+ * listed supply with no usable price (lib/blastRadius.ts). Scope is Kamino's relay, not an oracle
+ * provider, so it is left out here.
+ */
+const largestDependency = computed(() => {
+  if (!reserves.value.length) return null
+  return providerSummaries(reserves.value).find((p) => !p.structure && p.provider !== SCOPE && p.stopsCount > 0) ?? null
+})
+const blastTo = computed(() => ({ name: 'blast-radius', query: largestDependency.value ? { provider: largestDependency.value.provider } : {} }))
 
 const bySupply = (a: Reserve, b: Reserve) => b.totalSupplyUsd - a.totalSupplyUsd
 const bigCritical = computed(() => reserves.value.filter((r) => healthState(r) === 'critical' && r.totalSupplyUsd >= BLOCKED_MIN_USD).sort(bySupply))
@@ -211,6 +223,7 @@ const statusTone = computed(() => (error.value || loading.value ? 'muted' : fres
       <!-- The front page's reserve field, so the same picture greets the visitor inside the app. -->
       <div v-if="!error" class="ax-col--12">
         <ReserveField compact :lanes="buildLanes(loading ? null : reserves)" :by-severity="loading ? null : countBySeverity(reserves)" />
+        <p class="field-more"><RouterLink :to="{ name: 'rates' }">Compare lending rates →</RouterLink></p>
       </div>
 
       <!-- The one action a depositor comes for. -->
@@ -224,6 +237,26 @@ const statusTone = computed(() => (error.value || loading.value ? 'muted' : fres
           </p>
         </div>
         <WalletLookup class="wallet__lookup" @lookup="(address) => router.push({ name: 'positions', query: { address } })" />
+      </section>
+
+      <!-- Two tools that go further than today's health: what would stop if an oracle failed, and rates. -->
+      <section class="ax-card ax-col--12 tools" aria-label="Explore">
+        <div class="tools__item">
+          <h2 class="ax-card__title">If an oracle fails</h2>
+          <p class="tools__text">Pick an oracle and see which reserves would have no usable price without it.</p>
+          <p v-if="loading" class="tools__fact"><span class="ax-skeleton ax-skeleton--line tools__skeleton" aria-hidden="true"></span></p>
+          <p v-else-if="largestDependency" class="tools__fact">
+            Largest single dependency today: <b>{{ largestDependency.provider }}</b>,
+            <span class="ax-num">{{ usd(largestDependency.stopsUsd) }}</span> in {{ largestDependency.stopsCount }}
+            {{ largestDependency.stopsCount === 1 ? 'reserve' : 'reserves' }} that would have no usable price without it.
+          </p>
+          <RouterLink class="tools__link" :to="blastTo">Play it out →</RouterLink>
+        </div>
+        <div class="tools__item">
+          <h2 class="ax-card__title">Lending rates</h2>
+          <p class="tools__text">Supply APY next to the oracle health of the collateral behind it.</p>
+          <RouterLink class="tools__link" :to="{ name: 'rates' }">Compare rates →</RouterLink>
+        </div>
       </section>
 
       <div v-if="switchboard?.length || largestFreeze || (!loading && noFallbackSupply)" class="ax-col--12 stories">
@@ -251,14 +284,17 @@ const statusTone = computed(() => (error.value || loading.value ? 'muted' : fres
           </span>
           <span class="story__more">{{ largestFreeze.incident.asset }} →</span>
         </RouterLink>
-        <RouterLink v-if="!loading && noFallbackSupply" class="story ax-card" :to="{ name: 'reserves', query: { issue: 'NO_FALLBACK' } }">
+        <div v-if="!loading && noFallbackSupply" class="story ax-card">
           <span class="story__kicker">No fallback oracle</span>
           <span class="story__text">
             {{ usd(noFallbackSupply) }} ({{ Math.round((noFallbackSupply / totalSupply) * 100) }}% of listed supply) is priced by a single feed: if it
             stops, the price stops.
           </span>
-          <span class="story__more">All reserves →</span>
-        </RouterLink>
+          <span class="story__links">
+            <RouterLink class="story__more" :to="{ name: 'reserves', query: { issue: 'NO_FALLBACK' } }">All reserves →</RouterLink>
+            <RouterLink class="story__more" :to="blastTo">See what stops if one feed fails →</RouterLink>
+          </span>
+        </div>
       </div>
 
       <template v-if="!error">
@@ -399,6 +435,64 @@ const statusTone = computed(() => (error.value || loading.value ? 'muted' : fres
   max-width: none;
 }
 
+.field-more {
+  margin: var(--ax-space-2) 0 0;
+  text-align: end;
+  font-size: var(--ax-text-sm);
+}
+.field-more a,
+.tools__link {
+  color: var(--ax-link, var(--ax-accent-text));
+  font-weight: 600;
+}
+.tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0;
+}
+.tools__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ax-space-2);
+  padding: var(--ax-space-5) var(--ax-space-6);
+}
+.tools__item + .tools__item {
+  border-inline-start: 1px solid var(--ax-border);
+}
+@media (max-width: 768px) {
+  .tools {
+    grid-template-columns: 1fr;
+  }
+  .tools__item + .tools__item {
+    border-inline-start: 0;
+    border-block-start: 1px solid var(--ax-border);
+  }
+}
+.tools__text,
+.tools__fact {
+  margin: 0;
+  max-width: 64ch;
+  font-size: var(--ax-text-sm);
+  color: var(--ax-text-muted);
+}
+.tools__fact b {
+  color: var(--ax-text-strong);
+}
+.tools__skeleton {
+  display: block;
+  width: 70%;
+}
+.tools__link {
+  margin-top: auto;
+  font-size: var(--ax-text-sm);
+}
+.story__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ax-space-1) var(--ax-space-4);
+  margin-top: auto;
+}
 .stories {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
