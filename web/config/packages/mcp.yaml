@@ -2,7 +2,7 @@
 #
 # The tools are API Platform #[McpTool] operations in src/Mcp/Tool; API Platform registers them with
 # this server itself (see api_platform.mcp in api_platform.yaml). The endpoint speaks the streamable
-# HTTP transport at /mcp.
+# HTTP transport at /mcp. Requests are rate-limited per visitor by App\Mcp\RateLimitListener.
 mcp:
     servers:
         oraclecanary:
@@ -13,22 +13,66 @@ mcp:
             instructions: >-
                 Read-only oracle health data for Solana lending markets (Kamino, marginfi, Jupiter Lend).
                 Use search_reserves to find a reserve address, then reserve_health for its details.
-                Results are informational, not investment advice; prices change every 5 minutes, so
+                Results are informational, not investment advice; data is refreshed every 5 minutes, so
                 re-check before acting on a result.
             http:
                 path: /mcp
-                # The SDK's DNS rebinding protection only lets localhost in. This server is public and
-                # read-only (no cookies, no credentials, nothing to write) and sits behind Caddy, which
-                # only answers for SERVER_NAME, so a rebinding attack gains nothing a plain request can't.
-                allowed_hosts: false
-            # Sessions only remember the handshake. They live in files under var/cache (the bundle's
-            # default), so a deploy drops them and clients simply initialize again.
+                # DNS rebinding protection: the Host (or Origin) must be in MCP_ALLOWED_HOSTS, set on
+                # mcp.server.oraclecanary.middleware_factory below.
+            # Sessions only remember the handshake. They live in a cache pool (APCu in production, so
+            # memory stays capped however many clients initialize); a deploy or an eviction drops them
+            # and clients simply initialize again. New sessions are also rate-limited.
+            session:
+                store: cache
+                cache_pool: mcp.session_cache
             # The tools are added by API Platform's loader, outside this registry; it only narrows the
             # bundle's own attribute-based elements, of which there are none.
             registry:
                 tools: '*'
 
+framework:
+    cache:
+        pools:
+            cache.mcp_sessions:
+                adapter: cache.adapter.filesystem
+    # Generous for an agent; they keep one client from tying up the PHP workers the REST API shares.
+    rate_limiter:
+        # Every /mcp request, per visitor.
+        mcp_requests:
+            policy: sliding_window
+            limit: 120
+            interval: '1 minute'
+        # New sessions (initialize), per visitor and in total, so a flood cannot fill the session store.
+        mcp_sessions:
+            policy: sliding_window
+            limit: 30
+            interval: '10 minutes'
+        mcp_sessions_global:
+            policy: sliding_window
+            limit: 2000
+            interval: '1 hour'
+        # wallet_positions waits on a chain lookup; the positions service starts 10 new ones a minute.
+        mcp_wallet_lookups:
+            policy: sliding_window
+            limit: 10
+            interval: '1 minute'
+
+services:
+    # The session store wants PSR-16.
+    mcp.session_cache:
+        class: Symfony\Component\Cache\Psr16Cache
+        arguments: ['@cache.mcp_sessions']
+
+    # Replaces the bundle's definition so the allowed hosts come from the environment: the bundle's
+    # own allowed_hosts option only takes a literal list.
+    mcp.server.oraclecanary.middleware_factory:
+        class: Symfony\AI\McpBundle\Http\MiddlewareFactory
+        arguments: ['%env(csv:MCP_ALLOWED_HOSTS)%']
+
 parameters:
+    # Hostnames (no port) the MCP endpoint answers for, comma-separated. Caddy answers for any Host
+    # when SERVER_NAME is a bare port such as ":80", so the check is made here.
+    env(MCP_ALLOWED_HOSTS): 'oraclecanary.com,www.oraclecanary.com,localhost,127.0.0.1,[::1]'
     # Where the indexer's wallet positions service listens, as host:port: the same variable the
     # Caddyfile proxies /api/wallets/* to.
     env(POSITIONS_UPSTREAM): 'positions:3001'
@@ -37,3 +81,21 @@ when@dev:
     parameters:
         # `npm run positions` in indexer/.
         env(POSITIONS_UPSTREAM): '127.0.0.1:3001'
+
+when@test:
+    framework:
+        # Counts in the session pool, which McpApiTest empties before each test, so they never carry
+        # over between tests or runs. (An array pool would not do: it is reset after every request.)
+        rate_limiter:
+            mcp_requests: { cache_pool: cache.mcp_sessions }
+            mcp_sessions: { cache_pool: cache.mcp_sessions }
+            mcp_sessions_global: { cache_pool: cache.mcp_sessions }
+            mcp_wallet_lookups: { cache_pool: cache.mcp_sessions }
+
+when@prod:
+    framework:
+        cache:
+            pools:
+                # APCu is shared by FrankenPHP's threads and bounded by apc.shm_size.
+                cache.mcp_sessions:
+                    adapter: cache.adapter.apcu

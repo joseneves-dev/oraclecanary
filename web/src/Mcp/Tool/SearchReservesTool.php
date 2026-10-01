@@ -23,7 +23,8 @@ use Symfony\Component\Validator\Constraints as Assert;
             title: 'Search lending reserves',
             description: 'Solana lending reserves with their oracle health, largest deposits first. Filter by protocol, '.
                 'asset symbol (partial, case-insensitive) and worst severity (ok, info, warning, critical); '.
-                'severity=critical lists reserves whose price the protocol cannot use right now.'.Notice::DISCLAIMER,
+                'severity=critical lists reserves with a critical check: most mean the protocol cannot use the price; '.
+                'PRICE_DEVIATION means it uses an overvalued one, and MARKET_CLOSED marks an expected market-hours pause.'.Notice::DISCLAIMER,
             annotations: Notice::READ_ONLY,
             output: ReserveSearch::class,
             processor: SearchReservesProcessor::class,

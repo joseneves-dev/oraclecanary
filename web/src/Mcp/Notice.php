@@ -11,7 +11,7 @@ use Mcp\Schema\Result\CallToolResult;
 final class Notice
 {
     /** Appended to every tool description. */
-    public const DISCLAIMER = ' Results are informational, not investment advice. Prices change every 5 minutes, so re-check before acting on a result.';
+    public const DISCLAIMER = ' Results are informational, not investment advice. Data is refreshed every 5 minutes, so re-check before acting on a result.';
 
     public const SITE_URL = 'https://oraclecanary.com';
 

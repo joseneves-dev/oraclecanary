@@ -10,11 +10,14 @@ use App\Mcp\Notice;
 use App\Mcp\Output\WalletPosition;
 use App\Mcp\Output\WalletPositions;
 use App\Mcp\Tool\WalletPositionsTool;
+use App\Mcp\Visitor;
 use App\Repository\LendingReserveRepository;
 use Mcp\Schema\Result\CallToolResult;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\DependencyInjection\Attribute\Target;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\ObjectMapper\ObjectMapperInterface;
+use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -31,6 +34,8 @@ final readonly class WalletPositionsProcessor implements ProcessorInterface
         private RequestStack $requestStack,
         private LendingReserveRepository $reserves,
         private ObjectMapperInterface $objectMapper,
+        #[Target('mcp_wallet_lookups')]
+        private RateLimiterFactoryInterface $walletLookups,
         /** host:port, as the Caddyfile proxies to. */
         #[Autowire(env: 'POSITIONS_UPSTREAM')]
         private string $upstream,
@@ -41,11 +46,19 @@ final readonly class WalletPositionsProcessor implements ProcessorInterface
     {
         \assert($data instanceof WalletPositionsTool);
 
+        // A lookup holds a PHP worker while the chain is read, so each visitor gets only a few a minute.
+        $request = $this->requestStack->getMainRequest();
+        $limit = $this->walletLookups->create(null !== $request ? Visitor::of($request) : 'unknown')->consume();
+        if (!$limit->isAccepted()) {
+            return Notice::error(\sprintf('Too many wallet lookups from here. Retry in %d seconds.', max(1, $limit->getRetryAfter()->getTimestamp() - time())));
+        }
+
         try {
             $response = $this->httpClient->request('GET', \sprintf('http://%s/api/wallets/%s/positions', $this->upstream, $data->address), [
                 'headers' => ['Accept' => 'application/json'] + $this->visitorHeaders(),
-                // The service gives up on a lookup after 15 s.
-                'timeout' => 30,
+                // The service gives up on a lookup after 15 s; past that the worker is freed regardless.
+                'timeout' => 16,
+                'max_duration' => 16,
             ]);
             $status = $response->getStatusCode();
             $body = $response->toArray(false);

@@ -15,6 +15,7 @@ import {
 } from '@/api/client'
 import { healthState, priceState, type HealthState } from '@/lib/priceState'
 import { usd } from '@/lib/format'
+import { providerSummaries, SCOPE, SWITCHBOARD } from '@/lib/blastRadius'
 import { openIncidents as listOpenIncidents, pausedReserves } from '@/lib/incidents'
 
 export const PROTOCOLS = [
@@ -174,9 +175,22 @@ export function useLanding() {
     }
   })
 
+  /**
+   * "If an oracle fails", picked as the app's page does when none is asked for: the market oracle
+   * (not the Scope relay, not shut-down Switchboard) whose failure leaves the most deposits with no
+   * usable price.
+   */
+  const blast = computed(() => {
+    if (!reserves.value) return null
+    const s = providerSummaries(reserves.value).find(
+      (p) => !p.structure && p.provider !== SCOPE && p.provider !== SWITCHBOARD && p.stopsCount > 0,
+    )
+    return s ? { provider: s.provider, stopsUsd: s.stopsUsd, stopsCount: s.stopsCount } : null
+  })
+
   const protocols = computed(() => buildLanes(reserves.value))
 
-  return { open, unusable, reservesFailed, reserves, incidents, changes, now, totalUsd, bySeverity, lastChecked, protocols, failing, reload: load }
+  return { blast, open, unusable, reservesFailed, reserves, incidents, changes, now, totalUsd, bySeverity, lastChecked, protocols, failing, reload: load }
 }
 
 /* ── pure helpers, also for embedding ReserveField elsewhere ─────────────── */

@@ -30,6 +30,8 @@ services:
       APP_SECRET: ${APP_SECRET:?Set APP_SECRET in deploy/.env}
       DATABASE_URL: postgresql://${POSTGRES_USER:-oraclecanary}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB:-oraclecanary}?serverVersion=16&charset=utf8
       SERVER_NAME: ${SERVER_NAME:-:80}
+      # Hostnames the MCP endpoint (/mcp) answers for, comma-separated (DNS rebinding protection).
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-oraclecanary.com,www.oraclecanary.com,localhost,127.0.0.1}
       # The indexer runs every CHECK_INTERVAL_SECONDS; allow a few missed runs before /api/health fails.
       HEALTH_MAX_DATA_AGE_SECONDS: ${HEALTH_MAX_DATA_AGE_SECONDS:-1200}
       # Signs /api/reserves/{address}/attestation for oracle_guard; empty disables it.

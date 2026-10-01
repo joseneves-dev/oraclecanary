@@ -20,8 +20,9 @@ use Symfony\Component\Validator\Constraints as Assert;
     mcp: [
         'open_incidents' => new McpTool(
             title: 'Ongoing oracle incidents',
-            description: 'Ongoing incidents, most recent start first: reserves in listed markets with a critical check, so '.
-                'the protocol cannot use their price right now. Each gives when it started, how long it has lasted, '.
+            description: 'Ongoing incidents, most recent start first: reserves in listed markets with a critical check: '.
+                'most mean the protocol cannot use the price; PRICE_DEVIATION means it uses an overvalued one, and '.
+                'MARKET_CLOSED marks an expected market-hours pause. Each gives when it started, how long it has lasted, '.
                 'the critical checks and the largest deposits exposed, in USD.'.Notice::DISCLAIMER,
             annotations: Notice::READ_ONLY,
             output: OpenIncidents::class,

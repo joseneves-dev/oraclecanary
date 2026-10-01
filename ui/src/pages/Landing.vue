@@ -11,6 +11,7 @@ import LandingNav from '@/components/landing/LandingNav.vue'
 import HeroWallet from '@/components/landing/HeroWallet.vue'
 import ReserveField from '@/components/landing/ReserveField.vue'
 import FailureCards from '@/components/landing/FailureCards.vue'
+import BlastStrip from '@/components/landing/BlastStrip.vue'
 import HowSteps from '@/components/landing/HowSteps.vue'
 import LiveFeed from '@/components/landing/LiveFeed.vue'
 import GuardApi from '@/components/landing/GuardApi.vue'
@@ -18,7 +19,7 @@ import GetStarted from '@/components/landing/GetStarted.vue'
 import LandingFooter from '@/components/landing/LandingFooter.vue'
 
 const L = useLanding()
-const { reservesFailed, reserves, incidents, changes, now, totalUsd, bySeverity, lastChecked, protocols, failing, unusable, open } = L
+const { reservesFailed, reserves, incidents, changes, now, totalUsd, bySeverity, lastChecked, protocols, failing, unusable, open, blast } = L
 
 const mainEl = ref<HTMLElement | null>(null)
 function skipToMain() {
@@ -114,7 +115,9 @@ const sample = computed(() => {
         </div>
       </section>
 
-      <FailureCards :failing="failing" />
+      <FailureCards :failing="failing">
+        <BlastStrip :blast="blast" />
+      </FailureCards>
       <HowSteps :lanes="protocols" :reserves="reserves" :incidents="incidents" :last-checked="lastChecked" :now="now" />
       <LiveFeed :incidents="incidents" :open="open" :changes="changes" :now="now" />
       <GuardApi :sample="sample" />

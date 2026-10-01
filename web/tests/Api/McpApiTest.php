@@ -40,6 +40,9 @@ final class McpApiTest extends ApiTestCase
             ['code' => 'NO_FALLBACK', 'severity' => 'warning', 'message' => 'Price has no fallback.'],
         ], protocol: 'marginfi');
 
+        // Sessions and rate-limit counts (config/packages/mcp.yaml).
+        self::getContainer()->get('cache.mcp_sessions')->clear();
+
         $this->client = static::createClient();
         // One kernel for the whole conversation, so a test may swap a service for all its calls.
         $this->client->disableReboot();
@@ -66,7 +69,7 @@ final class McpApiTest extends ApiTestCase
         self::assertSame(['attestation', 'open_incidents', 'reserve_health', 'search_reserves', 'wallet_positions'], $names);
         foreach ($tools as $tool) {
             self::assertStringContainsString('not investment advice', $tool['description'], $tool['name']);
-            self::assertStringContainsString('Prices change every 5 minutes', $tool['description'], $tool['name']);
+            self::assertStringContainsString('Data is refreshed every 5 minutes', $tool['description'], $tool['name']);
             self::assertTrue($tool['annotations']['readOnlyHint'], $tool['name']);
             self::assertSame('object', $tool['outputSchema']['type'], $tool['name']);
         }
@@ -212,6 +215,61 @@ final class McpApiTest extends ApiTestCase
 
         self::assertTrue($result['isError']);
         self::assertStringContainsString('Try again in a few seconds', $result['content'][0]['text']);
+    }
+
+    public function testLimitsNewSessionsPerVisitorWithA429(): void
+    {
+        $this->rpc('tools/list');
+        $this->useUp('limiter.mcp_sessions');
+
+        $response = $this->post(['method' => 'initialize', 'params' => self::initializeParams()]);
+
+        self::assertResponseStatusCodeSame(429);
+        self::assertGreaterThan(0, (int) $response->getHeaders(false)['retry-after'][0]);
+        $error = $response->toArray(false);
+        self::assertSame(-32000, $error['error']['code']);
+        self::assertSame($this->id, $error['id']);
+        // The session already open keeps working.
+        self::assertArrayHasKey('result', $this->rpc('tools/list'));
+    }
+
+    public function testLimitsAllRequestsPerVisitor(): void
+    {
+        $this->rpc('tools/list');
+        $this->useUp('limiter.mcp_requests');
+
+        $this->post(['method' => 'tools/list']);
+
+        self::assertResponseStatusCodeSame(429);
+    }
+
+    public function testRefusesAPageOnAnotherSite(): void
+    {
+        // DNS rebinding protection (MCP_ALLOWED_HOSTS): a browser page elsewhere sends its Origin.
+        $response = $this->client->request('POST', '/mcp', [
+            'headers' => ['Origin' => 'https://attacker.example', 'Accept' => 'application/json, text/event-stream', 'Content-Type' => 'application/json'],
+            'body' => json_encode(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => self::initializeParams()]),
+        ]);
+
+        self::assertSame(403, $response->getStatusCode());
+    }
+
+    public function testLimitsWalletLookupsPerVisitor(): void
+    {
+        $this->mockPositionsService(fn () => new MockResponse('{}', ['response_headers' => ['Content-Type' => 'application/json']]));
+        $this->useUp('limiter.mcp_wallet_lookups');
+
+        $result = $this->callTool('wallet_positions', ['address' => self::WALLET]);
+
+        self::assertTrue($result['isError']);
+        self::assertStringContainsString('Too many wallet lookups', $result['content'][0]['text']);
+    }
+
+    /** Spends what is left of the test visitor's allowance on this limiter. */
+    private function useUp(string $limiter): void
+    {
+        $limiter = self::getContainer()->get($limiter)->create('127.0.0.1');
+        while ($limiter->consume()->isAccepted());
     }
 
     private function mockPositionsService(callable $responder): void

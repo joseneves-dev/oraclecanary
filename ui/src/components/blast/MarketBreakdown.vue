@@ -5,7 +5,7 @@ import { protocolName, shortAddress, usd } from '@/lib/format'
 
 /**
  * Where a failure lands: per protocol, then per market, the deposits whose price would stop (red)
- * and those that keep a price through a fallback (grey). Bars share one scale across the card.
+ * and those that keep a price through a fallback (green), the colours of the reserve table's badges. Bars share one scale across the card.
  */
 const props = defineProps<{ stops: Reserve[]; keeps: Reserve[] }>()
 
@@ -40,7 +40,12 @@ const groups = computed(() => {
   props.keeps.forEach((r) => add(r, false))
   const order = (a: Line, b: Line) => b.stopsUsd - a.stopsUsd || b.keepsUsd - a.keepsUsd
   return [...protocols.values()]
-    .map((p) => ({ ...p.total, markets: [...p.markets.values()].sort(order) }))
+    .map((p) => {
+      const markets = [...p.markets.values()].sort(order)
+      // A protocol with one market of its own name ("Jupiter Lend") is not named twice.
+      const solo = markets.length === 1 && markets[0].name.toLowerCase().startsWith(p.total.name.toLowerCase())
+      return { ...p.total, markets, solo }
+    })
     .sort(order)
 })
 
@@ -68,7 +73,7 @@ const counts = (l: Line) =>
       </div>
       <ul class="breakdown__list">
         <li v-for="m in g.markets.slice(0, TOP)" :key="m.key" class="breakdown__market">
-          <div class="breakdown__row">
+          <div v-if="!g.solo" class="breakdown__row">
             <span class="breakdown__name" :title="m.name">{{ m.name }}</span>
             <span class="breakdown__value ax-num">
               <span v-if="m.stopsCount" class="stops">{{ usd(m.stopsUsd) }}</span>
@@ -155,7 +160,9 @@ const counts = (l: Line) =>
   color: var(--ax-sev-crit-text);
   font-weight: 600;
 }
-.keeps,
+.keeps {
+  color: var(--ax-sev-ok-text);
+}
 .sep {
   color: var(--ax-text-muted);
 }
@@ -175,8 +182,7 @@ const counts = (l: Line) =>
   background: var(--ax-sev-crit);
 }
 .bar--keeps {
-  background: var(--ax-text-subtle);
-  opacity: 0.55;
+  background: var(--ax-sev-ok);
 }
 .legend {
   display: flex;
@@ -200,8 +206,7 @@ const counts = (l: Line) =>
   background: var(--ax-sev-crit);
 }
 .swatch--keeps {
-  background: var(--ax-text-subtle);
-  opacity: 0.55;
+  background: var(--ax-sev-ok);
 }
 @media print {
   .bar,

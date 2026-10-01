@@ -3,7 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Reserve } from '@/api/client'
 import type { Reliance } from '@/lib/blastRadius'
-import { HEALTH_BADGE, HEALTH_LABEL, protocolName, shortAddress, usd } from '@/lib/format'
+import { HEALTH_BADGE, HEALTH_LABEL, shortAddress, usd } from '@/lib/format'
+import { marketLine } from './market'
 import { healthState } from '@/lib/priceState'
 
 export interface BlastRow {
@@ -32,12 +33,26 @@ onBeforeUnmount(() => window.removeEventListener('beforeprint', expand))
 const RELIANCE_LABEL: Record<Reliance, string> = { required: 'No usable price', fallback: 'Keeps a price', structure: 'Rate or peg only' }
 const RELIANCE_BADGE: Record<Reliance, string> = { required: 'ax-badge--danger', fallback: 'ax-badge--success', structure: 'ax-badge--neutral' }
 
-function market(r: Reserve): string {
-  const name = r.market.name ?? shortAddress(r.market.address)
-  const protocol = protocolName(r.protocol)
-  return name.toLowerCase().startsWith(protocol.toLowerCase()) ? name : `${protocol} · ${name}`
-}
+/** The one note every row shares, if they all do: the page says it once instead of a column of it. */
+const showNote = computed(() => commonNote(props.rows) === null)
 
+/**
+ * Printed, the prices that would stop are listed in full; those that keep one are summed in a line,
+ * so an oracle review stays a few pages long.
+ */
+const kept = computed(() => props.rows.filter((r) => r.reliance !== 'required'))
+const keptUsd = computed(() => kept.value.reduce((sum, r) => sum + r.reserve.totalSupplyUsd, 0))
+const hasStops = computed(() => props.rows.some((r) => r.reliance === 'required'))
+/** Printed, only the stopped rows remain: their shared note is dropped too. */
+const printNote = computed(() => !hasStops.value || commonNote(props.rows.filter((r) => r.reliance === 'required')) === null)
+
+</script>
+
+<script lang="ts">
+/** The note shared by every row (two or more), or null when they differ. */
+export function commonNote(rows: { note: string }[]): string | null {
+  return rows.length > 1 && rows.every((r) => r.note === rows[0].note) ? rows[0].note : null
+}
 </script>
 
 <template>
@@ -48,24 +63,24 @@ function market(r: Reserve): string {
         <tr>
           <th class="ax-table__th col-asset" scope="col">Asset</th>
           <th class="ax-table__th col-effect" scope="col">If it stops</th>
-          <th class="ax-table__th col-others" scope="col">Other sources</th>
+          <th v-if="showNote" class="ax-table__th col-others" :class="{ 'print-hide': !printNote }" scope="col">Other sources</th>
           <th v-if="showEntries" class="ax-table__th col-entries" scope="col">Scope entries</th>
           <th class="ax-table__th col-now" scope="col">Health now</th>
           <th class="ax-table__th ax-table__th--num col-supply" scope="col">Supply</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="row in shown" :key="row.reserve.address" class="ax-table__row">
+        <tr v-for="row in shown" :key="row.reserve.address" class="ax-table__row" :class="{ 'print-hide': hasStops && row.reliance !== 'required' }">
           <td class="ax-table__td col-asset">
             <RouterLink :to="{ name: 'reserve', params: { address: row.reserve.address } }" class="asset-link">{{
               row.reserve.asset || shortAddress(row.reserve.mint)
             }}</RouterLink>
-            <span class="sub" :title="market(row.reserve)">{{ market(row.reserve) }}</span>
+            <span class="sub" :title="marketLine(row.reserve)">{{ marketLine(row.reserve) }}</span>
           </td>
           <td class="ax-table__td col-effect">
             <span class="ax-badge ax-badge--soft" :class="RELIANCE_BADGE[row.reliance]">{{ RELIANCE_LABEL[row.reliance] }}</span>
           </td>
-          <td class="ax-table__td col-others">
+          <td v-if="showNote" class="ax-table__td col-others" :class="{ 'print-hide': !printNote }">
             <span class="others">{{ row.note }}</span>
           </td>
           <td v-if="showEntries" class="ax-table__td col-entries ax-num">
@@ -79,6 +94,9 @@ function market(r: Reserve): string {
       </tbody>
     </table>
   </div>
+  <p v-if="hasStops && kept.length" class="print-only kept">
+    Not listed: {{ kept.length }} {{ kept.length === 1 ? 'reserve' : 'reserves' }} holding {{ usd(keptUsd) }} that would keep a price through a fallback.
+  </p>
   <div v-if="rows.length > PAGE" class="more">
     <button v-if="!showAll" type="button" class="ax-btn ax-btn--secondary ax-btn--sm" @click="showAll = true">Show all {{ rows.length }} reserves</button>
     <button v-else type="button" class="ax-btn ax-btn--ghost ax-btn--sm" @click="showAll = false">Show the largest {{ PAGE }}</button>
@@ -196,9 +214,22 @@ function market(r: Reserve): string {
   }
 }
 
+.print-only {
+  display: none;
+}
 @media print {
-  .more {
+  .more,
+  .print-hide {
     display: none;
+  }
+  .print-only {
+    display: block;
+  }
+  .kept {
+    margin: 0;
+    padding: var(--ax-space-3) var(--ax-space-4);
+    font-size: var(--ax-text-xs);
+    color: var(--ax-text-muted);
   }
   .blast {
     min-width: 0;

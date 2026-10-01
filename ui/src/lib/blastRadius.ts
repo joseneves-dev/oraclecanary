@@ -11,7 +11,7 @@
  *   walks that graph and names, in NO_FALLBACK and in a critical DEPRECATED_PROVIDER, every provider
  *   the price cannot do without (a fallback that is itself too old does not count as one). A provider
  *   the reserve reads but that is not named there has an alternative. Every Kamino price is also
- *   relayed through its Scope price account, so that account is required.
+ *   read from a Scope price account (Kamino's oracle aggregator), so that account is required.
  * - Kamino without Scope: Pyth and Switchboard back each other up; a single one is required.
  * - marginfi: a bank prices from exactly one oracle account, so it is required.
  * - Jupiter Lend: the oracle multiplies or divides every source in turn, so every market source is
@@ -58,7 +58,7 @@ export const STRUCTURE_SOURCES = new Set([
 /** Switchboard's oracle types; it ended support for Solana on 25 Sep 2026 (health.ts DEPRECATED_PROVIDERS). */
 const SWITCHBOARD_TYPES = new Set(['SwitchboardOnDemand', 'SwitchboardV2'])
 
-/** Kamino's price relay: every Kamino price is read from a Scope price account. */
+/** Kamino's oracle aggregator: every Kamino price is read from a Scope price account. */
 export const SCOPE = 'Scope'
 export const SWITCHBOARD = 'Switchboard'
 

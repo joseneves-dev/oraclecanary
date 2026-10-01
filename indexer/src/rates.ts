@@ -26,9 +26,9 @@ export interface LendingRate {
 
 export type RateSource = 'kamino-api' | 'jupiter-api' | 'marginfi-onchain';
 
-const API_TIMEOUT_MS = 15_000;
-/** Rates move slowly; one read every few minutes keeps the load on each API small. */
-const REFRESH_SECONDS = Number(process.env.RATES_REFRESH_SECONDS ?? 300);
+const API_TIMEOUT_MS = 8_000;
+/** Rates move slowly; one read every few minutes keeps the load on each API small. Unset, empty or 0: 300. */
+const REFRESH_SECONDS = Number(process.env.RATES_REFRESH_SECONDS) || 300;
 
 const number = (value: unknown): number | null => {
   const n = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : NaN;
@@ -57,14 +57,15 @@ export function aprToApy(apr: number, periods = HOURS_PER_YEAR): number {
 /**
  * The rates a marginfi bank cached at its last update: `lending_rate` (what depositors earn) and
  * `borrowing_rate` (what borrowers pay, fees included), both APRs. Null when the bank has never
- * cached them.
+ * cached them: no update yet, or both rates still 0 (a live bank always charges borrowers something),
+ * so an unwritten cache is not stored as a 0% reading.
  */
 export function marginfiRate(
   cache: { lending_rate: number; borrowing_rate: number },
   lastUpdate: number,
   assetWeightInit: number,
 ): LendingRate | null {
-  if (!lastUpdate) return null;
+  if (!lastUpdate || (!cache.lending_rate && !cache.borrowing_rate)) return null;
   const apr = (raw: number) => (raw / MARGINFI_RATE_MAX) * MARGINFI_RATE_SCALE;
   return {
     supplyApy: aprToApy(apr(cache.lending_rate)),
@@ -94,45 +95,98 @@ export function parseKaminoMetrics(body: unknown, at: Date): Map<string, Lending
   return rates;
 }
 
-const kaminoCache = new Map<string, { rates: Map<string, LendingRate>; readAt: number }>();
+interface MarketState {
+  rates: Map<string, LendingRate>;
+  readAt: number;
+  /** Failed calls in a row; each one doubles the wait before the next try. */
+  failures: number;
+  retryAt: number;
+  /** A call still running, possibly started by an earlier run whose time budget ran out. */
+  pending?: Promise<void>;
+}
+const kaminoCache = new Map<string, MarketState>();
+
+/** After a failure a market is retried after 1 minute, then 2, 4... up to 30. */
+const BACKOFF_BASE_MS = 60_000;
+const BACKOFF_MAX_MS = 30 * 60_000;
+/** How long a health run waits for rates; calls still running finish in the background for the next run. */
+export const RATES_BUDGET_MS = 10_000;
+
+async function readMarket(market: string, state: MarketState, now: number): Promise<void> {
+  try {
+    state.rates = parseKaminoMetrics(await getJson(KAMINO_METRICS_API(market)), new Date(now));
+    state.readAt = now;
+    state.failures = 0;
+    state.retryAt = 0;
+  } catch (e) {
+    state.failures++;
+    state.retryAt = now + Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** (state.failures - 1));
+    console.warn(`Kamino rates of market ${market} not read (${state.failures} in a row, last rates kept): ${(e as Error).message}`);
+  }
+}
 
 /**
- * Rates of the reserves in the given markets, read again once older than REFRESH_SECONDS. A market
- * whose call fails keeps its last rates; one that never answered has none.
+ * Starts a call for each market whose rates are older than REFRESH_SECONDS, at most
+ * KAMINO_CONCURRENCY at once, skipping markets with a call already running or backing off after a
+ * failure. Resolves once every started call has finished. A failed market keeps its last rates.
  */
-export async function fetchKaminoRates(markets: string[], now = Date.now()): Promise<Map<string, LendingRate>> {
-  const due = markets.filter((m) => now - (kaminoCache.get(m)?.readAt ?? 0) >= REFRESH_SECONDS * 1000);
-  let failed = 0;
-  for (let i = 0; i < due.length; i += KAMINO_CONCURRENCY) {
-    await Promise.all(
-      due.slice(i, i + KAMINO_CONCURRENCY).map(async (market) => {
-        try {
-          kaminoCache.set(market, { rates: parseKaminoMetrics(await getJson(KAMINO_METRICS_API(market)), new Date(now)), readAt: now });
-        } catch {
-          failed++;
-        }
-      }),
-    );
+export function refreshKaminoRates(markets: string[], now = Date.now()): Promise<void> {
+  const queue: [string, MarketState][] = [];
+  for (const market of markets) {
+    const state: MarketState = kaminoCache.get(market) ?? { rates: new Map(), readAt: 0, failures: 0, retryAt: 0 };
+    kaminoCache.set(market, state);
+    if (!state.pending && now >= state.retryAt && now - state.readAt >= REFRESH_SECONDS * 1000) {
+      // Marked before any call starts, so a run that overlaps this one does not queue it again.
+      state.pending = Promise.resolve();
+      queue.push([market, state]);
+    }
   }
-  if (failed) console.warn(`Kamino rates: ${failed} of ${due.length} markets could not be read; their last rates are kept`);
+  const worker = async () => {
+    for (let next = queue.shift(); next; next = queue.shift()) {
+      const [market, state] = next;
+      state.pending = readMarket(market, state, now);
+      await state.pending;
+      state.pending = undefined;
+    }
+  };
+  return Promise.all(Array.from({ length: Math.min(KAMINO_CONCURRENCY, queue.length) }, worker)).then(() => undefined);
+}
+
+/** The last rates read for the reserves of the given markets. */
+export function cachedKaminoRates(markets: string[]): Map<string, LendingRate> {
   const all = new Map<string, LendingRate>();
   for (const market of markets) for (const [reserve, rate] of kaminoCache.get(market)?.rates ?? []) all.set(reserve, rate);
   return all;
 }
 
 /**
- * Attaches rates to the reserves of Kamino's listed markets. Never throws: without rates the
- * reserves are returned as they are, and the stored rates stay.
+ * Refreshes the rates of the given markets, waiting at most `budgetMs`, then returns what is known.
+ * Never throws and never holds a health run longer than the budget: calls still running then go on
+ * in the background and serve the next run.
  */
-export async function withKaminoRates(reserves: MarketOracleConfig[]): Promise<MarketOracleConfig[]> {
+export async function kaminoRatesWithin(markets: string[], budgetMs = RATES_BUDGET_MS, now = Date.now()): Promise<Map<string, LendingRate>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const markets = [...new Set(reserves.filter((r) => r.marketName).map((r) => r.market))];
-    const rates = await fetchKaminoRates(markets);
-    return reserves.map((r) => (rates.has(r.reserve) ? { ...r, rate: rates.get(r.reserve) } : r));
+    await Promise.race([
+      refreshKaminoRates(markets, now),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, budgetMs);
+      }),
+    ]);
   } catch (e) {
     console.warn(`Kamino rates not updated: ${(e as Error).message}`);
-    return reserves;
+  } finally {
+    clearTimeout(timer);
   }
+  return cachedKaminoRates(markets);
+}
+
+/** Markets listed in Kamino's app, the only ones whose rates are read. */
+export const listedMarkets = (reserves: MarketOracleConfig[]) => [...new Set(reserves.filter((r) => r.marketName).map((r) => r.market))];
+
+/** Reserves with their rates attached where known; the others stay as they are (their stored rates are kept). */
+export function attachRates(reserves: MarketOracleConfig[], rates: Map<string, LendingRate>): MarketOracleConfig[] {
+  return reserves.map((r) => (rates.has(r.reserve) ? { ...r, rate: rates.get(r.reserve) } : r));
 }
 
 // ---- Jupiter Lend: Earn pools ----
@@ -165,16 +219,22 @@ export function parseJupiterEarn(body: unknown, at: Date): EarnPool[] {
   for (const t of body as Record<string, any>[]) {
     const supplyRate = number(t?.supplyRate);
     const mint = t?.assetAddress ?? t?.asset?.address;
-    if (typeof t?.address !== 'string' || typeof mint !== 'string' || supplyRate === null) continue;
-    const decimals = number(t.asset?.decimals ?? t.decimals) ?? 0;
-    const assets = (number(t.totalAssets) ?? 0) / 10 ** decimals;
+    const decimals = number(t?.asset?.decimals ?? t?.decimals);
+    const totalAssets = number(t?.totalAssets);
+    const price = number(t?.asset?.price);
+    // A pool missing any of these would be stored with a wrong rate or a $0 value: skipped instead.
+    if (typeof t?.address !== 'string' || typeof mint !== 'string' || supplyRate === null || decimals === null || totalAssets === null || price === null) {
+      console.warn(`Jupiter Earn pool ${String(t?.address ?? '?')} skipped: missing rate, mint, decimals, total assets or price`);
+      continue;
+    }
+    const assets = totalAssets / 10 ** decimals;
     pools.push({
       address: t.address,
       mint,
       asset: String(t.asset?.uiSymbol ?? t.asset?.symbol ?? ''),
       supplyApy: supplyRate / BPS,
       rewardsApy: (number(t.rewardsRate) ?? 0) / BPS,
-      totalSupplyUsd: assets * (number(t.asset?.price) ?? 0),
+      totalSupplyUsd: assets * price,
       source: 'jupiter-api',
       at,
     });
@@ -184,7 +244,10 @@ export function parseJupiterEarn(body: unknown, at: Date): EarnPool[] {
 
 let earnCache: { pools: EarnPool[]; readAt: number } | null = null;
 
-/** Jupiter Lend's Earn pools, read again once older than REFRESH_SECONDS; the last list on failure. */
+/**
+ * Jupiter Lend's Earn pools, read again once older than REFRESH_SECONDS. Throws when the call fails
+ * (the caller keeps the stored pools); an answer with no usable pool returns the last list read.
+ */
 export async function fetchJupiterEarn(now = Date.now()): Promise<EarnPool[]> {
   if (earnCache && now - earnCache.readAt < REFRESH_SECONDS * 1000) return earnCache.pools;
   const pools = parseJupiterEarn(await getJson(JUPITER_EARN_API), new Date(now));

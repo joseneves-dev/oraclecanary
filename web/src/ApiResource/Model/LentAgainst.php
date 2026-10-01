@@ -9,7 +9,8 @@ namespace App\ApiResource\Model;
  * a marginfi bank, the collateral is the other reserves of the same market (group), weighted by
  * their deposits and leaving out reserves the protocol does not accept as collateral (max LTV 0). For
  * a Jupiter Lend Earn pool, it is the deposits of every Jupiter Lend vault that borrows the pool's
- * token. Deposits are counted whether or not they back a loan.
+ * token. Deposits are counted whether or not they back a loan, and Kamino elevation-group limits
+ * are not modelled.
  */
 final readonly class LentAgainst
 {
@@ -21,9 +22,10 @@ final readonly class LentAgainst
         /** How many collateral reserves (or vaults) there are. */
         public int $reserves,
         /**
-         * Share of the collateral (by USD, 0 to 1) whose price has a fallback: no single feed it depends
-         * on, not fixed, and readable. The three oracle shares need not add to 1; the rest is collateral
-         * whose oracle could not be read or has none.
+         * Share of the collateral (by USD, 0 to 1) with no single-feed dependency: no NO_FALLBACK check,
+         * not fixed (FIXED_PRICE) and readable. This includes collateral priced only by an exchange rate
+         * or peg with no market oracle, so it does not mean "has a fallback oracle". The three oracle
+         * shares need not add to 1; the rest is collateral whose oracle could not be read or has none.
          */
         public float $withFallbackShare,
         /** Share of the collateral whose price depends on one feed with no fallback (check NO_FALLBACK): if it stops, the price stops. */

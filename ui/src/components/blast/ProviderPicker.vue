@@ -6,15 +6,17 @@ import { usd } from '@/lib/format'
 
 /**
  * Chooses the provider whose failure the page plays out. Oracles first (Switchboard pinned, as the
- * one that did fail), then Kamino's Scope relay, then the rates and pegs that are not oracles.
+ * one that did fail), then Kamino's Scope aggregator, then the rates and pegs that are not oracles.
  */
 const props = defineProps<{ summaries: ProviderSummary[]; selected: string | null; loading?: boolean }>()
 
 const oracles = computed(() => {
   const list = props.summaries.filter((s) => !s.structure && s.provider !== SCOPE)
   const switchboard = list.find((s) => s.provider === SWITCHBOARD) ?? emptySummary(SWITCHBOARD)
-  return [switchboard, ...list.filter((s) => s.provider !== SWITCHBOARD)]
+  return [switchboard, ...list.filter((s) => s.provider !== SWITCHBOARD && s.stopsCount)]
 })
+/** Oracles read only with a fallback beside them: no price stops with them, so they are tucked away. */
+const backedUp = computed(() => props.summaries.filter((s) => !s.structure && s.provider !== SCOPE && s.provider !== SWITCHBOARD && !s.stopsCount))
 const relay = computed(() => props.summaries.filter((s) => s.provider === SCOPE))
 const structure = computed(() => props.summaries.filter((s) => s.structure).sort((a, b) => b.totalUsd - a.totalUsd))
 
@@ -23,7 +25,7 @@ function emptySummary(provider: string): ProviderSummary {
 }
 
 /** The chip's figure: what stops for an oracle, what uses it for a rate or peg. */
-const figure = (s: ProviderSummary) => (s.structure ? `${usd(s.totalUsd)} · ${s.count}` : `${usd(s.stopsUsd)} · ${s.stopsCount}`)
+const figure = (s: ProviderSummary) => !s.count ? 'none listed' : (s.structure || !s.stopsCount ? `${usd(s.totalUsd)} in ${s.count}` : `${usd(s.stopsUsd)} in ${s.stopsCount}`)
 const title = (s: ProviderSummary) =>
   s.structure
     ? `${s.count} reserves holding ${usd(s.totalUsd)} use ${s.provider}`
@@ -55,7 +57,7 @@ const title = (s: ProviderSummary) =>
         </div>
       </div>
       <div v-if="relay.length" class="picker__group" role="group" aria-labelledby="picker-relay">
-        <span id="picker-relay" class="picker__label">Price relay</span>
+        <span id="picker-relay" class="picker__label">Aggregator</span>
         <div class="picker__row">
           <RouterLink
             v-for="s in relay"
@@ -71,6 +73,23 @@ const title = (s: ProviderSummary) =>
           </RouterLink>
         </div>
       </div>
+      <details v-if="backedUp.length" class="picker__group picker__more" :open="backedUp.some((s) => s.provider === selected)">
+        <summary class="picker__label picker__summary">Not relied on alone ({{ backedUp.length }})</summary>
+        <div class="picker__row">
+          <RouterLink
+            v-for="s in backedUp"
+            :key="s.provider"
+            :to="{ query: { provider: s.provider } }"
+            class="chip chip--quiet"
+            :class="{ 'chip--active': selected === s.provider }"
+            :aria-current="selected === s.provider ? 'true' : undefined"
+            :title="title(s)"
+          >
+            <span class="chip__name">{{ s.provider }}</span>
+            <span class="chip__figure ax-num">{{ figure(s) }}</span>
+          </RouterLink>
+        </div>
+      </details>
       <details v-if="structure.length" class="picker__group picker__more" :open="structure.some((s) => s.provider === selected)">
         <summary class="picker__label picker__summary">Rates and pegs, not oracles ({{ structure.length }})</summary>
         <div class="picker__row">
@@ -88,7 +107,7 @@ const title = (s: ProviderSummary) =>
           </RouterLink>
         </div>
       </details>
-      <p class="picker__note">Figures on each oracle: the deposits whose price would stop, and in how many reserves.</p>
+      <p class="picker__note">Figures: the deposits whose price would stop with it, and in how many reserves; for the rest, the deposits that read it.</p>
     </template>
   </div>
 </template>

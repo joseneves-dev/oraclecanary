@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import type { FeedSummary } from '@/lib/blastRadius'
+import AxIcon from '@/components/AxIcon.vue'
 import { shortAddress, solscanAccount, usd } from '@/lib/format'
+import { EXTERNAL_LINK_ICON } from './market'
 
 /** Oracle accounts behind a provider: each opens the reserves that read it. */
 defineProps<{ feeds: FeedSummary[]; caption: string }>()
@@ -23,13 +25,14 @@ defineProps<{ feeds: FeedSummary[]; caption: string }>()
         <tr v-for="f in feeds" :key="f.account" class="ax-table__row">
           <td class="ax-table__td col-account" data-label="Feed">
             <RouterLink :to="{ query: { feed: f.account } }" class="account ax-num" :title="f.account">{{ shortAddress(f.account) }}</RouterLink>
-            <a :href="solscanAccount(f.account)" target="_blank" rel="noopener" class="solscan">Solscan</a>
+            <a :href="solscanAccount(f.account)" target="_blank" rel="noopener" class="solscan" aria-label="View on Solscan" title="View on Solscan"
+              ><AxIcon :path="EXTERNAL_LINK_ICON" :size="14"
+            /></a>
           </td>
           <td class="ax-table__td col-provider" data-label="Provider">{{ f.provider }}</td>
           <td class="ax-table__td ax-table__td--num col-count" data-label="Reserves">{{ f.count }}</td>
           <td class="ax-table__td ax-table__td--num col-stops" data-label="Would stop">
             <span :class="{ stops: f.stopsCount }">{{ usd(f.stopsUsd) }}</span>
-            <span v-if="f.stopsCount" class="subtle"> in {{ f.stopsCount }}</span>
           </td>
         </tr>
       </tbody>
@@ -47,7 +50,9 @@ defineProps<{ feeds: FeedSummary[]; caption: string }>()
   color: var(--ax-accent-text);
 }
 .solscan {
-  margin-inline-start: var(--ax-space-3);
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-inline-start: var(--ax-space-2);
   font-size: var(--ax-text-xs);
   color: var(--ax-text-subtle);
 }

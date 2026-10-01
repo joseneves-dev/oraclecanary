@@ -69,7 +69,7 @@ wallet_positions(address)                     a wallet's positions, each with it
 attestation(address)                          the signed health for oracle_guard (message, signature, publicKey)
 ```
 
-Results are informational, not investment advice; prices change every 5 minutes.
+Results are informational, not investment advice; data is refreshed every 5 minutes.
 
 Claude Code: `claude mcp add --transport http oraclecanary https://oraclecanary.com/mcp`. Claude Desktop:
 Settings → Connectors → Add custom connector with that URL, or in `claude_desktop_config.json`

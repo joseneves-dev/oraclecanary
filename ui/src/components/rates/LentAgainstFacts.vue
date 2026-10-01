@@ -47,18 +47,20 @@ const criticalTitle = computed(() => {
       ></span>
     </div>
     <div class="chips">
-      <span v-if="facts.withFallbackShare >= 0.0005" class="chip" title="Share of the collateral whose price has a fallback"><i class="dot dot--fallback" aria-hidden="true"></i>{{ pct(facts.withFallbackShare, 0) }} fallback</span>
+      <span v-if="facts.withFallbackShare >= 0.0005" class="chip" title="Share of the collateral whose price depends on no single feed (no NO_FALLBACK flag), is not fixed and could be read. It includes collateral priced only by an exchange rate or peg, with no market oracle.">
+        <i class="dot dot--fallback" aria-hidden="true"></i>{{ pct(facts.withFallbackShare, 0) }} no single-feed dependency
+      </span>
       <span v-if="facts.singleFeedShare >= 0.0005" class="chip" title="Share of the collateral whose price depends on one feed with no fallback: if it stops, the price stops">
         <i class="dot dot--single" aria-hidden="true"></i>{{ pct(facts.singleFeedShare, 0) }} single feed
       </span>
       <span v-if="facts.fixedPriceShare >= 0.0005" class="chip" title="Share of the collateral priced at a fixed value that does not follow the market">
         <i class="dot dot--fixed" aria-hidden="true"></i>{{ pct(facts.fixedPriceShare, 0) }} fixed price
       </span>
-      <span v-if="facts.marketHoursShare >= 0.0005" class="ax-badge ax-badge--pill ax-badge--outline ax-badge--neutral" title="Share of the collateral that is tokenized US stocks: their prices pause while the stock market is closed">
-        {{ pct(facts.marketHoursShare, 0) }} market hours
+      <span v-if="facts.marketHoursShare >= 0.0005" class="chip" title="Share of the collateral that is tokenized US stocks: their prices pause while the stock market is closed">
+        <i class="dot dot--hours" aria-hidden="true"></i>{{ pct(facts.marketHoursShare, 0) }} market hours
       </span>
-      <span v-if="facts.windingDownShare >= 0.0005" class="ax-badge ax-badge--pill ax-badge--outline ax-badge--neutral" title="Share of the collateral in reserves being wound down">
-        {{ pct(facts.windingDownShare, 0) }} winding down
+      <span v-if="facts.windingDownShare >= 0.0005" class="chip" title="Share of the collateral in reserves being wound down">
+        <i class="dot dot--rest" aria-hidden="true"></i>{{ pct(facts.windingDownShare, 0) }} winding down
       </span>
       <span v-if="facts.criticalCount" class="ax-badge ax-badge--pill ax-badge--soft ax-badge--danger" :title="criticalTitle">
         {{ facts.criticalCount }} critical · {{ usd(facts.criticalUsd) }}<span class="ax-visually-hidden">. {{ criticalTitle }}</span>
@@ -103,18 +105,22 @@ const criticalTitle = computed(() => {
 }
 .bar__seg--fallback,
 .dot--fallback {
-  background: var(--ax-accent-500);
+  background: var(--ax-sev-ok);
 }
 .bar__seg--single,
 .dot--single {
-  background: var(--ax-warning-500);
+  background: var(--ax-sev-warn);
 }
 .bar__seg--fixed,
 .dot--fixed {
-  background: var(--ax-neutral-400);
+  background: var(--ax-text-subtle);
 }
-.bar__seg--rest {
-  background: var(--ax-border-strong);
+.dot--hours {
+  background: var(--ax-sev-info);
+}
+.bar__seg--rest,
+.dot--rest {
+  background: var(--ax-border);
 }
 .chips {
   display: flex;

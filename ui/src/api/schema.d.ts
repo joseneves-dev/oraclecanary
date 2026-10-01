@@ -397,21 +397,21 @@ export interface components {
             protocols?: components["schemas"]["ProtocolFreshness.jsonld"][];
         };
         HealthCheck: {
-            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE, MARKET_CLOSED. */
+            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE, MARKET_CLOSED, WINDING_DOWN. */
             code?: string;
             /** @enum {string} */
             severity?: "ok" | "info" | "warning" | "critical";
             message?: string;
         };
         "HealthCheck.csv": {
-            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE, MARKET_CLOSED. */
+            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE, MARKET_CLOSED, WINDING_DOWN. */
             code?: string;
             /** @enum {string} */
             severity?: "ok" | "info" | "warning" | "critical";
             message?: string;
         };
         "HealthCheck.jsonld": {
-            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE, MARKET_CLOSED. */
+            /** @description e.g. STALE, NO_FALLBACK, NO_ORACLE, DEPRECATED_PROVIDER, EMPTY_PRICE_ENTRY, SOURCES_DIVERGE, MARKET_CLOSED, WINDING_DOWN. */
             code?: string;
             /** @enum {string} */
             severity?: "ok" | "info" | "warning" | "critical";
@@ -625,9 +625,10 @@ export interface components {
             /** @description How many collateral reserves (or vaults) there are. */
             reserves?: number;
             /**
-             * @description Share of the collateral (by USD, 0 to 1) whose price has a fallback: no single feed it depends
-             *     on, not fixed, and readable. The three oracle shares need not add to 1; the rest is collateral
-             *     whose oracle could not be read or has none.
+             * @description Share of the collateral (by USD, 0 to 1) with no single-feed dependency: no NO_FALLBACK check,
+             *     not fixed (FIXED_PRICE) and readable. This includes collateral priced only by an exchange rate
+             *     or peg with no market oracle, so it does not mean "has a fallback oracle". The three oracle
+             *     shares need not add to 1; the rest is collateral whose oracle could not be read or has none.
              */
             withFallbackShare?: number;
             /** @description Share of the collateral whose price depends on one feed with no fallback (check NO_FALLBACK): if it stops, the price stops. */
@@ -656,9 +657,10 @@ export interface components {
             /** @description How many collateral reserves (or vaults) there are. */
             reserves?: number;
             /**
-             * @description Share of the collateral (by USD, 0 to 1) whose price has a fallback: no single feed it depends
-             *     on, not fixed, and readable. The three oracle shares need not add to 1; the rest is collateral
-             *     whose oracle could not be read or has none.
+             * @description Share of the collateral (by USD, 0 to 1) with no single-feed dependency: no NO_FALLBACK check,
+             *     not fixed (FIXED_PRICE) and readable. This includes collateral priced only by an exchange rate
+             *     or peg with no market oracle, so it does not mean "has a fallback oracle". The three oracle
+             *     shares need not add to 1; the rest is collateral whose oracle could not be read or has none.
              */
             withFallbackShare?: number;
             /** @description Share of the collateral whose price depends on one feed with no fallback (check NO_FALLBACK): if it stops, the price stops. */
@@ -687,9 +689,10 @@ export interface components {
             /** @description How many collateral reserves (or vaults) there are. */
             reserves?: number;
             /**
-             * @description Share of the collateral (by USD, 0 to 1) whose price has a fallback: no single feed it depends
-             *     on, not fixed, and readable. The three oracle shares need not add to 1; the rest is collateral
-             *     whose oracle could not be read or has none.
+             * @description Share of the collateral (by USD, 0 to 1) with no single-feed dependency: no NO_FALLBACK check,
+             *     not fixed (FIXED_PRICE) and readable. This includes collateral priced only by an exchange rate
+             *     or peg with no market oracle, so it does not mean "has a fallback oracle". The three oracle
+             *     shares need not add to 1; the rest is collateral whose oracle could not be read or has none.
              */
             withFallbackShare?: number;
             /** @description Share of the collateral whose price depends on one feed with no fallback (check NO_FALLBACK): if it stops, the price stops. */
@@ -1194,14 +1197,14 @@ export interface components {
         Stats: {
             /** @description Distinct wallets watched by at least one chat. */
             walletsWatched?: number;
-            /** @description Deposits plus loans in those wallets at their last check, in USD. */
+            /** @description Deposits in those wallets (Kamino and marginfi) at their last check, in USD. */
             valueWatchedUsd?: number;
         };
         /** @description How many wallets are watched through the Telegram bot, and the deposits in them. */
         "Stats.jsonld": components["schemas"]["HydraItemBaseSchema"] & {
             /** @description Distinct wallets watched by at least one chat. */
             walletsWatched?: number;
-            /** @description Deposits plus loans in those wallets at their last check, in USD. */
+            /** @description Deposits in those wallets (Kamino and marginfi) at their last check, in USD. */
             valueWatchedUsd?: number;
         };
         /** @description Kamino curator vaults, largest first. */
@@ -1278,11 +1281,12 @@ export interface components {
             /** @description Share of the vault, 0 to 1. */
             share?: number;
             /**
-             * @description The reserve's worst open check, or "ok".
+             * @description The reserve's worst open check, or "ok"; a stock only stale because its market is closed counts as not stale.
              * @enum {string}
              */
             severity?: "ok" | "info" | "warning" | "critical";
-            score?: number;
+            /** @description The reserve's score, or null when it is not monitored. */
+            score?: number | null;
             /** @description The reserve's most severe check message, or null when healthy. */
             mainIssue?: string | null;
             /**
@@ -1301,11 +1305,12 @@ export interface components {
             /** @description Share of the vault, 0 to 1. */
             share?: number;
             /**
-             * @description The reserve's worst open check, or "ok".
+             * @description The reserve's worst open check, or "ok"; a stock only stale because its market is closed counts as not stale.
              * @enum {string}
              */
             severity?: "ok" | "info" | "warning" | "critical";
-            score?: number;
+            /** @description The reserve's score, or null when it is not monitored. */
+            score?: number | null;
             /** @description The reserve's most severe check message, or null when healthy. */
             mainIssue?: string | null;
             /**

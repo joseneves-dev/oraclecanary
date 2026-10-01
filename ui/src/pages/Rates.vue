@@ -110,6 +110,27 @@ const withCritical = computed(() => shown.value.filter((p) => p.lentAgainst.crit
 /** Where a row leads: the reserve's page, or the Earn pool's account on Solscan. */
 const reserveLink = (p: LendingRate) => (p.kind === 'reserve' ? { name: 'reserve', params: { address: p.address } } : null)
 
+const LENT_TITLE = "Borrowers post this collateral for your deposit. If its price stops or is wrong, bad loans may not be liquidated in time and losses can fall on lenders."
+
+/**
+ * Where a group's rates come from, once per source rather than on every row: "Kamino API 12m ·
+ * Jupiter API 7m · on-chain". API sources show the age of their oldest rate in the group; on-chain
+ * rates are each bank's own last update, so no single age is shown.
+ */
+function sourcesLine(rows: LendingRate[]): string {
+  const oldest = new Map<string, string | null>()
+  for (const r of rows) {
+    const key = r.rateSource ?? ''
+    const known = oldest.get(key)
+    if (!oldest.has(key) || (r.rateAt && known && r.rateAt < known)) oldest.set(key, r.rateAt)
+  }
+  return [...oldest.entries()]
+    .map(([source, at]) => (source === 'marginfi-onchain' ? 'on-chain' : `${sourceLabel(source || null)} ${ago(at, now.value).replace(' ago', '')}`))
+    .join(' · ')
+}
+const sourcesTitle = (rows: LendingRate[]) =>
+  [...new Set(rows.map((r) => sourceLabel(r.rateSource)))].join(', ') + ': ages are how long ago each source was read; on-chain rates are as of each bank\'s last update'
+
 const ownTitle = (p: LendingRate) => (p.providers.length ? `Price from ${p.providers.join(', ')}${p.checks.length ? ` · checks: ${p.checks.join(', ')}` : ''}` : '')
 </script>
 
@@ -121,8 +142,7 @@ const ownTitle = (p: LendingRate) => (p.providers.length ? `Price from ${p.provi
         <div>
           <h1 class="ax-page-head__title">Lending rates</h1>
           <p class="ax-page-head__subtitle">
-            What each Kamino, marginfi and Jupiter Lend pool reports paying depositors, next to the oracle facts of the pool and of the collateral
-            its deposits are lent against. If that collateral's price stops or is wrong, bad loans cannot be liquidated and losses fall on lenders.
+            Supply APY for every Kamino, marginfi and Jupiter Lend pool, next to the oracle health of the collateral your deposit is lent against.
           </p>
         </div>
       </div>
@@ -138,7 +158,7 @@ const ownTitle = (p: LendingRate) => (p.providers.length ? `Price from ${p.provi
     </section>
     <div v-else class="ax-dash-grid" :aria-busy="loading">
       <KpiCard label="Supply pools" :loading="loading" :value="String(shown.length)" :hint="filters.showSmall ? 'Every pool with a reported rate' : 'Pools holding $100K or more'" />
-      <KpiCard label="Deposits" :loading="loading" :value="usd(totalUsd)" />
+      <KpiCard label="Deposits" :loading="loading" :value="usd(totalUsd)" hint="In the pools shown" />
       <KpiCard label="Assets" :loading="loading" :value="String(groups.length)" hint="Grouped by token, across protocols" />
       <KpiCard
         label="Critical collateral"
@@ -152,7 +172,7 @@ const ownTitle = (p: LendingRate) => (p.providers.length ? `Price from ${p.provi
         <div class="ax-card__header toolbar">
           <div class="ax-card__titles">
             <h2 class="ax-card__title">Supply pools by asset</h2>
-            <p class="ax-card__subtitle">Largest deposits first. Rates as each protocol reports them, without token incentives.</p>
+            <p class="ax-card__subtitle">Largest deposits first. Rates from each protocol (marginfi: the bank's on-chain APR, compounded hourly as its app does), without token incentives.</p>
           </div>
           <div class="ax-card__actions toolbar__controls">
             <select class="ax-select ax-select--sm" aria-label="Filter by asset" :value="filters.asset" @change="setQuery({ asset: selectValue($event) })">
@@ -189,7 +209,7 @@ const ownTitle = (p: LendingRate) => (p.providers.length ? `Price from ${p.provi
                 <th scope="col" class="ax-table__th ax-table__th--num col-apy">Supply APY</th>
                 <th scope="col" class="ax-table__th ax-table__th--num col-supply">Deposits</th>
                 <th scope="col" class="ax-table__th col-own">Pool's own price</th>
-                <th scope="col" class="ax-table__th col-lent">Lent against</th>
+                <th scope="col" class="ax-table__th col-lent" :title="LENT_TITLE">Lent against (collateral)</th>
               </tr>
             </thead>
             <tbody v-if="loading">
@@ -202,6 +222,7 @@ const ownTitle = (p: LendingRate) => (p.providers.length ? `Price from ${p.provi
                 <th scope="rowgroup" colspan="5" class="group__cell">
                   <span class="group__symbol">{{ g.symbol }}</span>
                   <span class="group__meta"><span class="ax-num">{{ g.rows.length }}</span> {{ g.rows.length === 1 ? 'pool' : 'pools' }} · <span class="ax-num">{{ usd(g.usd) }}</span></span>
+                  <span class="group__sources" :title="sourcesTitle(g.rows)">{{ sourcesLine(g.rows) }}</span>
                 </th>
               </tr>
               <tr v-for="p in visibleRows(g)" :key="p.address" class="ax-table__row">
@@ -213,12 +234,9 @@ const ownTitle = (p: LendingRate) => (p.providers.length ? `Price from ${p.provi
                   </div>
                 </td>
                 <td class="ax-table__td ax-table__td--num col-apy">
-                  <div class="apy ax-num">{{ pct(p.supplyApy) }}</div>
+                  <div class="apy ax-num" :title="p.rateAt ? `${sourceLabel(p.rateSource)}, ${dateTime(p.rateAt)}` : sourceLabel(p.rateSource)">{{ pct(p.supplyApy) }}</div>
                   <div v-if="p.borrowApy !== null" class="sub">borrow {{ pct(p.borrowApy) }}</div>
                   <div v-if="p.rewardsApy" class="sub" title="Token incentives the source reports on top of the rate">+{{ pct(p.rewardsApy) }} incentives</div>
-                  <div class="sub" :title="p.rateAt ? `${sourceLabel(p.rateSource)}, ${dateTime(p.rateAt)}` : undefined">
-                    {{ sourceLabel(p.rateSource) }} · {{ ago(p.rateAt, now) }}
-                  </div>
                 </td>
                 <td class="ax-table__td ax-table__td--num col-supply" data-label="Deposits">
                   <span class="ax-num">{{ usd(p.totalSupplyUsd) }}</span>
@@ -230,7 +248,7 @@ const ownTitle = (p: LendingRate) => (p.providers.length ? `Price from ${p.provi
                   </template>
                   <span v-else class="sub" title="An Earn pool has no price of its own: the vaults that borrow from it price the loans">No oracle of its own</span>
                 </td>
-                <td class="ax-table__td col-lent" data-label="Lent against">
+                <td class="ax-table__td col-lent" data-label="Lent against (collateral)" :title="LENT_TITLE">
                   <LentAgainstFacts :facts="p.lentAgainst" />
                 </td>
               </tr>
@@ -257,8 +275,10 @@ const ownTitle = (p: LendingRate) => (p.providers.length ? `Price from ${p.provi
           whether or not they back a loan right now.
         </p>
         <p>
-          "Fallback" means the price has no single feed it depends on. "Single feed" means one feed stopping stops the price. "Critical" counts
-          collateral reserves holding $10K or more with a critical check now; a stock paused only by its closed market is not counted.
+          "Single feed" means the price depends on one feed with no fallback: if it stops, the price stops. "No single-feed dependency" means no
+          such feed was found; it includes collateral priced only by an exchange rate or peg, with no market oracle. "Critical" counts collateral
+          reserves holding $10K or more with a critical check now; a stock paused only by its closed market is not counted. Kamino
+          elevation-group limits are not modelled.
         </p>
         <p class="disclaimer">
           Rates come from each protocol's public API or on-chain state; oracle facts from OracleCanary's checks. Not investment advice or a
@@ -327,16 +347,16 @@ const ownTitle = (p: LendingRate) => (p.providers.length ? `Price from ${p.provi
   border-radius: var(--ax-radius-pill);
 }
 .legend__dot--fallback {
-  background: var(--ax-accent-500);
+  background: var(--ax-sev-ok);
 }
 .legend__dot--single {
-  background: var(--ax-warning-500);
+  background: var(--ax-sev-warn);
 }
 .legend__dot--fixed {
-  background: var(--ax-neutral-400);
+  background: var(--ax-text-subtle);
 }
 .legend__dot--rest {
-  background: var(--ax-border-strong);
+  background: var(--ax-border);
 }
 
 .rates {
@@ -364,6 +384,11 @@ const ownTitle = (p: LendingRate) => (p.providers.length ? `Price from ${p.provi
   color: var(--ax-text-strong);
   font-weight: 650;
   margin-inline-end: var(--ax-space-2);
+}
+.group__sources {
+  float: inline-end;
+  color: var(--ax-text-subtle);
+  font-size: var(--ax-text-xs);
 }
 .group__meta {
   color: var(--ax-text-muted);
@@ -433,6 +458,11 @@ const ownTitle = (p: LendingRate) => (p.providers.length ? `Price from ${p.provi
   }
   .rates .group__head {
     display: block;
+  }
+  .rates .group__sources {
+    float: none;
+    display: block;
+    margin-block-start: 2px;
   }
   .rates .group__cell,
   .rates .group__more,

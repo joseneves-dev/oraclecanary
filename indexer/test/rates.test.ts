@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
 
+import pg from 'pg';
+
+import { RATE_COLUMNS, RESERVE_COLUMNS, rateValues, reserveUpdates, saveEarnPools } from '../src/db.js';
 import {
   aprToApy,
+  attachRates,
+  cachedKaminoRates,
   fetchJupiterEarn,
-  fetchKaminoRates,
+  kaminoRatesWithin,
+  listedMarkets,
   marginfiRate,
   parseJupiterEarn,
   parseKaminoMetrics,
   resetRateCaches,
-  withKaminoRates,
 } from '../src/rates.js';
 import type { MarketOracleConfig } from '../src/types.js';
 
@@ -57,6 +62,8 @@ const JUPITER_EARN = [
     rewardsRate: '0',
   },
   { id: 3, address: 'no-rate', assetAddress: 'x', asset: { symbol: 'X' } },
+  // No price: skipped rather than stored at $0.
+  { id: 4, address: 'no-price', assetAddress: 'y', asset: { symbol: 'Y', decimals: 6 }, totalAssets: '1000000', supplyRate: '400' },
 ];
 
 const AT = new Date('2026-10-01T12:00:00Z');
@@ -138,8 +145,9 @@ describe('marginfiRate', () => {
     assert.equal(rate.at.toISOString(), new Date(1_790_862_962_000).toISOString());
   });
 
-  it('has no rate for a bank that never updated', () => {
-    assert.equal(marginfiRate({ lending_rate: 0, borrowing_rate: 0 }, 0, 0.8), null);
+  it('has no rate for a bank that never updated, or whose cache was never written', () => {
+    assert.equal(marginfiRate({ lending_rate: 5, borrowing_rate: 9 }, 0, 0.8), null);
+    assert.equal(marginfiRate({ lending_rate: 0, borrowing_rate: 0 }, 1_790_862_962, 0.8), null);
   });
 
   it('caps u32::MAX at 1000%', () => {
@@ -147,7 +155,7 @@ describe('marginfiRate', () => {
   });
 });
 
-describe('fetchKaminoRates', () => {
+describe('Kamino rates', () => {
   beforeEach(() => resetRateCaches());
   afterEach(() => {
     globalThis.fetch = realFetch;
@@ -156,42 +164,72 @@ describe('fetchKaminoRates', () => {
   it('reads each market once, then reuses the rates until they are due again', async () => {
     mockFetch(() => KAMINO_METRICS);
     const now = AT.getTime();
-    const first = await fetchKaminoRates(['m1', 'm2'], now);
+    const first = await kaminoRatesWithin(['m1', 'm2'], 1_000, now);
     assert.equal(calls.length, 2);
     assert.ok(calls[0].endsWith('/kamino-market/m1/reserves/metrics'));
     assert.equal(first.size, 2);
 
-    await fetchKaminoRates(['m1', 'm2'], now + 60_000);
+    await kaminoRatesWithin(['m1', 'm2'], 1_000, now + 60_000);
     assert.equal(calls.length, 2, 'no new call within the refresh interval');
 
-    await fetchKaminoRates(['m1'], now + 3_600_000);
+    await kaminoRatesWithin(['m1'], 1_000, now + 3_600_000);
     assert.equal(calls.length, 3);
   });
 
-  it('keeps the last rates of a market whose call fails', async () => {
+  it('keeps the last rates of a failed market and backs off before retrying it', async () => {
+    const t0 = AT.getTime();
     mockFetch(() => KAMINO_METRICS);
-    await fetchKaminoRates(['m1'], AT.getTime());
+    await kaminoRatesWithin(['m1'], 1_000, t0);
 
     mockFetch(() => new Error('timeout'));
-    const later = await fetchKaminoRates(['m1'], AT.getTime() + 3_600_000);
+    const later = await kaminoRatesWithin(['m1'], 1_000, t0 + 3_600_000);
     assert.equal(calls.length, 1);
     assert.equal(later.get('D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59')?.at.toISOString(), AT.toISOString());
-  });
-});
 
-describe('withKaminoRates', () => {
-  beforeEach(() => resetRateCaches());
-  afterEach(() => {
-    globalThis.fetch = realFetch;
+    // Retried after 1 minute, then after 2 more.
+    await kaminoRatesWithin(['m1'], 1_000, t0 + 3_600_000 + 30_000);
+    assert.equal(calls.length, 1, 'backing off');
+    await kaminoRatesWithin(['m1'], 1_000, t0 + 3_600_000 + 60_000);
+    assert.equal(calls.length, 2, 'retried after the first back-off');
+    await kaminoRatesWithin(['m1'], 1_000, t0 + 3_600_000 + 60_000 + 90_000);
+    assert.equal(calls.length, 2, 'the second back-off is longer');
   });
 
-  it('attaches rates to reserves of listed markets only', async () => {
+  it('waits no longer than its budget; the slow call fills the cache for the next run', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    calls = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      calls.push(String(input));
+      await gate;
+      return new Response(JSON.stringify(KAMINO_METRICS), { status: 200 });
+    }) as typeof fetch;
+
+    const started = Date.now();
+    const rates = await kaminoRatesWithin(['m1'], 50, AT.getTime());
+    assert.ok(Date.now() - started < 1_000, 'returned at the budget');
+    assert.equal(rates.size, 0);
+
+    // A run meanwhile does not start the same call again.
+    await kaminoRatesWithin(['m1'], 10, AT.getTime() + 3_600_000);
+    assert.equal(calls.length, 1);
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(cachedKaminoRates(['m1']).size, 2);
+  });
+
+  it('attaches rates to the reserves of listed markets only', async () => {
     mockFetch(() => KAMINO_METRICS);
-    const [listed, unlisted] = await withKaminoRates([
+    const reserves = [
       reserve('D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59', 'main', 'Main Market'),
       reserve('D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59-copy', 'anyone', null),
-    ]);
-    assert.deepEqual(calls.length, 1);
+    ];
+    assert.deepEqual(listedMarkets(reserves), ['main']);
+    const [listed, unlisted] = attachRates(reserves, await kaminoRatesWithin(listedMarkets(reserves), 1_000));
+    assert.equal(calls.length, 1);
     assert.equal(listed.rate?.supplyApy, 0.043192191263740964);
     assert.equal(unlisted.rate, undefined);
   });
@@ -199,10 +237,80 @@ describe('withKaminoRates', () => {
   it('never fails the health run: without an answer the reserves come back unchanged', async () => {
     mockFetch(() => new Error('network down'));
     const reserves = [reserve('D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59', 'main', 'Main Market')];
-    const result = await withKaminoRates(reserves);
-    assert.deepEqual(result, reserves);
+    assert.deepEqual(attachRates(reserves, await kaminoRatesWithin(listedMarkets(reserves), 1_000)), reserves);
   });
 });
+
+describe('lending_reserve rate columns', () => {
+  it('keeps the stored rates when no rate was read this run', () => {
+    const updates = reserveUpdates();
+    for (const column of RATE_COLUMNS) {
+      assert.ok(updates.includes(`${column} = CASE WHEN EXCLUDED.rate_source IS NULL THEN lending_reserve.${column} ELSE EXCLUDED.${column} END`), column);
+    }
+    assert.ok(updates.includes('score = EXCLUDED.score'));
+    assert.ok(RATE_COLUMNS.every((c) => RESERVE_COLUMNS.includes(c)));
+  });
+
+  it('writes a rate as its columns, or nulls without one', () => {
+    const r = reserve('a', 'main', 'Main Market');
+    assert.deepEqual(rateValues(r), [null, null, null, null, null]);
+    assert.deepEqual(rateValues({ ...r, rate: { supplyApy: 0.04, borrowApy: 0.06, maxLtv: 0.8, source: 'kamino-api', at: AT } }), [
+      0.04, 0.06, 0.8, 'kamino-api', '2026-10-01T12:00:00.000',
+    ]);
+  });
+});
+
+// Against a real PostgreSQL only when TEST_DATABASE_URL points at a database migrated by the web app.
+// Temporary tables shadow the real ones, so nothing stored there is touched.
+const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
+describe('rates in the database', { skip: !TEST_DATABASE_URL && 'TEST_DATABASE_URL is not set' }, () => {
+  it('an upsert without a rate keeps the stored one; with a rate, replaces it', async () => {
+    // One connection, so the temporary tables are seen by every query.
+    const db = new pg.Pool({ connectionString: TEST_DATABASE_URL, max: 1 });
+    try {
+      await db.query('CREATE TEMP TABLE lending_reserve (LIKE public.lending_reserve INCLUDING ALL)');
+      const columns = RESERVE_COLUMNS.join(', ');
+      const params = RESERVE_COLUMNS.map((_, i) => `$${i + 1}`).join(', ');
+      const row = (rates: (number | string | null)[], score: number) => {
+        const base: Record<string, unknown> = {
+          address: 'a', protocol: 'kamino', market: 'm', market_name: 'Main Market', asset: 'USDC', mint: 'x', status: 'active',
+          total_supply_usd: 1, max_age_price_seconds: 60, price_age_seconds: 1, score, providers: '[]', checks: '[]', feeds: '{}',
+          checked_at: '2026-10-01T12:00:00', borrow_mint: null, market_hours: false,
+        };
+        RATE_COLUMNS.forEach((c, i) => (base[c] = rates[i]));
+        return RESERVE_COLUMNS.map((c) => base[c]);
+      };
+      const upsert = (values: unknown[]) => db.query(`INSERT INTO lending_reserve (${columns}) VALUES (${params}) ON CONFLICT (address) DO UPDATE SET ${reserveUpdates()}`, values);
+
+      await upsert(row([0.04, 0.06, 0.8, 'kamino-api', '2026-10-01T12:00:00'], 100));
+      await upsert(row([null, null, null, null, null], 90));
+      let { rows } = await db.query('SELECT score, supply_apy, rate_source FROM lending_reserve');
+      assert.deepEqual(rows, [{ score: 90, supply_apy: 0.04, rate_source: 'kamino-api' }]);
+
+      await upsert(row([0.05, 0.07, 0.8, 'kamino-api', '2026-10-01T12:05:00'], 90));
+      ({ rows } = await db.query('SELECT supply_apy FROM lending_reserve'));
+      assert.deepEqual(rows, [{ supply_apy: 0.05 }]);
+    } finally {
+      await db.end();
+    }
+  });
+
+  it('saveEarnPools replaces the pools, and an empty list changes nothing', async () => {
+    const db = new pg.Pool({ connectionString: TEST_DATABASE_URL, max: 1 });
+    try {
+      await db.query('CREATE TEMP TABLE lending_earn_pool (LIKE public.lending_earn_pool INCLUDING ALL)');
+      const [usdc, sol] = parseJupiterEarn(JUPITER_EARN, AT);
+      await saveEarnPools(db, [usdc, sol], AT);
+      await saveEarnPools(db, [{ ...usdc, supplyApy: 0.05 }], AT);
+      await saveEarnPools(db, [], AT);
+      const { rows } = await db.query('SELECT asset, supply_apy FROM lending_earn_pool');
+      assert.deepEqual(rows, [{ asset: 'USDC', supply_apy: 0.05 }]);
+    } finally {
+      await db.end();
+    }
+  });
+});
+
 
 describe('fetchJupiterEarn', () => {
   beforeEach(() => resetRateCaches());

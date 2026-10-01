@@ -37,10 +37,26 @@ async function insertRows(client: pg.PoolClient, table: string, columns: readonl
 }
 
 /** Written together from one source (see rates.ts); kept from the last run when no rate was read. */
-const RATE_COLUMNS = ['supply_apy', 'borrow_apy', 'max_ltv', 'rate_source', 'rate_at'] as const;
+export const RATE_COLUMNS = ['supply_apy', 'borrow_apy', 'max_ltv', 'rate_source', 'rate_at'] as const;
 const RATE_COLUMN_SET = new Set<string>(RATE_COLUMNS);
 
-const RESERVE_COLUMNS = [
+/**
+ * The SET clause of the lending_reserve upsert. The rate columns keep their stored values when this
+ * run read no rate for the reserve (rate_source null), so an API outage does not erase them.
+ */
+export function reserveUpdates(): string {
+  return RESERVE_COLUMNS.filter((c) => c !== 'address')
+    .map((c) => (RATE_COLUMN_SET.has(c) ? `${c} = CASE WHEN EXCLUDED.rate_source IS NULL THEN lending_reserve.${c} ELSE EXCLUDED.${c} END` : `${c} = EXCLUDED.${c}`))
+    .join(', ');
+}
+
+/** Values of RATE_COLUMNS for a reserve: all null when no rate was read this run. */
+export function rateValues(r: MarketOracleConfig): (number | string | null)[] {
+  if (!r.rate) return RATE_COLUMNS.map(() => null);
+  return [finite(r.rate.supplyApy), finite(r.rate.borrowApy), r.rate.maxLtv, r.rate.source, utc(r.rate.at)];
+}
+
+export const RESERVE_COLUMNS = [
   'address', 'protocol', 'market', 'market_name', 'asset', 'mint', 'status', 'total_supply_usd',
   'max_age_price_seconds', 'price_age_seconds', 'score', 'providers', 'checks', 'feeds', 'checked_at',
   'borrow_mint', 'market_hours', ...RATE_COLUMNS,
@@ -205,9 +221,7 @@ export async function saveReserveHealth(
       ]),
     );
 
-    const updates = RESERVE_COLUMNS.filter((c) => c !== 'address')
-      .map((c) => (RATE_COLUMN_SET.has(c) ? `${c} = CASE WHEN EXCLUDED.rate_source IS NULL THEN lending_reserve.${c} ELSE EXCLUDED.${c} END` : `${c} = EXCLUDED.${c}`))
-      .join(', ');
+    const updates = reserveUpdates();
     await insertRows(
       client,
       'lending_reserve',
@@ -219,9 +233,7 @@ export async function saveReserveHealth(
         // made meanwhile is still compared against what was there before.
         JSON.stringify({ ...storedFeeds(r), knownProviders: h.providers.length ? h.providers : (stored.get(r.reserve)?.providers ?? []) }),
         utc(checkedAt),
-        r.borrowMint ?? null, US_STOCK_MINTS.has(r.mint),
-        r.rate ? finite(r.rate.supplyApy) : null, r.rate ? finite(r.rate.borrowApy) : null, r.rate?.maxLtv ?? null,
-        r.rate?.source ?? null, r.rate ? utc(r.rate.at) : null,
+        r.borrowMint ?? null, US_STOCK_MINTS.has(r.mint), ...rateValues(r),
       ]),
       `ON CONFLICT (address) DO UPDATE SET ${updates}`,
     );

@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { fetchAllReserves, fetchReserves, type Reserve } from '@/api/client'
-import BlastTable, { type BlastRow } from '@/components/blast/BlastTable.vue'
+import BlastTable, { type BlastRow, commonNote } from '@/components/blast/BlastTable.vue'
+import { marketLine } from '@/components/blast/market'
 import FeedList from '@/components/blast/FeedList.vue'
 import MarketBreakdown from '@/components/blast/MarketBreakdown.vue'
 import ProviderPicker from '@/components/blast/ProviderPicker.vue'
@@ -22,7 +23,7 @@ import {
   providerKey,
   providerSummaries,
 } from '@/lib/blastRadius'
-import { dateTime, protocolName, shortAddress, solscanAccount, usd } from '@/lib/format'
+import { dateTime, shortAddress, solscanAccount, usd } from '@/lib/format'
 import { priceState } from '@/lib/priceState'
 
 /**
@@ -64,11 +65,26 @@ const queryValue = (key: string) => {
   const v = route.query[key]
   return typeof v === 'string' && v.trim() ? v.trim() : null
 }
-const feed = computed(() => queryValue('feed'))
-/** The provider played out; Switchboard, the one that did fail, when none is asked for. */
-const provider = computed(() => (feed.value ? null : providerKey(queryValue('provider') ?? SWITCHBOARD)))
+/** A Solana account: 32 to 44 base58 characters. */
+const ACCOUNT = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
+const feedQuery = computed(() => queryValue('feed'))
+const feed = computed(() => (feedQuery.value && ACCOUNT.test(feedQuery.value) ? feedQuery.value : null))
+const badFeed = computed(() => !!feedQuery.value && !feed.value)
 
 const summaries = computed(() => providerSummaries(reserves.value))
+/**
+ * The provider played out when none is asked for: the market oracle with the most deposits whose
+ * price would stop with it. Scope is Kamino's oracle aggregator rather than an oracle, and Switchboard has
+ * already shut down, so both stay one click away instead.
+ */
+const defaultProvider = computed(
+  () => summaries.value.find((s) => !s.structure && s.provider !== SCOPE && s.provider !== SWITCHBOARD && s.stopsCount)?.provider ?? null,
+)
+const provider = computed(() => {
+  if (feedQuery.value) return null
+  const asked = queryValue('provider')
+  return asked ? providerKey(asked) : defaultProvider.value
+})
 const supplyOf = (rows: Reserve[]) => rows.reduce((sum, r) => sum + r.totalSupplyUsd, 0)
 const totalSupply = computed(() => supplyOf(reserves.value))
 
@@ -89,7 +105,7 @@ const nowText = computed(() => {
 
 /* ── The scenario ── */
 const exposure = computed<Exposure<Reserve> & { provider: string | null }>(() =>
-  feed.value ? feedExposure(reserves.value, feed.value) : { ...providerExposure(reserves.value, provider.value!), provider: provider.value },
+  feed.value ? feedExposure(reserves.value, feed.value) : { ...providerExposure(reserves.value, provider.value ?? ''), provider: provider.value },
 )
 /** The provider behind what is shown: the one picked, or the feed account's. */
 const subject = computed(() => provider.value ?? exposure.value.provider)
@@ -118,13 +134,18 @@ function rowsOf(e: Exposure<Reserve>): BlastRow[] {
 }
 const rows = computed(() => rowsOf(exposure.value))
 const showEntries = computed(() => rows.value.some((r) => r.entries))
+/** Said once in the card's subtitle when every row shares it, instead of a column repeating it. */
+const sharedNote = computed(() => commonNote(rows.value))
 
 const largest = computed(() => exposure.value.stops[0] ?? null)
 const blockedAmongStops = computed(() => exposure.value.stops.filter((r) => r.totalSupplyUsd >= BLOCKED_MIN_USD && priceState(r) === 'blocked'))
 
 /** Switchboard outside the listed markets: the reserves that still had nothing else when it shut down. */
 const unlistedSwitchboard = computed(() => providerExposure(switchboardUnlisted.value, SWITCHBOARD))
-const unlistedRows = computed(() => rowsOf(unlistedSwitchboard.value))
+/** Rows under $1K are mostly abandoned test markets: counted, not listed. */
+const UNLISTED_MIN_USD = 1_000
+const unlistedRows = computed(() => rowsOf(unlistedSwitchboard.value).filter((r) => r.reserve.totalSupplyUsd >= UNLISTED_MIN_USD))
+const unlistedSmall = computed(() => unlistedSwitchboard.value.stops.length + unlistedSwitchboard.value.keeps.length - unlistedRows.value.length)
 
 /* ── Feeds behind the provider ── */
 const directFeeds = computed(() => (provider.value && !structureView.value ? feedsOf(reserves.value, provider.value) : []))
@@ -139,12 +160,12 @@ const scopeAccounts = computed(() => {
 
 /* ── Words ── */
 const n = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`
-const name = computed(() => (subject.value === SCOPE ? "Kamino's Scope price accounts" : subject.value ?? 'this feed'))
+const name = computed(() => (subject.value === SCOPE ? "Kamino's Scope aggregator" : subject.value ?? 'this feed'))
 
 const eyebrow = computed(() => {
-  if (feed.value) return `Feed account · ${exposure.value.provider ?? 'not read by any listed reserve'}`
+  if (feed.value) return exposure.value.provider ? '' : 'Feed account · not read by any listed reserve'
   if (provider.value === SWITCHBOARD) return 'Switchboard · shut down on 25 Sep 2026'
-  if (provider.value === SCOPE) return 'Price relay · Kamino'
+  if (provider.value === SCOPE) return 'Oracle aggregator · Kamino'
   if (structureView.value) return 'Rate or peg · not an oracle'
   return 'Oracle provider'
 })
@@ -174,14 +195,22 @@ const consequence = computed(() => {
   const parts: string[] = []
   if (e.stops.length) parts.push('Borrowing, withdrawals and liquidations that need those prices would fail until it came back.')
   if (e.keeps.length) parts.push(`${usd(e.keepsUsd)} more in ${n(e.keeps.length, 'reserve')} keeps a price through a fallback.`)
-  if (provider.value === SCOPE) parts.push('Scope copies oracle prices into the accounts Kamino reads, so a fallback between oracles inside Scope does not help if Scope itself stops.')
+  if (provider.value === SCOPE) {
+    parts.unshift(
+      "Scope is Kamino's oracle aggregator: it copies and combines oracle prices (chains, TWAPs, stake rates) into the accounts Kamino reads, so if Scope stopped, a fallback between oracles inside it would not help.",
+    )
+  }
   if (provider.value === SWITCHBOARD) parts.push('No listed market on Kamino, marginfi or Jupiter Lend relies on it alone now.')
   return parts.join(' ')
 })
 
 const latestCheck = computed(() => Math.max(...reserves.value.map((r) => Date.parse(r.checkedAt))))
 const checkedLabel = computed(() => (Number.isFinite(latestCheck.value) ? dateTime(latestCheck.value) : null))
-const marketName = (r: Reserve) => r.market.name ?? shortAddress(r.market.address)
+/** Where this view lives, for the printed header. */
+const shareUrl = computed(() =>
+  feed.value ? `oraclecanary.com/blast-radius?feed=${feed.value}` : `oraclecanary.com/blast-radius?provider=${encodeURIComponent(provider.value ?? '')}`,
+)
+const printTitle = computed(() => (feed.value ? `If feed ${shortAddress(feed.value)} stopped` : `If ${provider.value ?? 'an oracle'} stopped`))
 
 const print = () => window.print()
 </script>
@@ -189,6 +218,7 @@ const print = () => window.print()
 <template>
   <!-- One root: the layout pads each top-level block, so separate blocks would stack their padding. -->
   <div class="page">
+    <p class="print-only print-head">OracleCanary · {{ printTitle }} · {{ shareUrl }} · checked {{ checkedLabel ?? '—' }}</p>
     <div class="ax-page-head">
       <div class="ax-page-head__row">
         <div>
@@ -205,7 +235,7 @@ const print = () => window.print()
     </div>
 
     <!-- Oracle-blocked right now: the Overview's "Money blocked now", by the same rule. -->
-    <section class="now" :class="{ 'now--bad': blocked.length }" aria-label="Oracle-blocked right now" :aria-busy="loading">
+    <section class="now" :class="{ 'now--bad': blocked.length, 'now--muted': loading || error }" aria-label="Oracle-blocked right now" :aria-busy="loading">
       <span class="now__dot" aria-hidden="true"></span>
       <span class="now__label">Oracle-blocked right now</span>
       <span v-if="loading" class="ax-skeleton ax-skeleton--line now__skeleton" aria-hidden="true"></span>
@@ -214,7 +244,7 @@ const print = () => window.print()
       <RouterLink v-if="!loading && !error" :to="{ name: 'incidents' }" class="now__link no-print">Incidents</RouterLink>
     </section>
 
-    <section class="ax-card picker-card no-print" aria-label="Choose an oracle">
+    <section v-if="!error" class="ax-card picker-card no-print" aria-label="Choose an oracle">
       <ProviderPicker :summaries="summaries" :selected="provider" :loading="loading" />
     </section>
 
@@ -227,10 +257,19 @@ const print = () => window.print()
       </EmptyState>
     </section>
 
+    <section v-else-if="badFeed" class="ax-card">
+      <EmptyState tone="none" title="That isn't a Solana account address. Pick an oracle above." />
+    </section>
+
     <template v-else>
       <!-- The answer, in one sentence. -->
       <section class="ax-card hero" :class="{ 'hero--bad': exposure.stops.length && !structureView }" aria-labelledby="blast-headline" :aria-busy="loading">
-        <p class="hero__eyebrow">{{ eyebrow }}</p>
+        <p v-if="eyebrow" class="hero__eyebrow">{{ eyebrow }}</p>
+        <nav v-else-if="feed && exposure.provider" class="hero__eyebrow crumbs" aria-label="Breadcrumb">
+          <RouterLink :to="{ query: { provider: exposure.provider } }">{{ exposure.provider }}</RouterLink>
+          <span aria-hidden="true"> › </span>
+          <span aria-current="page">{{ shortAddress(feed) }}</span>
+        </nav>
         <template v-if="loading">
           <span class="ax-skeleton ax-skeleton--line" style="width: 70%; height: 1.75rem" aria-hidden="true"></span>
           <span class="ax-skeleton ax-skeleton--line" style="width: 50%" aria-hidden="true"></span>
@@ -241,7 +280,6 @@ const print = () => window.print()
           <p v-if="feed" class="hero__feed">
             <code class="ax-num">{{ feed }}</code>
             <a :href="solscanAccount(feed)" target="_blank" rel="noopener">View on Solscan</a>
-            <RouterLink v-if="exposure.provider" :to="{ query: { provider: exposure.provider } }" class="no-print">All of {{ exposure.provider }}</RouterLink>
           </p>
           <p class="hero__asof">Listed markets · checked {{ checkedLabel ?? '—' }}</p>
         </template>
@@ -259,13 +297,14 @@ const print = () => window.print()
           label="Keeps a price"
           :loading="loading"
           :value="usd(exposure.keepsUsd)"
+          :tone="exposure.keeps.length ? 'success' : undefined"
           :hint="exposure.keeps.length ? `In ${n(exposure.keeps.length, 'reserve')}, through a fallback` : 'No reserve has a fallback for it'"
         />
         <KpiCard
           label="Largest reserve hit"
           :loading="loading"
           :value="largest ? largest.asset || shortAddress(largest.mint) : '—'"
-          :hint="largest ? `${usd(largest.totalSupplyUsd)} · ${protocolName(largest.protocol)} · ${marketName(largest)}` : 'None'"
+          :hint="largest ? `${usd(largest.totalSupplyUsd)} · ${marketLine(largest)}` : 'None'"
         />
         <KpiCard
           label="Already blocked"
@@ -313,7 +352,7 @@ const print = () => window.print()
             <div class="ax-card__titles">
               <h2 id="reserves-title" class="ax-card__title">Reserves reached</h2>
               <p class="ax-card__subtitle">
-                {{ structureView ? 'Every listed reserve that uses it, largest first' : 'Prices that would stop first, then those that keep one; largest first in each' }}
+                {{ structureView ? 'Every listed reserve that uses it, largest first' : 'Prices that would stop first, then those that keep one; largest first in each' }}<template v-if="sharedNote">. Other sources, for every one: {{ sharedNote.charAt(0).toLowerCase() + sharedNote.slice(1) }}.</template>
               </p>
             </div>
           </div>
@@ -334,7 +373,12 @@ const print = () => window.print()
             </p>
           </div>
         </div>
-        <BlastTable :rows="unlistedRows" caption="Unlisted reserves that still read Switchboard" />
+        <details v-if="unlistedRows.length" class="unlisted">
+          <summary class="unlisted__summary">
+            Show the {{ n(unlistedRows.length, 'reserve') }} holding $1K or more<template v-if="unlistedSmall"> ({{ unlistedSmall }} smaller ones are not listed)</template>
+          </summary>
+          <BlastTable :rows="unlistedRows" caption="Unlisted reserves that still read Switchboard" />
+        </details>
       </section>
 
       <section class="ax-card method" aria-labelledby="method-title">
@@ -419,6 +463,10 @@ const print = () => window.print()
 .now--bad .now__dot {
   background: var(--ax-sev-crit);
 }
+/* Grey while nothing is known: green would claim all is well. */
+.now--muted .now__dot {
+  background: var(--ax-text-subtle);
+}
 .now__label {
   font-size: var(--ax-text-xs);
   font-weight: var(--ax-weight-semibold);
@@ -493,6 +541,23 @@ const print = () => window.print()
 }
 .hero__feed a {
   color: var(--ax-accent-text);
+}
+.crumbs a {
+  color: var(--ax-accent-text);
+}
+.crumbs [aria-current] {
+  font-family: var(--ax-font-mono);
+  color: var(--ax-text-strong);
+}
+.unlisted__summary {
+  padding: var(--ax-space-3) var(--ax-space-6);
+  font-size: var(--ax-text-sm);
+  color: var(--ax-accent-text);
+  cursor: pointer;
+  border-top: 1px solid var(--ax-border);
+}
+.print-only {
+  display: none;
 }
 .hero__asof {
   margin: 0;
@@ -571,6 +636,20 @@ const print = () => window.print()
 
 /* A clean page for an oracle review: no app chrome or controls, every row shown. */
 @media print {
+  .print-only {
+    display: block;
+  }
+  .print-head {
+    margin: 0;
+    padding-bottom: var(--ax-space-2);
+    border-bottom: 1px solid var(--ax-border);
+    font-size: var(--ax-text-xs);
+    color: var(--ax-text-muted);
+  }
+  .ax-page-head__subtitle,
+  .feeds-card {
+    display: none;
+  }
   :global(.ax-sidebar),
   :global(.ax-header),
   :global(.ax-footer),

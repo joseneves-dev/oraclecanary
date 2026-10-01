@@ -16,7 +16,7 @@ import { fetchChainlinkPrices } from './oracles/chainlink.js';
 import { fetchMarketPrices, valueUnlisted, type MarketPrice, type MarketPrices } from './oracles/marketPrice.js';
 import { fetchPythPrices } from './oracles/pyth.js';
 import { fetchScopeFeed, type ScopeFeed } from './oracles/scope.js';
-import { fetchJupiterEarn, withKaminoRates } from './rates.js';
+import { attachRates, fetchJupiterEarn, kaminoRatesWithin, listedMarkets } from './rates.js';
 import type { MarketOracleConfig, OracleSource, Protocol } from './types.js';
 
 const RPC_URL = process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com';
@@ -73,8 +73,10 @@ async function checkKamino(): Promise<ReserveHealthRow[]> {
   const valued = await withMarketValues(all, market);
   // Hidden reserves are not checked, but curator vaults can still hold money in them.
   await updateVaults(valued, market.prices);
-  // Rates are optional context: withKaminoRates never throws, and stored rates stay when it fails.
-  const reserves = await withKaminoRates(valued.filter((r) => r.status === 'active'));
+  const reserves = valued.filter((r) => r.status === 'active');
+  // Rates are optional context, read while the Scope accounts are: they never throw, wait at most a
+  // few seconds (see RATES_BUDGET_MS), and the stored rates stay when they fail.
+  const ratesPending = kaminoRatesWithin(listedMarkets(reserves));
 
   const feeds = new Map<string, ScopeFeed>();
   for (const address of new Set(reserves.flatMap((r) => (r.feeds.scope ? [r.feeds.scope] : [])))) {
@@ -86,7 +88,8 @@ async function checkKamino(): Promise<ReserveHealthRow[]> {
   }
 
   const now = nowSeconds();
-  return reserves.map((reserve) => ({
+  const rates = await ratesPending;
+  return attachRates(reserves, rates).map((reserve) => ({
     reserve,
     health: evaluate(reserve, { scope: reserve.feeds.scope ? feeds.get(reserve.feeds.scope) : undefined, market: market.prices.get(reserve.mint) }, now),
   }));

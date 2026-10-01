@@ -3,7 +3,7 @@ import { protocolName } from '@/lib/format'
 
 /** The parts of the collateral bar, in the order they are drawn; the rest is "unreadable or no oracle". */
 export const COMPOSITION: { key: keyof Pick<LentAgainst, 'withFallbackShare' | 'singleFeedShare' | 'fixedPriceShare'>; label: string; tone: string }[] = [
-  { key: 'withFallbackShare', label: 'With a fallback', tone: 'fallback' },
+  { key: 'withFallbackShare', label: 'No single-feed dependency', tone: 'fallback' },
   { key: 'singleFeedShare', label: 'Single feed, no fallback', tone: 'single' },
   { key: 'fixedPriceShare', label: 'Fixed price', tone: 'fixed' },
 ]
