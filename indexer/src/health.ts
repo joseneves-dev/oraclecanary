@@ -1,4 +1,4 @@
-import { reference, type MarketPrice } from './oracles/marketPrice.js';
+import { reference, reliable, type MarketPrice } from './oracles/marketPrice.js';
 import type { PythPrice } from './oracles/pyth.js';
 import type { ScopeEntry, ScopeFeed } from './oracles/scope.js';
 import { resolveLeaves } from './oracles/scope.js';
@@ -366,7 +366,11 @@ export interface OracleData {
   pyth?: PythPrice;
   /** Jupiter Lend: last update time of each oracle source account that could be read. */
   sourceTimes?: Map<string, number>;
-  /** An independent market price of the reserve's token, to check the oracle's price against. */
+  /**
+   * An independent market price of the reserve's token, to check the oracle's price against. A
+   * deviation is only reported when its `swap` price, quoted for reserves flagged by deviationSuspect,
+   * confirms it.
+   */
   market?: MarketPrice;
 }
 
@@ -455,8 +459,38 @@ export function oraclePrice(reserve: MarketOracleConfig, oracles: OracleData): n
 const MARGINFI_PLAIN_PYTH = new Set(['PythLegacy', 'PythPushOracle']);
 
 /**
- * Compares the oracle's price with a liquid market price. Staleness says a price is late; this says
- * it is wrong, which matters most for fixed prices: a fixed price is never stale, but it can be blind.
+ * The first screen of PRICE_DEVIATION, on Jupiter's price API: the oracle price and its gap from the
+ * market price when that gap is worth confirming with a swap quote, else null.
+ */
+function deviationScreen(reserve: MarketOracleConfig, oracles: OracleData): { price: number; gap: number; liquid: boolean } | null {
+  const price = oraclePrice(reserve, oracles);
+  const market = oracles.market;
+  if (!priceDeviationEnabled || !market || price === null || !(price > 0) || reserve.totalSupplyUsd < DEVIATION_MIN_SUPPLY_USD) return null;
+  if (!reliable(market)) return null;
+
+  const gap = (price - market.usdPrice) / market.usdPrice;
+  const liquid = !!reference(market);
+  const thinButFarAbove = gap >= DEVIATION_THIN_MARKET_ABOVE && market.liquidity >= THIN_MARKET_MIN_LIQUIDITY_USD;
+  return Math.abs(gap) >= DEVIATION_WARNING && (liquid || thinButFarAbove) ? { price, gap, liquid } : null;
+}
+
+/**
+ * The oracle price of a reserve whose price the price API says is off, to be confirmed with a swap
+ * quote (see swapPrices) before PRICE_DEVIATION reports it; null for every other reserve.
+ */
+export function deviationSuspect(reserve: MarketOracleConfig, oracles: OracleData): number | null {
+  return deviationScreen(reserve, oracles)?.price ?? null;
+}
+
+/** "$10K" for the usual swap, "$250" for the swap of a small reserve. */
+const swapSize = (usd: number) => (usd >= 1_000 ? `$${Math.round(usd / 1_000)}K` : `$${Math.round(usd)}`);
+
+/**
+ * Compares the oracle's price with what a swap on Jupiter really gets. Staleness says a price is late;
+ * this says it is wrong, which matters most for fixed prices: a fixed price is never stale, but it can
+ * be blind. The price API only picks the reserves to check: its price can be moved by a few trades in
+ * a thin market (dfdvSOL showed $233 while a swap got $133), so only an executable swap quote that is
+ * just as far off is reported.
  *
  * An oracle above the market overvalues collateral, which is how depegged tokens priced at $1 have
  * caused bad debt: critical when far off, and checked even against a thin market. Below the market
@@ -464,18 +498,17 @@ const MARGINFI_PLAIN_PYTH = new Set(['PythLegacy', 'PythPushOracle']);
  * conservative haircut on a bank being wound down (info).
  */
 function priceDeviationCheck(reserve: MarketOracleConfig, oracles: OracleData, result: HealthResult): Check | null {
-  const price = oraclePrice(reserve, oracles);
-  const quote = oracles.market;
-  if (!priceDeviationEnabled || !quote || price === null || !(price > 0) || reserve.totalSupplyUsd < DEVIATION_MIN_SUPPLY_USD) return null;
-
-  const gap = (price - quote.usdPrice) / quote.usdPrice;
-  const liquid = !!reference(quote);
-  const thinButFarAbove = gap >= DEVIATION_THIN_MARKET_ABOVE && quote.liquidity >= THIN_MARKET_MIN_LIQUIDITY_USD;
-  if (Math.abs(gap) < DEVIATION_WARNING || !(liquid || thinButFarAbove)) return null;
+  const screen = deviationScreen(reserve, oracles);
+  const swap = oracles.market?.swap;
+  if (!screen || !swap || !(swap.usdPrice > 0)) return null;
+  const { price, liquid } = screen;
+  const gap = (price - swap.usdPrice) / swap.usdPrice;
+  // The swap must be off the same way, and by as much as the screen needed.
+  if (Math.sign(gap) !== Math.sign(screen.gap) || Math.abs(gap) < (liquid ? DEVIATION_WARNING : DEVIATION_THIN_MARKET_ABOVE)) return null;
 
   const fixed = result.checks.some((c) => c.code === 'FIXED_PRICE');
-  const what = `${fixed ? 'The fixed price' : 'The oracle price'} ${usdPrice(price)} is ${gapText(price, quote.usdPrice)} market price`;
-  const where = `${usdPrice(quote.usdPrice)} on Jupiter${liquid ? '' : ', a thin market'}`;
+  const what = `${fixed ? 'The fixed price' : 'The oracle price'} ${usdPrice(price)} is ${gapText(price, swap.usdPrice)} price a ${swapSize(swap.sizeUsd)} swap on Jupiter gets`;
+  const where = `${usdPrice(swap.usdPrice)}${liquid ? '' : ', a thin market'}`;
   // Deposits that count for no collateral cannot be borrowed against, whatever their price says.
   if (reserve.windingDown) {
     return { code: 'PRICE_DEVIATION', severity: 'info', message: `${what} (${where}), but the bank is being wound down and counts it for no collateral: only the displayed value is off.` };

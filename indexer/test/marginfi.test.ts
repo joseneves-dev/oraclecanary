@@ -83,15 +83,15 @@ describe('evaluate marginfi banks', () => {
   });
 
   it('checks a fixed price against the market, since it can never go stale', () => {
-    const market = { usdPrice: 0.93, liquidity: 5_000_000 };
+    const market = { usdPrice: 0.93, liquidity: 5_000_000, swap: { usdPrice: 0.93, sizeUsd: 10_000 } };
     const result = evaluate(bank('Fixed', { fixedPrice: 1 }), { market }, NOW);
 
     assert.deepEqual(codes(result), ['FIXED_PRICE:info', 'PRICE_DEVIATION:warning']);
-    assert.match(result.checks[1].message, /The fixed price \$1\.00 is 7\.5% above the market price \(\$0\.93 on Jupiter\): collateral is overvalued/);
+    assert.match(result.checks[1].message, /The fixed price \$1\.00 is 7\.5% above the price a \$10K swap on Jupiter gets \(\$0\.93\): collateral is overvalued/);
   });
 
   it('does not check a price that includes an exchange rate it cannot see', () => {
-    const market = { usdPrice: 50, liquidity: 5_000_000 };
+    const market = { usdPrice: 50, liquidity: 5_000_000, swap: { usdPrice: 50, sizeUsd: 10_000 } };
     const result = evaluate(bank('KaminoPythPush'), { pyth: { price: 100, confidence: 0, publishTime: NOW - 5 }, market }, NOW);
     assert.ok(!codes(result).some((c) => c.startsWith('PRICE_DEVIATION')));
   });

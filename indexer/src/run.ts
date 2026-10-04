@@ -11,9 +11,20 @@ import { fetchKaminoReserves } from './adapters/kamino.js';
 import { fetchVaults, valueVaults } from './adapters/kaminoVaults.js';
 import { fetchMarginfiBanks } from './adapters/marginfi.js';
 import { saveEarnPools, saveReserveHealth, saveVaults, storedSupplyUsd, type ReserveHealthRow } from './db.js';
-import { evaluate, setPriceDeviationCheck } from './health.js';
+import { deviationSuspect, evaluate, setPriceDeviationCheck, type OracleData } from './health.js';
 import { fetchChainlinkPrices } from './oracles/chainlink.js';
-import { fetchMarketPrices, valueUnlisted, type MarketPrice, type MarketPrices } from './oracles/marketPrice.js';
+import {
+  fetchMarketPrices,
+  newSwapQuotes,
+  SOL_MINT,
+  swapPrices,
+  swapSizeUsd,
+  valueUnlisted,
+  type MarketPrice,
+  type MarketPrices,
+  type SwapPrice,
+  type SwapRequest,
+} from './oracles/marketPrice.js';
 import { fetchPythPrices } from './oracles/pyth.js';
 import { fetchScopeFeed, type ScopeFeed } from './oracles/scope.js';
 import { attachRates, fetchJupiterEarn, kaminoRatesWithin, listedMarkets } from './rates.js';
@@ -67,6 +78,37 @@ async function withMarketValues(reserves: MarketOracleConfig[], market: MarketPr
   return reserves.map((r) => valueUnlisted(r, market, previous));
 }
 
+/** Swap quotes of the current run, shared by its protocols (see runCheck). */
+let swapQuotes = newSwapQuotes();
+
+/**
+ * Evaluates each reserve, first quoting a swap on Jupiter for those whose oracle the price API says is
+ * off, since PRICE_DEVIATION is only reported when a swap confirms it. Quotes are optional: they
+ * time out within the run's budget, and a failure only means no deviation is reported.
+ */
+async function evaluateAll(reserves: MarketOracleConfig[], oracles: (r: MarketOracleConfig) => OracleData): Promise<ReserveHealthRow[]> {
+  const data = reserves.map((reserve) => ({ reserve, oracles: oracles(reserve) }));
+  const requests: SwapRequest[] = data.flatMap(({ reserve, oracles: o }) => {
+    const oraclePrice = deviationSuspect(reserve, o);
+    const decimals = o.market?.decimals;
+    return oraclePrice !== null && decimals !== undefined ? [{ mint: reserve.mint, decimals, oraclePrice, sizeUsd: swapSizeUsd(reserve.totalSupplyUsd) }] : [];
+  });
+  let swaps = new Map<string, SwapPrice>();
+  if (requests.length) {
+    const solUsd = data.find((d) => d.reserve.mint === SOL_MINT)?.oracles.market?.usdPrice;
+    try {
+      swaps = await swapPrices(requests, swapQuotes, solUsd);
+    } catch (e) {
+      console.warn(`Jupiter swap quotes: ${(e as Error).message}`);
+    }
+  }
+  const now = nowSeconds(); // after the quotes, so price ages are not understated
+  return data.map(({ reserve, oracles: o }) => {
+    const swap = swaps.get(reserve.mint);
+    return { reserve, health: evaluate(reserve, swap && o.market ? { ...o, market: { ...o.market, swap } } : o, now) };
+  });
+}
+
 async function checkKamino(): Promise<ReserveHealthRow[]> {
   const all = await fetchKaminoReserves(connection);
   const market = await fetchMarketPrices(all.map((r) => r.mint));
@@ -87,12 +129,11 @@ async function checkKamino(): Promise<ReserveHealthRow[]> {
     }
   }
 
-  const now = nowSeconds();
   const rates = await ratesPending;
-  return attachRates(reserves, rates).map((reserve) => ({
-    reserve,
-    health: evaluate(reserve, { scope: reserve.feeds.scope ? feeds.get(reserve.feeds.scope) : undefined, market: market.prices.get(reserve.mint) }, now),
-  }));
+  return evaluateAll(
+    attachRates(reserves, rates),
+    (reserve) => ({ scope: reserve.feeds.scope ? feeds.get(reserve.feeds.scope) : undefined, market: market.prices.get(reserve.mint) }),
+  );
 }
 
 /** Values the curator vaults from the reserves just read. Optional: a failure never stops the reserve checks. */
@@ -112,11 +153,10 @@ async function checkMarginfi(): Promise<ReserveHealthRow[]> {
   const banks = await withMarketValues(fetched, market);
   const prices = await fetchPythPrices(connection, banks.flatMap((b) => (b.feeds.pyth ? [b.feeds.pyth] : [])));
 
-  const now = nowSeconds();
-  return banks.map((reserve) => ({
-    reserve,
-    health: evaluate(reserve, { pyth: reserve.feeds.pyth ? prices.get(reserve.feeds.pyth) : undefined, market: market.prices.get(reserve.mint) }, now),
-  }));
+  return evaluateAll(
+    banks,
+    (reserve) => ({ pyth: reserve.feeds.pyth ? prices.get(reserve.feeds.pyth) : undefined, market: market.prices.get(reserve.mint) }),
+  );
 }
 
 /** Last update time of each Jupiter Lend oracle source, read according to its type. */
@@ -162,6 +202,7 @@ const PROTOCOLS: [Protocol, () => Promise<ReserveHealthRow[]>][] = [
 /** Checks each protocol on its own, so one failing protocol does not stop the others from updating. */
 async function runCheck(): Promise<boolean> {
   let allSucceeded = true;
+  swapQuotes = newSwapQuotes();
   for (const [protocol, check] of PROTOCOLS) {
     const started = Date.now();
     try {
