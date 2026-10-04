@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { evaluate, setPriceDeviationCheck } from '../src/health.js';
+import { deviationSuspect, evaluate, setPriceDeviationCheck } from '../src/health.js';
+import type { MarketPrice } from '../src/oracles/marketPrice.js';
 import type { ScopeEntry, ScopeFeed } from '../src/oracles/scope.js';
 import type { MarketOracleConfig } from '../src/types.js';
 
@@ -105,7 +106,12 @@ describe('evaluate', () => {
   });
 
   describe('price against the market', () => {
-    const market = (usdPrice: number, liquidity = 5_000_000) => ({ usdPrice, liquidity });
+    // A price API price, confirmed by a $10K swap at `swap` (the same price unless given).
+    const market = (usdPrice: number, liquidity = 5_000_000, swap: number | null = usdPrice): MarketPrice => ({
+      usdPrice,
+      liquidity,
+      ...(swap === null ? {} : { swap: { usdPrice: swap, sizeUsd: 10_000 } }),
+    });
     const fresh = (index: number, price: number) => entry(index, 'PythLazer', { price });
 
     it('multiplies the Scope chain and flags a price far from the market', () => {
@@ -115,7 +121,7 @@ describe('evaluate', () => {
       const check = result.checks.find((c) => c.code === 'PRICE_DEVIATION');
 
       assert.equal(check?.severity, 'critical');
-      assert.match(check!.message, /The oracle price \$110\.00 is 16% above the market price \(\$95\.00 on Jupiter\): collateral is overvalued/);
+      assert.match(check!.message, /The oracle price \$110\.00 is 16% above the price a \$10K swap on Jupiter gets \(\$95\.00\): collateral is overvalued/);
       assert.equal(result.score, 100 - 50 - 15); // the deviation, and no fallback
     });
 
@@ -145,7 +151,7 @@ describe('evaluate', () => {
       const check = result.checks.find((c) => c.code === 'PRICE_DEVIATION');
 
       assert.equal(check?.severity, 'critical');
-      assert.match(check!.message, /The fixed price \$0\.0001 is 3,497× the market price \(\$0\.0000000286 on Jupiter, a thin market\): collateral is overvalued/);
+      assert.match(check!.message, /The fixed price \$0\.0001 is 3,497× the price a \$10K swap on Jupiter gets \(\$0\.0000000286, a thin market\): collateral is overvalued/);
     });
 
     it('does not trust a market thin enough to be dumped on purpose', () => {
@@ -156,7 +162,7 @@ describe('evaluate', () => {
 
     it('writes moderate multiples with one decimal', () => {
       const result = evaluate(reserve(), { scope: feed(fresh(3, 2.4)), market: market(1) }, NOW);
-      assert.match(result.checks.find((c) => c.code === 'PRICE_DEVIATION')!.message, /\$2\.40 is 2\.4× the market price/);
+      assert.match(result.checks.find((c) => c.code === 'PRICE_DEVIATION')!.message, /\$2\.40 is 2\.4× the price a \$10K swap on Jupiter gets/);
     });
 
     it('treats a fixed price below the market as a likely deliberate haircut', () => {
@@ -176,7 +182,7 @@ describe('evaluate', () => {
       const check = result.checks.find((c) => c.code === 'PRICE_DEVIATION');
 
       assert.equal(check?.severity, 'info');
-      assert.match(check!.message, /14× the market price .*wound down and counts it for no collateral/);
+      assert.match(check!.message, /14× the price a \$10K swap on Jupiter gets .*wound down and counts it for no collateral/);
       assert.ok(codes(result).includes('WINDING_DOWN:info'));
       assert.equal(result.score, 100 - 5 - 5); // the fixed price and the deviation; winding down itself costs nothing
     });
@@ -189,6 +195,48 @@ describe('evaluate', () => {
       } finally {
         setPriceDeviationCheck(true);
       }
+    });
+
+    describe('confirmed by a swap quote', () => {
+      const deviation = (price: number, m: MarketPrice) =>
+        evaluate(reserve(), { scope: feed(fresh(3, price)), market: m }, NOW).checks.find((c) => c.code === 'PRICE_DEVIATION');
+
+      it('does not flag dfdvSOL, whose price API price a swap did not get (4 Oct 2026)', () => {
+        // Kamino priced dfdvSOL at $133.65; the price API said $233.07 (+77% in 24h after two buys) with
+        // "liquidity" equal to the token's market value; selling it on Jupiter got $133.4.
+        const dfdvSol: MarketPrice = { usdPrice: 233.07, liquidity: 387_603_165, priceChange24h: 77.07, decimals: 9 };
+        assert.equal(deviation(133.65, dfdvSol), undefined);
+        assert.equal(deviation(133.65, { ...dfdvSol, swap: { usdPrice: 133.4, sizeUsd: 10_000 } }), undefined);
+        assert.equal(deviationSuspect(reserve(), { scope: feed(fresh(3, 133.65)), market: dfdvSol }), null, 'not even worth a quote');
+        // Without the 24h move, the price API alone still flags nothing: the swap price agrees with the oracle.
+        const steady = { ...dfdvSol, priceChange24h: 2 };
+        assert.equal(deviationSuspect(reserve(), { scope: feed(fresh(3, 133.65)), market: steady }), 133.65);
+        assert.equal(deviation(133.65, { ...steady, swap: { usdPrice: 133.4, sizeUsd: 10_000 } }), undefined);
+      });
+
+      it('flags a deviation the swap confirms, at the swap price', () => {
+        const check = deviation(110, market(95, 5_000_000, 94));
+        assert.equal(check?.severity, 'critical');
+        assert.match(check!.message, /The oracle price \$110\.00 is 17% above the price a \$10K swap on Jupiter gets \(\$94\.00\): collateral is overvalued/);
+
+        const small = evaluate(reserve({ totalSupplyUsd: 2_500 }), { scope: feed(fresh(3, 90)), market: { ...market(100), swap: { usdPrice: 99, sizeUsd: 250 } } }, NOW);
+        assert.match(small.checks.find((c) => c.code === 'PRICE_DEVIATION')!.message, /9\.1% below the price a \$250 swap on Jupiter gets \(\$99\.00\)/);
+      });
+
+      it('does not flag on the price API alone: no quote, a failed quote or one too thin to judge', () => {
+        // swapPrices leaves out mints whose quote failed or moved the price more than 2%.
+        assert.equal(deviation(110, market(95, 5_000_000, null)), undefined);
+      });
+
+      it('does not flag when the swap is not as far off, or off the other way', () => {
+        assert.equal(deviation(110, market(95, 5_000_000, 108)), undefined, 'under 3% from the swap');
+        assert.equal(deviation(110, market(95, 5_000_000, 120)), undefined, 'the swap gets more than the oracle');
+        assert.equal(deviation(0.0001, market(0.0000000286, 30_000, 0.00008)), undefined, 'thin market: the swap must be 50% off too');
+      });
+
+      it('does not use a price that moved more than 50% in a day, even against a thin market', () => {
+        assert.equal(deviation(0.0001, { ...market(0.0000000286, 30_000), priceChange24h: -95 }), undefined);
+      });
     });
   });
 

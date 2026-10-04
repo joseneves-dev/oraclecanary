@@ -71,7 +71,7 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
     label: 'Price far from the market',
     severity: 'Critical',
     trigger:
-      'The oracle price is 10% or more above a liquid market price on Jupiter, or 50% above a thinner one with $25K of liquidity. From 3% above or 3% below it is a warning; a fixed price below the market, or any gap on a bank being wound down, is information. Reserves under $1K are skipped.',
+      'The oracle price is 10% or more above a liquid market price on Jupiter, or 50% above a thinner one with $25K of liquidity, and a $10K swap quote on Jupiter (smaller for small reserves) confirms the gap. From 3% above or 3% below it is a warning; a fixed price below the market, or any gap on a bank being wound down, is information. Reserves under $1K, quotes that move the price more than 2%, and prices that moved more than 50% in a day are skipped.',
     meaning: 'Above the market, collateral is overvalued; below it, borrowers can be liquidated early. Shown from 1 Oct 2026.',
   },
   { label: 'Sources disagree', severity: 'Critical', trigger: 'A reserve’s price sources differ by more than the protocol allows. A warning from half of that limit.', meaning: 'Sources that should agree do not, so at least one is off.' },
