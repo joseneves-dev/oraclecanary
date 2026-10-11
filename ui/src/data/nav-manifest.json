@@ -1,5 +1,5 @@
 {
-  "$schema": "vireo-nav-manifest/v1",
+  "$schema": "nav-manifest/v1",
   "meta": {
     "sections": [
       "MONITOR",

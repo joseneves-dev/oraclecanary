@@ -1,6 +1,4 @@
 /*
- * Vireo — Vue 3 edition entry.
- *
  * Imports the shared token core (styles/app.css) as the single stylesheet, then
  * mounts the SPA with Vue Router. The light/dark mode is set before the first
  * paint by the inline script in index.html.

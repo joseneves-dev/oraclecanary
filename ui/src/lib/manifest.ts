@@ -1,5 +1,5 @@
 /*
- * Vireo — nav manifest loader + index (Vue edition).
+ *nav manifest loader + index (Vue edition).
  * TS port of src/js/core/manifest.js. The manifest JSON is imported (bundled),
  * not fetched, since it ships inside the SPA. Drives sidebar + breadcrumb +
  * command palette + topnav from one ordered 219-node tree.

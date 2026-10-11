@@ -1,6 +1,4 @@
 /*
- * Vireo — mobile sidebar DRAWER (Vue edition).
- *
  * Native re-expression of the drawer half of src/js/core/sidebar.js. Below the
  * drawer band base.css translates `.ax-sidebar` off the inline start and only
  * `[data-ax-drawer='open']` on <html> brings it back, so the phone sidebar needs

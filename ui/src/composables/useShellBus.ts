@@ -1,5 +1,5 @@
 /*
- * Vireo — shell event bus (Vue edition). Tiny reactive flags the layout uses
+ * shell event bus (Vue edition). Tiny reactive flags the layout uses
  * to open the command palette (⌘K) from anywhere (header button, keyboard
  * shortcut).
  */
