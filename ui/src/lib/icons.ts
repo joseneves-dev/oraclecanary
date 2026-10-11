@@ -1,6 +1,4 @@
 /*
- * Vireo — Tabler icon path registry (Vue edition).
- *
  * Each entry is the inner markup of a 24x24 currentColor Tabler outline icon,
  * matching the inline SVGs in the HTML reference partials. Rendered by the
  * <AxIcon> component. Keyed by the manifest `icon` name for sidebar groups,
