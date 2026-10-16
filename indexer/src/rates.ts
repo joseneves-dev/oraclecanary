@@ -5,6 +5,7 @@
  * a failure here is logged and the last stored rates are kept (see db.ts).
  */
 
+import { jupiterFetch } from './jupiterApi.js';
 import type { MarketOracleConfig } from './types.js';
 
 /** A reserve's rates as its protocol reports them. Fractions: 0.05 is 5%. */
@@ -209,7 +210,7 @@ export interface EarnPool {
   at: Date;
 }
 
-const JUPITER_EARN_API = 'https://lite-api.jup.ag/lend/v1/earn/tokens';
+const JUPITER_EARN_API = '/lend/v1/earn/tokens';
 /** Jupiter reports rates in basis points. */
 const BPS = 10_000;
 
@@ -250,7 +251,9 @@ let earnCache: { pools: EarnPool[]; readAt: number } | null = null;
  */
 export async function fetchJupiterEarn(now = Date.now()): Promise<EarnPool[]> {
   if (earnCache && now - earnCache.readAt < REFRESH_SECONDS * 1000) return earnCache.pools;
-  const pools = parseJupiterEarn(await getJson(JUPITER_EARN_API), new Date(now));
+  const response = await jupiterFetch(JUPITER_EARN_API, API_TIMEOUT_MS);
+  if (!response.ok) throw new Error(`Jupiter Earn API returned ${response.status}`);
+  const pools = parseJupiterEarn(await response.json(), new Date(now));
   if (pools.length) earnCache = { pools, readAt: now };
   return earnCache?.pools ?? [];
 }

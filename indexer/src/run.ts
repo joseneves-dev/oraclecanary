@@ -10,7 +10,7 @@ import { decodeDataStreamsTimestamp, fetchJupiterLendVaults, ORACLE_PROGRAM as J
 import { fetchKaminoReserves } from './adapters/kamino.js';
 import { fetchVaults, valueVaults } from './adapters/kaminoVaults.js';
 import { fetchMarginfiBanks } from './adapters/marginfi.js';
-import { saveEarnPools, saveReserveHealth, saveVaults, storedSupplyUsd, type ReserveHealthRow } from './db.js';
+import { saveEarnPools, saveReserveHealth, saveVaults, storedAssets, storedSupplyUsd, type ReserveHealthRow } from './db.js';
 import { deviationSuspect, evaluate, setPriceDeviationCheck, type OracleData } from './health.js';
 import { fetchChainlinkPrices } from './oracles/chainlink.js';
 import {
@@ -184,8 +184,17 @@ async function updateEarnPools(): Promise<void> {
   }
 }
 
+/**
+ * Vaults left without a name because Jupiter has not described their tokens since the indexer started
+ * (its API failing) keep their stored name and value rather than being saved as unnamed and worth $0.
+ */
+async function withStoredAssets(vaults: MarketOracleConfig[]): Promise<MarketOracleConfig[]> {
+  const stored = await storedAssets(pool, vaults.filter((v) => !v.asset).map((v) => v.reserve));
+  return vaults.map((v) => (stored.has(v.reserve) ? { ...v, ...stored.get(v.reserve) } : v));
+}
+
 async function checkJupiterLend(): Promise<ReserveHealthRow[]> {
-  const vaults = await fetchJupiterLendVaults(connection);
+  const vaults = await withStoredAssets(await fetchJupiterLendVaults(connection));
   await updateEarnPools();
   const sourceTimes = await fetchJupiterSourceTimes(vaults.flatMap((v) => v.oracle?.sources ?? []));
 

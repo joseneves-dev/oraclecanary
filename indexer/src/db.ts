@@ -314,6 +314,16 @@ export async function storedSupplyUsd(pool: pg.Pool, addresses: string[]): Promi
   return new Map(rows.map((r) => [r.address, Number(r.total_supply_usd)]));
 }
 
+/** Last stored asset name and supply in USD of the given reserves, for when their tokens are unknown. */
+export async function storedAssets(pool: pg.Pool, addresses: string[]): Promise<Map<string, { asset: string; totalSupplyUsd: number }>> {
+  if (!addresses.length) return new Map();
+  const { rows } = await pool.query<{ address: string; asset: string; total_supply_usd: number }>(
+    'SELECT address, asset, total_supply_usd FROM lending_reserve WHERE address = ANY($1)',
+    [addresses],
+  );
+  return new Map(rows.map((r) => [r.address, { asset: r.asset, totalSupplyUsd: Number(r.total_supply_usd) }]));
+}
+
 /**
  * Replaces the stored curator vaults with this run's: vaults Kamino no longer lists, or that are now
  * worth nothing, are removed. Nothing is written when the list is empty, which more likely means the
