@@ -369,3 +369,57 @@
   margin-block-start: 2px;
   color: var(--ax-text-subtle);
 }
+.ax-sidebar__foot .ax-sidebar__user-name.is-warn::before {
+  background: var(--ax-sev-warn);
+}
+.ax-sidebar__foot .ax-sidebar__user-name.is-down::before {
+  background: var(--ax-sev-crit);
+}
+.ax-sidebar__foot .ax-sidebar__user-name.is-loading::before {
+  background: var(--ax-text-subtle);
+}
+
+/* ── foot: one light per protocol — how fresh the indexer's data is ── */
+.oc-fresh {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+.oc-fresh__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--ax-font-mono);
+  font-size: var(--ax-text-2xs);
+  letter-spacing: 0.06em;
+  color: var(--ax-text-subtle);
+}
+.oc-fresh__dot {
+  flex: none;
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--ax-text-subtle);
+}
+.oc-fresh__name {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ax-text-muted);
+}
+.oc-fresh__age {
+  flex: none;
+}
+.oc-fresh__row.is-ok .oc-fresh__dot {
+  background: var(--ax-sev-ok);
+}
+.oc-fresh__row.is-stale .oc-fresh__dot {
+  background: var(--ax-sev-warn);
+}
+.oc-fresh__row.is-stale .oc-fresh__age {
+  color: var(--ax-sev-warn-text);
+}

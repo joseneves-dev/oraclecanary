@@ -145,6 +145,20 @@ export async function fetchWalletPositions(address: string, signal?: AbortSignal
   return body
 }
 
+export type Health = Complete<components['schemas']['Health']>
+export type ProtocolFreshness = Complete<components['schemas']['ProtocolFreshness']>
+
+/**
+ * How fresh the indexer's data is, per protocol. The API answers 503 with the same body when any
+ * protocol is stale, which the spec does not describe, so this reads the response itself.
+ */
+export async function fetchHealth(signal?: AbortSignal): Promise<Health> {
+  const response = await fetch('/api/health', { signal, headers: { Accept: 'application/json' } })
+  const body = response.ok || response.status === 503 ? ((await response.json().catch(() => null)) as Health | null) : null
+  if (!body) throw new ApiError(`Could not load health (HTTP ${response.status})`)
+  return body
+}
+
 export type Stats = Complete<components['schemas']['Stats']>
 
 /** How many wallets are watched through the Telegram bot, and the value in them. */
