@@ -10,8 +10,10 @@ import AxIcon from '@/components/AxIcon.vue'
 import { buildSidebar, resolveActive } from '@/composables/useNav'
 import { currentSlug } from '@/lib/manifest'
 import { useTheme } from '@/composables/useTheme'
+import { useDataHealth } from '@/composables/useDataHealth'
 
 const theme = useTheme()
+const health = useDataHealth()
 const sections = buildSidebar()
 const route = useRoute()
 
@@ -52,12 +54,19 @@ const activeId = computed(() => resolveActive(slug.value).activeId)
       </template>
     </nav>
 
-    <!-- FOOT: data source -->
+    <!-- FOOT: data source, and how fresh each protocol's data is -->
     <div class="ax-sidebar__foot">
       <div class="ax-sidebar__user">
         <span class="ax-sidebar__user-meta">
-          <b class="ax-sidebar__user-name">Solana mainnet</b>
-          <small class="ax-sidebar__user-mail">Kamino · Jupiter Lend · marginfi</small>
+          <b class="ax-sidebar__user-name" :class="`is-${health.overall.value}`" :title="health.summary.value">Solana mainnet</b>
+          <small v-if="health.overall.value === 'down'" class="ax-sidebar__user-mail">{{ health.downReason.value }}</small>
+          <ul class="oc-fresh" aria-label="Indexer data freshness">
+            <li v-for="p in health.rows.value" :key="p.id" class="oc-fresh__row" :class="`is-${p.state}`" :title="p.title">
+              <span class="oc-fresh__dot" aria-hidden="true"></span>
+              <span class="oc-fresh__name">{{ p.name }}</span>
+              <span class="oc-fresh__age">{{ p.label }}</span>
+            </li>
+          </ul>
         </span>
       </div>
     </div>

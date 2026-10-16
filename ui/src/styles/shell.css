@@ -119,6 +119,22 @@
     0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ax-sev-ok) 22%, transparent); }
     50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--ax-sev-ok) 6%, transparent); }
   }
+  /* Only fresh data pulses: behind (warn), unreachable (down) and loading hold still. */
+  .oc-live.is-warn .oc-live__dot {
+    background: var(--ax-sev-warn);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ax-sev-warn) 22%, transparent);
+    animation: none;
+  }
+  .oc-live.is-down .oc-live__dot {
+    background: var(--ax-sev-crit);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ax-sev-crit) 22%, transparent);
+    animation: none;
+  }
+  .oc-live.is-loading .oc-live__dot {
+    background: var(--ax-text-subtle);
+    box-shadow: none;
+    animation: none;
+  }
   /* The canary mark in the bar: the way home on phones, where the sidebar
      (and its wordmark) is a closed drawer. */
   .oc-header-home {
