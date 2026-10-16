@@ -1,3 +1,4 @@
+import { jupiterFetch } from '../jupiterApi.js';
 import type { MarketOracleConfig } from '../types.js';
 
 /**
@@ -23,7 +24,7 @@ export interface SwapPrice {
   sizeUsd: number;
 }
 
-const PRICE_API = 'https://lite-api.jup.ag/price/v3?ids=';
+const PRICE_API = '/price/v3?ids=';
 const IDS_PER_REQUEST = 50;
 const API_TIMEOUT_MS = 15_000;
 
@@ -69,7 +70,7 @@ export async function fetchMarketPrices(mints: string[]): Promise<MarketPrices> 
   for (let i = 0; i < unique.length; i += IDS_PER_REQUEST) {
     const batch = unique.slice(i, i + IDS_PER_REQUEST);
     try {
-      const response = await fetch(PRICE_API + batch.join(','), { signal: AbortSignal.timeout(API_TIMEOUT_MS) });
+      const response = await jupiterFetch(PRICE_API + batch.join(','), API_TIMEOUT_MS);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = (await response.json()) as Record<string, ApiPrice | null>;
       for (const [mint, p] of Object.entries(body)) {
@@ -125,7 +126,7 @@ export function reference(price: MarketPrice | undefined): MarketPrice | undefin
 
 export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 export const SOL_MINT = 'So11111111111111111111111111111111111111112';
-const QUOTE_API = 'https://lite-api.jup.ag/swap/v1/quote';
+const QUOTE_API = '/swap/v1/quote';
 /** What a swap that confirms a price is worth, at the oracle price: enough to cross a real market. */
 export const SWAP_SIZE_USD = 10_000;
 /**
@@ -163,7 +164,7 @@ type Fetch = typeof fetch;
 /** Output amount and price impact (a fraction) of a Jupiter quote, or null when there is none. */
 async function quote(fetchImpl: Fetch, input: string, output: string, amount: bigint, timeoutMs: number): Promise<{ out: number; impact: number } | null> {
   const url = `${QUOTE_API}?inputMint=${input}&outputMint=${output}&amount=${amount}&slippageBps=50`;
-  const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
+  const response = await jupiterFetch(url, timeoutMs, fetchImpl);
   if (!response.ok) return null;
   const body = (await response.json()) as { outAmount?: string; priceImpactPct?: string };
   const out = Number(body.outAmount);

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { Connection, PublicKey } from '@solana/web3.js';
 
+import { jupiterFetch } from '../jupiterApi.js';
 import type { MarketOracleConfig, OracleSource } from '../types.js';
 
 /*
@@ -23,7 +24,7 @@ const EXCHANGE_PRICE_PRECISION = 1e12;
 // Vault amounts are kept in 9 decimals whatever the token's own decimals.
 const INTERNAL_DECIMALS = 9;
 
-const TOKENS_API = 'https://lite-api.jup.ag/tokens/v2/search?query=';
+const TOKENS_API = '/tokens/v2/search?query=';
 const TOKENS_PER_REQUEST = 100;
 const API_TIMEOUT_MS = 15_000;
 
@@ -115,19 +116,33 @@ interface TokenInfo {
   usdPrice: number | null;
 }
 
-async function fetchTokens(mints: string[]): Promise<Map<string, TokenInfo>> {
-  const tokens = new Map<string, TokenInfo>();
+/** Every token Jupiter has described since the indexer started, as last described. */
+const knownTokens = new Map<string, TokenInfo>();
+
+/**
+ * Symbols and prices of the given mints. A failed request does not fail the run: its mints keep what
+ * Jupiter last answered (see knownTokens), or are left out until it answers once.
+ */
+export async function fetchTokens(mints: string[], fetchImpl: typeof fetch = fetch): Promise<Map<string, TokenInfo>> {
   const unique = [...new Set(mints)];
   for (let i = 0; i < unique.length; i += TOKENS_PER_REQUEST) {
-    const response = await fetch(TOKENS_API + unique.slice(i, i + TOKENS_PER_REQUEST).join(','), {
-      signal: AbortSignal.timeout(API_TIMEOUT_MS),
-    });
-    if (!response.ok) throw new Error(`Jupiter tokens API returned ${response.status}`);
-    for (const t of (await response.json()) as { id: string; symbol: string; decimals: number; usdPrice?: number }[]) {
-      tokens.set(t.id, { symbol: t.symbol, decimals: t.decimals, usdPrice: t.usdPrice ?? null });
+    const batch = unique.slice(i, i + TOKENS_PER_REQUEST);
+    try {
+      const response = await jupiterFetch(TOKENS_API + batch.join(','), API_TIMEOUT_MS, fetchImpl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      for (const t of (await response.json()) as { id: string; symbol: string; decimals: number; usdPrice?: number }[]) {
+        knownTokens.set(t.id, { symbol: t.symbol, decimals: t.decimals, usdPrice: t.usdPrice ?? null });
+      }
+    } catch (e) {
+      console.warn(`Jupiter tokens API: ${(e as Error).message}; using the last answer for ${batch.length} mints`);
     }
   }
-  return tokens;
+  return new Map(unique.flatMap((mint) => (knownTokens.has(mint) ? [[mint, knownTokens.get(mint)!]] : [])));
+}
+
+/** Clears the tokens kept from earlier answers; for tests. */
+export function resetKnownTokens(): void {
+  knownTokens.clear();
 }
 
 export async function fetchJupiterLendVaults(connection: Connection): Promise<MarketOracleConfig[]> {
