@@ -2,7 +2,7 @@
   "name": "oraclecanary-onchain",
   "version": "0.1.0",
   "private": true,
-  "license": "MIT",
+  "license": "BUSL-1.1",
   "type": "module",
   "scripts": {
     "test": "node --import tsx --test ts/*.test.ts",

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Demo only: a mock vault that asks oracle_guard before accepting a deposit"
 edition = "2021"
 rust-version = "1.79"
-license = "MIT"
+license = "BUSL-1.1"
 
 [lib]
 crate-type = ["cdylib", "lib"]
