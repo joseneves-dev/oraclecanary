@@ -143,4 +143,7 @@ provider. API responses are cacheable for 30s (`s-maxage=60`), so a CDN can serv
 
 ## License
 
-MIT
+[Business Source License 1.1](LICENSE). You can read, copy, modify and run the code for non-production
+use, and for production use that does not offer OracleCanary (or a competing oracle-health, alerting or
+attestation service built on it) to third parties. Each version becomes Apache 2.0 four years after its
+release. Versions up to commit 4dd1875 (16 October 2026) were released under MIT and stay MIT.

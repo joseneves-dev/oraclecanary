@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
 publish = false
-license = "MIT"
+license = "BUSL-1.1"
 
 [dev-dependencies]
 litesvm = { version = "=0.13.1", features = ["precompiles"] }
