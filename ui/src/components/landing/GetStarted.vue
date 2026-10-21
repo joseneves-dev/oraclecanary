@@ -12,7 +12,7 @@ import CanaryMark from './CanaryMark.vue'
           <span class="band__mark" aria-hidden="true"><CanaryMark :size="44" /></span>
           <div>
             <h2 id="start-title" class="band__title">Let the canary sing when something breaks.</h2>
-            <p class="band__sub">Free, open source, no sign-up.</p>
+            <p class="band__sub">Free, no sign-up.</p>
           </div>
           <RouterLink :to="{ name: 'overview' }" class="lp-btn lp-btn--primary lp-btn--lg band__app">Open app <span aria-hidden="true">→</span></RouterLink>
         </div>

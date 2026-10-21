@@ -264,10 +264,7 @@ const CHECKS: { label: string; severity: Level; trigger: string; meaning: string
 
       <section class="ax-card ax-col--12" aria-labelledby="open">
         <div class="ax-card__body prose open">
-          <h2 id="open" class="ax-card__title">Open source and free</h2>
           <p>
-            The indexer, the API and the guard are open source under the MIT license, and the
-            <a href="/api/docs" target="_blank" rel="noopener">public API</a> (JSON, with CSV for reserves and incidents) is free to use.
             <a :href="REPO" target="_blank" rel="noopener">Code on GitHub</a> ·
             <a href="https://x.com/OracleCanary_" target="_blank" rel="noopener">@OracleCanary_ on X</a> ·
             <a href="mailto:hello@oraclecanary.com">hello@oraclecanary.com</a>
