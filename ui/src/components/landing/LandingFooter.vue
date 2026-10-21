@@ -15,7 +15,7 @@ const REPO = 'https://github.com/joseneves-dev/oraclecanary'
             <span>Oracle<span class="wm-accent">Canary</span></span>
           </RouterLink>
           <p>The canary in the coal mine for Solana lending.</p>
-          <p class="foot__small">An independent, open-source monitor of the oracles behind Kamino, marginfi and Jupiter Lend.</p>
+          <p class="foot__small">An independent, monitor of the oracles behind Kamino, marginfi and Jupiter Lend.</p>
         </div>
         <nav class="foot__col" aria-label="Product">
           <h3>Product</h3>
