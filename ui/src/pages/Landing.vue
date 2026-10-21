@@ -67,7 +67,7 @@ const sample = computed(() => {
           </h1>
           <p class="hero__lede">
             OracleCanary reads the oracle behind every reserve of Kamino, marginfi and Jupiter Lend from Solana mainnet every five minutes,
-            scores its price, and tells you when one breaks. Independent, open source and free.
+            scores its price, and tells you when one breaks.
           </p>
           <div class="hero__cta">
             <RouterLink :to="{ name: 'overview' }" class="lp-btn lp-btn--primary lp-btn--lg">
