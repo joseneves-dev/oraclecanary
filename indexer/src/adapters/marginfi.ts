@@ -124,6 +124,7 @@ function toMarketOracleConfig(address: string, data: Buffer, tickers: Map<string
     lastPriceUpdateTs: Number(bank.cache.last_oracle_price_timestamp.toString()),
     totalSupplyUsd: assets * price,
     supplyTokens: assets,
+    supplyVault: bank.liquidity_vault.toBase58(),
     // Only `Fixed` is the price itself; FixedKamino, FixedDrift... multiply it by an exchange rate.
     ...(setup === 'Fixed' ? { fixedPrice: fromI80F48(config.fixed_price) } : {}),
     ...(state === 'ReduceOnly' && noCollateral ? { windingDown: true } : {}),

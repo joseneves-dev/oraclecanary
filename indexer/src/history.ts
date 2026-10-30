@@ -39,9 +39,15 @@ export function checkKeys(checks: { code: string; severity: string }[]): string[
  */
 const TRANSIENT_CHECKS = new Set(['NEAR_STALE', 'WIDE_CONFIDENCE']);
 
+/**
+ * Checks that describe the token rather than the reserve's health. Left out of change detection too,
+ * so they do not become an event for every reserve of a token the first time they are checked.
+ */
+const TOKEN_PROPERTY_CHECKS = new Set(['FREEZABLE_COLLATERAL']);
+
 /** Failed checks worth reporting a change of, as "CODE:severity". */
 export function lastingCheckKeys(checks: { code: string; severity: string }[]): string[] {
-  return checkKeys(checks.filter((c) => !TRANSIENT_CHECKS.has(c.code)));
+  return checkKeys(checks.filter((c) => !TRANSIENT_CHECKS.has(c.code) && !TOKEN_PROPERTY_CHECKS.has(c.code)));
 }
 
 const sameChecks = (a: string[], b: string[]) => a.join('|') === b.join('|');

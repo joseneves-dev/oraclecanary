@@ -11,7 +11,7 @@ import { fetchKaminoReserves } from './adapters/kamino.js';
 import { fetchVaults, valueVaults } from './adapters/kaminoVaults.js';
 import { fetchMarginfiBanks } from './adapters/marginfi.js';
 import { saveEarnPools, saveReserveHealth, saveVaults, storedAssets, storedSupplyUsd, type ReserveHealthRow } from './db.js';
-import { deviationSuspect, evaluate, setPriceDeviationCheck, type OracleData } from './health.js';
+import { deviationSuspect, evaluate, setPriceDeviationCheck, type OracleData, type TokenState } from './health.js';
 import { fetchChainlinkPrices } from './oracles/chainlink.js';
 import {
   fetchMarketPrices,
@@ -28,6 +28,7 @@ import {
 import { fetchPythPrices } from './oracles/pyth.js';
 import { fetchScopeFeed, type ScopeFeed } from './oracles/scope.js';
 import { attachRates, fetchJupiterEarn, kaminoRatesWithin, listedMarkets } from './rates.js';
+import { fetchFrozen, fetchTokenControls } from './tokenControls.js';
 import type { MarketOracleConfig, OracleSource, Protocol } from './types.js';
 
 const RPC_URL = process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com';
@@ -76,6 +77,25 @@ async function withMarketValues(reserves: MarketOracleConfig[], market: MarketPr
   const unknown = reserves.filter((r) => !r.marketName && market.failed.has(r.mint)).map((r) => r.reserve);
   const previous = await storedSupplyUsd(pool, unknown);
   return reserves.map((r) => valueUnlisted(r, market, previous));
+}
+
+/**
+ * What each reserve's token issuer can do to balances, and whether the reserve's vault is frozen, by
+ * reserve. Optional: a failed read only leaves the token checks out of this run.
+ */
+async function fetchTokenStates(reserves: MarketOracleConfig[]): Promise<Map<string, TokenState>> {
+  try {
+    const [controls, frozen] = await Promise.all([
+      fetchTokenControls(connection, reserves.map((r) => r.mint)),
+      fetchFrozen(connection, reserves.flatMap((r) => (r.supplyVault ? [r.supplyVault] : []))),
+    ]);
+    return new Map(
+      reserves.map((r) => [r.reserve, { controls: controls.get(r.mint), vaultFrozen: r.supplyVault ? frozen.get(r.supplyVault) : undefined }]),
+    );
+  } catch (e) {
+    console.warn(`Token controls not read: ${(e as Error).message}`);
+    return new Map();
+  }
 }
 
 /** Swap quotes of the current run, shared by its protocols (see runCheck). */
@@ -129,10 +149,15 @@ async function checkKamino(): Promise<ReserveHealthRow[]> {
     }
   }
 
+  const tokens = await fetchTokenStates(reserves);
   const rates = await ratesPending;
   return evaluateAll(
     attachRates(reserves, rates),
-    (reserve) => ({ scope: reserve.feeds.scope ? feeds.get(reserve.feeds.scope) : undefined, market: market.prices.get(reserve.mint) }),
+    (reserve) => ({
+      scope: reserve.feeds.scope ? feeds.get(reserve.feeds.scope) : undefined,
+      market: market.prices.get(reserve.mint),
+      token: tokens.get(reserve.reserve),
+    }),
   );
 }
 
@@ -152,10 +177,15 @@ async function checkMarginfi(): Promise<ReserveHealthRow[]> {
   const market = await fetchMarketPrices(fetched.map((b) => b.mint));
   const banks = await withMarketValues(fetched, market);
   const prices = await fetchPythPrices(connection, banks.flatMap((b) => (b.feeds.pyth ? [b.feeds.pyth] : [])));
+  const tokens = await fetchTokenStates(banks);
 
   return evaluateAll(
     banks,
-    (reserve) => ({ pyth: reserve.feeds.pyth ? prices.get(reserve.feeds.pyth) : undefined, market: market.prices.get(reserve.mint) }),
+    (reserve) => ({
+      pyth: reserve.feeds.pyth ? prices.get(reserve.feeds.pyth) : undefined,
+      market: market.prices.get(reserve.mint),
+      token: tokens.get(reserve.reserve),
+    }),
   );
 }
 
@@ -197,9 +227,12 @@ async function checkJupiterLend(): Promise<ReserveHealthRow[]> {
   const vaults = await withStoredAssets(await fetchJupiterLendVaults(connection));
   await updateEarnPools();
   const sourceTimes = await fetchJupiterSourceTimes(vaults.flatMap((v) => v.oracle?.sources ?? []));
+  // Jupiter Lend keeps deposits in its shared liquidity layer, not a vault per reserve, so only the
+  // collateral token's controls are read.
+  const tokens = await fetchTokenStates(vaults);
 
   const now = nowSeconds();
-  return vaults.map((reserve) => ({ reserve, health: evaluate(reserve, { sourceTimes }, now) }));
+  return vaults.map((reserve) => ({ reserve, health: evaluate(reserve, { sourceTimes, token: tokens.get(reserve.reserve) }, now) }));
 }
 
 const PROTOCOLS: [Protocol, () => Promise<ReserveHealthRow[]>][] = [

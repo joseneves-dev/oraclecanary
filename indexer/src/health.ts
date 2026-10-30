@@ -3,6 +3,7 @@ import type { PythPrice } from './oracles/pyth.js';
 import type { ScopeEntry, ScopeFeed } from './oracles/scope.js';
 import { resolveLeaves } from './oracles/scope.js';
 import { type ClosedReason, US_STOCK_MINTS, usStockSession } from './marketHours.js';
+import type { TokenControls } from './tokenControls.js';
 import type { MarketOracleConfig } from './types.js';
 
 export type Severity = 'critical' | 'warning' | 'info';
@@ -21,7 +22,9 @@ export interface Check {
     | 'MARKET_CLOSED'
     | 'WINDING_DOWN'
     | 'PRICE_DEVIATION'
-    | 'WIDE_CONFIDENCE';
+    | 'WIDE_CONFIDENCE'
+    | 'FREEZABLE_COLLATERAL'
+    | 'VAULT_FROZEN';
   severity: Severity;
   message: string;
 }
@@ -51,8 +54,11 @@ const NEAR_STALE_RATIO = 0.8;
 /** Past this share of a fallback's allowed divergence, its sources are reported as disagreeing. */
 const DIVERGENCE_WARNING_RATIO = 0.5;
 
-/** Checks that explain another check rather than report a problem of their own. */
-const NO_PENALTY = new Set<Check['code']>(['MARKET_CLOSED', 'WINDING_DOWN']);
+/**
+ * Checks that explain another check, or describe the token rather than a problem: most stablecoins
+ * can be frozen by their issuer, which says nothing about whether the reserve works today.
+ */
+const NO_PENALTY = new Set<Check['code']>(['MARKET_CLOSED', 'WINDING_DOWN', 'FREEZABLE_COLLATERAL']);
 
 /**
  * Kamino and marginfi refuse to use a price past its max age: positions that need it cannot be
@@ -372,6 +378,42 @@ export interface OracleData {
    * confirms it.
    */
   market?: MarketPrice;
+  /** What the token's issuer can do to balances, and whether the reserve's own vault is frozen. */
+  token?: TokenState;
+}
+
+export interface TokenState {
+  controls?: TokenControls;
+  /** Unknown (undefined) when the reserve has no vault to check or it could not be read. */
+  vaultFrozen?: boolean;
+}
+
+/**
+ * An issuer that can freeze or take the token can lock it inside the protocol: a frozen vault blocks
+ * withdrawals, borrows and liquidations of that token for everyone, whoever the freeze was aimed at.
+ */
+function tokenChecks(token: TokenState | undefined): Check[] {
+  const checks: Check[] = [];
+  if (token?.vaultFrozen) {
+    checks.push({
+      code: 'VAULT_FROZEN',
+      severity: 'critical',
+      message: "The token's issuer has frozen the protocol's vault: withdrawals, borrows and liquidations of this token fail for everyone.",
+    });
+  }
+  const controls = token?.controls;
+  if (controls && (controls.freezeAuthority || controls.permanentDelegate)) {
+    const powers = [
+      ...(controls.freezeAuthority ? ['freeze any account holding it'] : []),
+      ...(controls.permanentDelegate ? ['move or burn it from any account'] : []),
+    ];
+    checks.push({
+      code: 'FREEZABLE_COLLATERAL',
+      severity: 'info',
+      message: `The token's issuer can ${powers.join(' and ')}, including the protocol's vault.`,
+    });
+  }
+  return checks;
 }
 
 export function evaluate(reserve: MarketOracleConfig, oracles: OracleData, now: number): HealthResult {
@@ -390,7 +432,7 @@ export function evaluate(reserve: MarketOracleConfig, oracles: OracleData, now: 
         message: 'Being wound down: no new deposits or borrows, and deposits count for no collateral, so its price backs no borrowing.',
       }
     : null;
-  const extra = [closed, deviation, windingDown].filter((c): c is Check => !!c);
+  const extra = [closed, deviation, windingDown, ...tokenChecks(oracles.token)].filter((c): c is Check => !!c);
   if (!extra.length) return result;
   const checks = [...result.checks, ...extra];
   return { ...result, checks, score: score(checks) };
