@@ -27,6 +27,8 @@ const ISSUES: Record<string, string> = {
   MARKET_CLOSED: 'Market hours',
   FIXED_PRICE: 'Fixed price',
   WINDING_DOWN: 'Winding down',
+  VAULT_FROZEN: 'Vault frozen by issuer',
+  FREEZABLE_COLLATERAL: 'Issuer can freeze',
 }
 
 /** Price sources, as the API's `provider` filter takes them (the names in each reserve's `providers`). */

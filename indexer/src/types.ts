@@ -60,6 +60,8 @@ export interface MarketOracleConfig {
   ctokenSupply?: number;
   /** Jupiter Lend only: the token borrowed from the vault (its supply token is the collateral). */
   borrowMint?: string;
+  /** Kamino and marginfi: the token account holding the reserve's deposits that are not lent out. */
+  supplyVault?: string;
   /** Supply and borrow rates as the protocol reports them, when read this run (see rates.ts). */
   rate?: LendingRate;
 }

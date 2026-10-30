@@ -67,6 +67,7 @@ const CRITICAL_MEANING: Record<string, string> = {
   EMPTY_PRICE_ENTRY: 'the price chain points at an empty oracle entry',
   SOURCES_DIVERGE: 'its price sources disagree beyond the allowed limit',
   PRICE_DEVIATION: 'the oracle price is far above the market price, so collateral is overvalued',
+  VAULT_FROZEN: "the token's issuer has frozen the protocol's vault",
 };
 
 const PROTOCOL_NAMES: Record<string, string> = { kamino: 'Kamino', marginfi: 'marginfi', 'jupiter-lend': 'Jupiter Lend' };

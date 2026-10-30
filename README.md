@@ -23,9 +23,11 @@ setups. It then checks:
 | `FIXED_PRICE` | info | The price is fixed and does not follow the market; a price made only of fixed values is never `STALE` |
 | `PRICE_DEVIATION` | critical / warning / info | The oracle price is 3%+ from a liquid market price (Jupiter, $250K+ liquidity), or 50%+ above a thinner one ($25K+): critical when 10%+ above (collateral overvalued), a warning when below, info for a fixed price below (a likely deliberate haircut). Covers fixed prices, which are never stale but can be wrong. Off unless `PRICE_DEVIATION_CHECK=on`, since it names reserves one by one |
 | `WIDE_CONFIDENCE` | warning | Pyth's confidence interval is wider than 2% of the price (marginfi banks reading Pyth) |
+| `VAULT_FROZEN` | critical | The token's issuer has frozen the protocol's vault (Kamino, marginfi): withdrawals, borrows and liquidations of the token fail for everyone |
+| `FREEZABLE_COLLATERAL` | info | The token's issuer can freeze any account holding it, or move or burn it through a Token-2022 permanent delegate (no score penalty) |
 | `MARKET_CLOSED` | info | A tokenized US stock is `STALE` because its price stopped at the market close; it should resume at the next open (no score penalty) |
 
-Each reserve gets a 0–100 score (critical −50, warning −15, info −5; `MARKET_CLOSED` only explains a `STALE` and costs nothing).
+Each reserve gets a 0–100 score (critical −50, warning −15, info −5; `MARKET_CLOSED` only explains a `STALE` and costs nothing, and `FREEZABLE_COLLATERAL` describes the token, not its health).
 
 > Built for the Colosseum Crypto World's Fair hackathon (Sep–Oct 2026).
 

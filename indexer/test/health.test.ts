@@ -365,6 +365,34 @@ describe('evaluate', () => {
     });
   });
 
+  describe('token controls', () => {
+    const healthy = () => feed(entry(1, 'Chainlink'), entry(2, 'PythLazer'), mostRecentOf(3, [1, 2]));
+    const usdc = { freezeAuthority: 'issuer', permanentDelegate: null };
+
+    it('notes an issuer that can freeze the token, at no cost to the score', () => {
+      const result = evaluate(reserve(), { scope: healthy(), token: { controls: usdc, vaultFrozen: false } }, NOW);
+      assert.deepEqual(codes(result), ['FREEZABLE_COLLATERAL:info']);
+      assert.equal(result.score, 100);
+      assert.match(result.checks[0].message, /can freeze any account holding it, including the protocol's vault/);
+    });
+
+    it('names a permanent delegate, which can move or burn the token', () => {
+      const result = evaluate(reserve(), { scope: healthy(), token: { controls: { freezeAuthority: 'issuer', permanentDelegate: 'delegate' } } }, NOW);
+      assert.match(result.checks[0].message, /freeze any account holding it and move or burn it from any account/);
+    });
+
+    it('says nothing about a token without controls', () => {
+      const result = evaluate(reserve(), { scope: healthy(), token: { controls: { freezeAuthority: null, permanentDelegate: null } } }, NOW);
+      assert.deepEqual(result.checks, []);
+    });
+
+    it("is critical when the protocol's vault is frozen", () => {
+      const result = evaluate(reserve(), { scope: healthy(), token: { controls: usdc, vaultFrozen: true } }, NOW);
+      assert.deepEqual(codes(result), ['VAULT_FROZEN:critical', 'FREEZABLE_COLLATERAL:info']);
+      assert.equal(result.score, 50);
+    });
+  });
+
   describe('reserves without an oracle', () => {
     it('is critical when Scope is configured with an empty price chain', () => {
       const result = evaluateKamino(reserve({ scopeChain: [] }), feed(entry(3, 'PythLazer')), NOW);

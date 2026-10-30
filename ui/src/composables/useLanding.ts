@@ -283,6 +283,8 @@ export const CHECK_LABEL: Record<string, string> = {
   EMPTY_PRICE_ENTRY: 'Empty price entry',
   UNREADABLE_ORACLE: 'Unreadable oracle',
   WINDING_DOWN: 'Winding down',
+  VAULT_FROZEN: 'Vault frozen',
+  FREEZABLE_COLLATERAL: 'Issuer can freeze',
 }
 
 export function checkLabel(code: string): string {

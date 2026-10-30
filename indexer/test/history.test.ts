@@ -122,6 +122,13 @@ describe('checkKeys', () => {
   it('leaves transient checks out of the lasting ones', () => {
     assert.deepEqual(lastingCheckKeys([{ code: 'NEAR_STALE', severity: 'warning' }, { code: 'NO_FALLBACK', severity: 'warning' }]), ['NO_FALLBACK:warning']);
   });
+
+  it("leaves the token's own properties out of the lasting ones, but not a frozen vault", () => {
+    assert.deepEqual(
+      lastingCheckKeys([{ code: 'FREEZABLE_COLLATERAL', severity: 'info' }, { code: 'VAULT_FROZEN', severity: 'critical' }]),
+      ['VAULT_FROZEN:critical'],
+    );
+  });
 });
 
 describe('hourOf', () => {
